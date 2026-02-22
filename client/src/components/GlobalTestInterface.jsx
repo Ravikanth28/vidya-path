@@ -3,6 +3,7 @@ import { X, Clock, ChevronLeft, ChevronRight, Send, AlertTriangle, Brain, FileTe
 import Editor from '@monaco-editor/react'
 import axios from 'axios'
 import CodeOutputPreview from '@/components/CodeOutputPreview'
+import TestAIReviewSection from '@/components/TestAIReviewSection'
 
 // TensorFlow.js loaded dynamically to reduce initial bundle size
 let tf = null
@@ -816,6 +817,29 @@ export default function GlobalTestInterface({ test, user, onClose, onComplete })
                             })}
                         </div>
                     </div>
+
+                    {/* ═══════════════════════ AI CODE REVIEWS FOR CODING/SQL QUESTIONS ═══════════════════════ */}
+                    {result.questionResults && result.questionResults.some(q => (q.questionType === 'coding' || q.questionType === 'sql') && result.answers && result.answers[q.questionId]) && (
+                        <div style={{ padding: '2rem', borderTop: '1px solid rgba(255,255,255,0.1)' }}>
+                            <h3 style={{ margin: '0 0 1.5rem', fontSize: '1.1rem', fontWeight: 700, color: 'white', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                <Brain size={20} color="#8b5cf6" /> AI Code Reviews
+                            </h3>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                                {result.questionResults.map((q, idx) => {
+                                    if ((q.questionType !== 'coding' && q.questionType !== 'sql') || !result.answers[q.questionId]) return null;
+                                    return (
+                                        <TestAIReviewSection
+                                            key={`${result.id}-${q.questionId}`}
+                                            testSubmissionId={`global-${result.id}-${q.questionId}`}
+                                            testType="global-test"
+                                            testTitle={test.title || 'Global Test'}
+                                            problemTitle={q.question || `${q.section.toUpperCase()} Question`}
+                                        />
+                                    );
+                                })}
+                            </div>
+                        </div>
+                    )}
 
                     {/* Footer */}
                     <div style={{

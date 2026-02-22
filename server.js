@@ -18,6 +18,11 @@ const { Server: SocketIOServer } = require('socket.io');
 const { paginatedResponse } = require('./utils/pagination');
 const { cacheManager } = require('./utils/cache');
 
+// New Features Services
+const CertificateService = require('./services/certificate_service');
+const AICodeReviewService = require('./services/ai_code_review_service');
+const WebhookService = require('./services/webhook_service');
+
 // Security & Middleware imports
 const { hashPassword, comparePassword, generateToken, authenticate, authorize, optionalAuth } = require('./middleware/auth');
 const { generalLimiter, authLimiter, aiLimiter, codeLimiter, adminLimiter, uploadLimiter, submissionLimiter } = require('./middleware/rateLimiter');
@@ -200,13 +205,25 @@ const gamificationService = new GamificationService(pool);
 const analyticsService = new PredictiveAnalyticsService(pool);
 const violationService = new ViolationScoringService(pool);
 
+// Initialize New Feature Services
+const certificateService = new CertificateService(pool);
+const aiCodeReviewService = new AICodeReviewService(pool, cerebrasChat);
+const webhookService = new WebhookService(pool);
+
 // Expose services globally for use in routes
 global.advancedServices = {
     plagiarismService,
     gamificationService,
     analyticsService,
-    violationService
+    violationService,
+    certificateService,
+    aiCodeReviewService,
+    webhookService
 };
+// Also expose individual shortcuts used by skill_test_routes.js
+global.certificateService = certificateService;
+global.webhookService = webhookService;
+global.aiCodeReviewService = aiCodeReviewService;
 
 // Middleware - CORS configuration
 const allowedOrigins = [
@@ -2065,6 +2082,7 @@ Scoring Guide:
                 // We don't await this to keep response fast, or we can await if we want to ensure it runs
                 // Better to await it here since it's critical for the dashboard
                 const analysisResult = await plagiarismService.analyzeSubmission(submissionId);
+
                 const analysisId = uuidv4();
 
                 await pool.query(
@@ -2090,6 +2108,21 @@ Scoring Guide:
             }
         } catch (plagErr) {
             console.error('Background plagiarism analysis failed:', plagErr.message);
+        }
+
+        // Auto-trigger AI Code Review in background (non-blocking)
+        try {
+            if (code && studentId && submissionId) {
+                aiCodeReviewService.triggerReview(
+                    submissionId, studentId, code, language, problemTitle, ''
+                ).then(() => {
+                    console.log(`[AI Review] Auto-triggered for submission ${submissionId}`);
+                }).catch(err => {
+                    console.error(`[AI Review] Auto-trigger failed for ${submissionId}:`, err.message);
+                });
+            }
+        } catch (aiErr) {
+            console.error('AI review auto-trigger error:', aiErr.message);
         }
 
         // Mark problem as completed if score >= 70
@@ -4096,6 +4129,92 @@ app.post('/api/global-tests/:id/submit', validate(globalTestSubmitSchema), async
             }
         } catch (e) { /* Ignore */ }
 
+        // ── Auto-issue certificate if student PASSED ──────────────────
+        let certificateResult = null;
+        if (status === 'passed') {
+            try {
+                const [userRows] = await pool.query('SELECT name FROM users WHERE id = ?', [studentId]);
+                let mentorName = 'MentorHub Platform';
+                try {
+                    const [mentorRows] = await pool.query(
+                        `SELECT u.name FROM users u JOIN mentor_student_allocations msa ON msa.mentor_id = u.id WHERE msa.student_id = ? LIMIT 1`,
+                        [studentId]
+                    );
+                    if (mentorRows.length > 0) mentorName = mentorRows[0].name;
+                } catch (_) {}
+
+                if (userRows.length > 0) {
+                    certificateResult = await certificateService.issueCertificate({
+                        studentId,
+                        studentName: userRows[0].name,
+                        mentorName,
+                        type: 'global_test',
+                        sourceId: testId,
+                        sourceTitle: test.title,
+                        score: overallPercent,
+                        passingScore: test.passing_score || 70
+                    });
+
+                    if (!certificateResult.alreadyExists) {
+                        await webhookService.fireEvent('certificate_issued', {
+                            studentId, studentName: userRows[0].name,
+                            sourceTitle: test.title, score: overallPercent,
+                            certificateId: certificateResult.certificateId
+                        });
+                        console.log(`🏆 Certificate issued: ${userRows[0].name} passed "${test.title}" with ${overallPercent}%`);
+                    }
+                }
+            } catch (certErr) {
+                console.warn('⚠️ Certificate auto-issue failed (non-blocking):', certErr.message);
+            }
+        }
+        // ─────────────────────────────────────────────────────────────
+
+        // Auto-trigger AI Code Review for coding/SQL sections in global tests (non-blocking)
+        try {
+            if (studentId && subId) {
+                // Collect all coding and SQL question answers
+                const codingSQLAnswers = [];
+                for (const q of questions) {
+                    if ((q.question_type === 'coding' || q.question_type === 'sql') && answers && answers[q.question_id]) {
+                        const code = String(answers[q.question_id]).trim();
+                        if (code.length > 0) {
+                            codingSQLAnswers.push({
+                                qId: q.question_id,
+                                type: q.question_type,
+                                section: q.section,
+                                code: code,
+                                title: q.question
+                            });
+                        }
+                    }
+                }
+
+                // Trigger AI review for each code submission if any exist
+                if (codingSQLAnswers.length > 0) {
+                    for (const codeQn of codingSQLAnswers) {
+                        global.aiCodeReviewService.triggerReview(
+                            null, // submissionId (not used for tests)
+                            studentId,
+                            codeQn.code,
+                            codeQn.type,
+                            `${test.title} - ${codeQn.section} (${codeQn.type.toUpperCase()})`,
+                            codeQn.title,
+                            `global-${subId}-${codeQn.qId}`, // testSubmissionId with question ID
+                            'global-test'
+                        ).then(() => {
+                            console.log(`[AI Review] Auto-triggered for global test ${codeQn.section} question`);
+                        }).catch(err => {
+                            console.error(`[AI Review] Auto-trigger failed for global test:`, err.message);
+                        });
+                    }
+                }
+            }
+        } catch (aiErr) {
+            console.error('Global test AI review auto-trigger error:', aiErr.message);
+        }
+        // ─────────────────────────────────────────────────────────────
+
         res.json({
             submission: {
                 id: subId,
@@ -4109,7 +4228,8 @@ app.post('/api/global-tests/:id/submit', validate(globalTestSubmitSchema), async
                 timeSpent: timeSpent || 0,
                 questionResults
             },
-            message: status === 'passed' ? 'Congratulations! You passed the test!' : 'Keep practicing!'
+            certificate: certificateResult,
+            message: status === 'passed' ? '🎉 Congratulations! You passed! Check My Certificates for your PDF.' : 'Keep practicing!'
         });
     } catch (error) {
         await connection.rollback();
@@ -11239,6 +11359,497 @@ app.get('/api/alumni/conversations', authenticate, async (req, res) => {
 });
 
 // *** END NEW FEATURE ENDPOINTS ***
+
+// =====================================================
+// CERTIFICATE ROUTES
+// =====================================================
+
+// GET /api/certificates/all — admin: list all issued certificates with search
+app.get('/api/certificates/all', authenticate, authorize('admin'), async (req, res) => {
+    try {
+        const { search = '', type = '', page = 1, limit = 30 } = req.query;
+        const result = await certificateService.getAllCertificates({
+            search, type,
+            page: parseInt(page),
+            limit: parseInt(limit)
+        });
+        res.json(result);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// DELETE /api/certificates/:certId — admin hard-delete (removes record + PDF)
+app.delete('/api/certificates/:certId', authenticate, authorize('admin'), async (req, res) => {
+    try {
+        const result = await certificateService.deleteCertificate(req.params.certId);
+        res.json(result);
+    } catch (err) {
+        res.status(404).json({ error: err.message });
+    }
+});
+
+// GET /api/certificates/student/:studentId — get all certs for a student
+app.get('/api/certificates/student/:studentId', authenticate, async (req, res) => {
+    try {
+        const certs = await certificateService.getStudentCertificates(req.params.studentId);
+        res.json({ success: true, certificates: certs, total: certs.length });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// POST /api/certificates/issue — manually issue a certificate (admin/mentor)
+app.post('/api/certificates/issue', authenticate, async (req, res) => {
+    try {
+        const { studentId, type, sourceId, sourceTitle, score, passingScore } = req.body;
+        if (!studentId || !type || !sourceId || !sourceTitle || score === undefined) {
+            return res.status(400).json({ error: 'Missing required fields: studentId, type, sourceId, sourceTitle, score' });
+        }
+        // Get student name
+        const [users] = await pool.query('SELECT name FROM users WHERE id = ?', [studentId]);
+        if (users.length === 0) return res.status(404).json({ error: 'Student not found' });
+
+        // Get mentor name
+        let mentorName = 'MentorHub Platform';
+        try {
+            const [mentors] = await pool.query(
+                `SELECT u.name FROM users u
+                 JOIN mentor_student_allocations msa ON msa.mentor_id = u.id
+                 WHERE msa.student_id = ? LIMIT 1`, [studentId]
+            );
+            if (mentors.length > 0) mentorName = mentors[0].name;
+        } catch {}
+
+        const result = await certificateService.issueCertificate({
+            studentId,
+            studentName: users[0].name,
+            mentorName,
+            type,
+            sourceId,
+            sourceTitle,
+            score: parseFloat(score),
+            passingScore: parseFloat(passingScore || 70)
+        });
+
+        // Fire webhook
+        await webhookService.fireEvent('certificate_issued', {
+            studentId, studentName: users[0].name, sourceTitle, score, certificateId: result.certificateId
+        });
+
+        res.json({ success: true, ...result });
+    } catch (err) {
+        if (err.message.includes('below passing score')) {
+            return res.status(400).json({ error: err.message });
+        }
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// POST /api/certificates/auto-issue — auto-issue after test submission (called internally)
+app.post('/api/certificates/auto-issue', authenticate, async (req, res) => {
+    try {
+        const { studentId, type, sourceId, sourceTitle, score, passingScore = 70 } = req.body;
+        const [users] = await pool.query('SELECT name FROM users WHERE id = ?', [studentId]);
+        if (users.length === 0) return res.status(404).json({ error: 'Student not found' });
+
+        let mentorName = 'MentorHub Platform';
+        try {
+            const [mentors] = await pool.query(
+                `SELECT u.name FROM users u JOIN mentor_student_allocations msa ON msa.mentor_id = u.id WHERE msa.student_id = ? LIMIT 1`,
+                [studentId]
+            );
+            if (mentors.length > 0) mentorName = mentors[0].name;
+        } catch {}
+
+        if (parseFloat(score) < parseFloat(passingScore)) {
+            return res.json({ success: false, reason: 'Score below passing threshold', score, passingScore });
+        }
+
+        const result = await certificateService.issueCertificate({
+            studentId, studentName: users[0].name, mentorName,
+            type, sourceId, sourceTitle,
+            score: parseFloat(score), passingScore: parseFloat(passingScore)
+        });
+
+        if (!result.alreadyExists) {
+            await webhookService.fireEvent('certificate_issued', {
+                studentId, studentName: users[0].name, sourceTitle, score, certificateId: result.certificateId
+            });
+        }
+
+        res.json({ success: true, ...result });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// GET /api/certificates/verify/:code — public verification
+app.get('/api/certificates/verify/:code', async (req, res) => {
+    try {
+        const cert = await certificateService.verifyCertificate(req.params.code);
+        if (!cert) return res.status(404).json({ valid: false, error: 'Certificate not found' });
+        res.json({ valid: cert.valid, certificate: cert });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// DELETE /api/certificates/:certId/revoke — admin only
+app.delete('/api/certificates/:certId/revoke', authenticate, authorize('admin'), async (req, res) => {
+    try {
+        const result = await certificateService.revokeCertificate(req.params.certId);
+        res.json(result);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// POST /api/certificates/:certId/regenerate — re-generate PDF with latest design
+app.post('/api/certificates/:certId/regenerate', authenticate, async (req, res) => {
+    try {
+        // Students can regenerate their own; admins can regenerate any
+        const result = await certificateService.regenerateCertificate(req.params.certId);
+        res.json(result);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// =====================================================
+// CERTIFICATE BULK OPERATIONS
+// =====================================================
+
+// GET /api/certificates/passed-students — get all students who passed a specific test
+app.get('/api/certificates/passed-students', authenticate, authorize('admin', 'mentor'), async (req, res) => {
+    try {
+        const { type, sourceId } = req.query;
+        if (!type || !sourceId) return res.status(400).json({ error: 'type and sourceId required' });
+
+        let students = [];
+        if (type === 'skill_test') {
+            const [rows] = await pool.query(
+                `SELECT ss.student_id, u.name as student_name, u.email, u.batch, ss.score, ss.status
+                 FROM skill_submissions ss
+                 JOIN users u ON u.id = ss.student_id
+                 WHERE ss.skill_test_id = ? AND ss.status = 'passed'
+                 ORDER BY ss.score DESC`,
+                [sourceId]
+            );
+            students = rows;
+        } else if (type === 'aptitude_test') {
+            const [rows] = await pool.query(
+                `SELECT asub.student_id, u.name as student_name, u.email, u.batch, asub.score, asub.status
+                 FROM aptitude_submissions asub
+                 JOIN users u ON u.id = asub.student_id
+                 WHERE asub.test_id = ? AND asub.status = 'passed'
+                 ORDER BY asub.score DESC`,
+                [sourceId]
+            );
+            students = rows;
+        } else if (type === 'global_test') {
+            const [rows] = await pool.query(
+                `SELECT gs.student_id, u.name as student_name, u.email, u.batch, gs.overall_percentage as score, gs.status
+                 FROM global_test_submissions gs
+                 JOIN users u ON u.id = gs.student_id
+                 WHERE gs.test_id = ? AND gs.status = 'passed'
+                 ORDER BY gs.overall_percentage DESC`,
+                [sourceId]
+            );
+            students = rows;
+        }
+
+        // Check which students already have certificates for this test
+        const [existingCerts] = await pool.query(
+            `SELECT student_id FROM certificates WHERE source_id = ? AND certificate_type = ?`,
+            [sourceId, type]
+        );
+        const certifiedSet = new Set(existingCerts.map(c => c.student_id));
+
+        const result = students.map(s => ({
+            ...s,
+            alreadyCertified: certifiedSet.has(s.student_id)
+        }));
+
+        res.json({ success: true, students: result, total: result.length });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// POST /api/certificates/bulk-issue — issue certificates to multiple students at once
+app.post('/api/certificates/bulk-issue', authenticate, authorize('admin', 'mentor'), async (req, res) => {
+    try {
+        const { studentIds, type, sourceId, sourceTitle, passingScore } = req.body;
+        if (!studentIds || !Array.isArray(studentIds) || !type || !sourceId || !sourceTitle) {
+            return res.status(400).json({ error: 'studentIds (array), type, sourceId, sourceTitle required' });
+        }
+
+        const results = { issued: 0, skipped: 0, failed: 0, errors: [] };
+
+        for (const studentId of studentIds) {
+            try {
+                // Get student info
+                const [users] = await pool.query('SELECT name FROM users WHERE id = ?', [studentId]);
+                if (users.length === 0) { results.failed++; results.errors.push(`Student ${studentId} not found`); continue; }
+
+                // Get student's score for this test
+                let score = 0;
+                if (type === 'skill_test') {
+                    const [s] = await pool.query('SELECT score FROM skill_submissions WHERE skill_test_id = ? AND student_id = ? AND status = ? ORDER BY score DESC LIMIT 1', [sourceId, studentId, 'passed']);
+                    score = s.length > 0 ? parseFloat(s[0].score) : 0;
+                } else if (type === 'aptitude_test') {
+                    const [s] = await pool.query('SELECT score FROM aptitude_submissions WHERE test_id = ? AND student_id = ? AND status = ? ORDER BY score DESC LIMIT 1', [sourceId, studentId, 'passed']);
+                    score = s.length > 0 ? parseFloat(s[0].score) : 0;
+                } else if (type === 'global_test') {
+                    const [s] = await pool.query('SELECT overall_percentage as score FROM global_test_submissions WHERE test_id = ? AND student_id = ? AND status = ? ORDER BY overall_percentage DESC LIMIT 1', [sourceId, studentId, 'passed']);
+                    score = s.length > 0 ? parseFloat(s[0].score) : 0;
+                }
+
+                if (score <= 0) { results.skipped++; continue; }
+
+                // Get mentor name
+                let mentorName = 'MentorHub Platform';
+                try {
+                    const [mentors] = await pool.query(
+                        `SELECT u.name FROM users u JOIN mentor_student_allocations msa ON msa.mentor_id = u.id WHERE msa.student_id = ? LIMIT 1`,
+                        [studentId]
+                    );
+                    if (mentors.length > 0) mentorName = mentors[0].name;
+                } catch {}
+
+                const result = await certificateService.issueCertificate({
+                    studentId, studentName: users[0].name, mentorName,
+                    type, sourceId, sourceTitle,
+                    score, passingScore: parseFloat(passingScore || 70)
+                });
+
+                if (result.alreadyExists) {
+                    results.skipped++;
+                } else {
+                    results.issued++;
+                }
+            } catch (e) {
+                results.failed++;
+                results.errors.push(`${studentId}: ${e.message}`);
+            }
+        }
+
+        res.json({ success: true, ...results });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// DELETE /api/certificates/bulk-delete — delete multiple certificates at once
+app.delete('/api/certificates/bulk-delete', authenticate, authorize('admin'), async (req, res) => {
+    try {
+        const { certIds } = req.body;
+        if (!certIds || !Array.isArray(certIds) || certIds.length === 0) {
+            return res.status(400).json({ error: 'certIds array required' });
+        }
+
+        let deleted = 0, failed = 0;
+        for (const certId of certIds) {
+            try {
+                await certificateService.deleteCertificate(certId);
+                deleted++;
+            } catch {
+                failed++;
+            }
+        }
+        res.json({ success: true, deleted, failed });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// =====================================================
+// AI CODE REVIEW ROUTES
+// =====================================================
+
+// POST /api/ai-review/trigger — trigger a review for a submission
+app.post('/api/ai-review/trigger', authenticate, async (req, res) => {
+    try {
+        const { submissionId, studentId, code, language, problemTitle, problemDescription } = req.body;
+        if (!submissionId || !studentId || !code) {
+            return res.status(400).json({ error: 'submissionId, studentId, and code are required' });
+        }
+        const result = await aiCodeReviewService.triggerReview(
+            submissionId, studentId, code, language, problemTitle, problemDescription
+        );
+        res.json({ success: true, ...result });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// GET /api/ai-review/submission/:submissionId — get AI review for a submission
+app.get('/api/ai-review/submission/:submissionId', authenticate, async (req, res) => {
+    try {
+        const review = await aiCodeReviewService.getReviewForSubmission(req.params.submissionId);
+        if (!review) return res.json({ success: true, review: null, message: 'No AI review yet' });
+        res.json({ success: true, review });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// GET /api/ai-review/student/:studentId — all reviews for a student
+app.get('/api/ai-review/student/:studentId', authenticate, async (req, res) => {
+    try {
+        const reviews = await aiCodeReviewService.getStudentReviews(req.params.studentId, parseInt(req.query.limit) || 20);
+        res.json({ success: true, reviews, total: reviews.length });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// GET /api/ai-review/pending — mentor sees pending unapproved reviews
+app.get('/api/ai-review/pending', authenticate, authorize('mentor', 'admin'), async (req, res) => {
+    try {
+        const mentorId = req.user.id;
+        const pending = await aiCodeReviewService.getPendingReviews(mentorId, parseInt(req.query.limit) || 50);
+        res.json({ success: true, reviews: pending, total: pending.length });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// PATCH /api/ai-review/:reviewId/approve — mentor approves review
+app.patch('/api/ai-review/:reviewId/approve', authenticate, authorize('mentor', 'admin'), async (req, res) => {
+    try {
+        const result = await aiCodeReviewService.approveReview(req.params.reviewId, req.user.id);
+        res.json(result);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// PATCH /api/ai-review/comment/:commentId/resolve — mentor resolves a comment
+app.patch('/api/ai-review/comment/:commentId/resolve', authenticate, authorize('mentor', 'admin'), async (req, res) => {
+    try {
+        const result = await aiCodeReviewService.resolveComment(req.params.commentId, req.user.id);
+        res.json(result);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// ─────────────────────────────────────────────────────────
+// AI REVIEW FOR TEST SUBMISSIONS (Skills, Aptitude, Global)
+// ─────────────────────────────────────────────────────────
+
+// GET /api/ai-review/test/skill/:testSubmissionId — get AI review for skill test
+app.get('/api/ai-review/test/skill/:testSubmissionId', authenticate, async (req, res) => {
+    try {
+        const review = await aiCodeReviewService.getReviewForTestSubmission(req.params.testSubmissionId, 'skill-test');
+        if (!review) return res.json({ success: true, review: null, message: 'No AI review yet' });
+        res.json({ success: true, review });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// GET /api/ai-review/test/global/:testSubmissionId — get AI review for global test
+app.get('/api/ai-review/test/global/:testSubmissionId', authenticate, async (req, res) => {
+    try {
+        const review = await aiCodeReviewService.getReviewForTestSubmission(req.params.testSubmissionId, 'global-test');
+        if (!review) return res.json({ success: true, review: null, message: 'No AI review yet' });
+        res.json({ success: true, review });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// GET /api/ai-review/tests/student/:studentId — all test AI reviews for a student
+app.get('/api/ai-review/tests/student/:studentId', authenticate, async (req, res) => {
+    try {
+        const testType = req.query.type || null; // 'skill-test', 'global-test', etc.
+        const reviews = await aiCodeReviewService.getStudentTestReviews(
+            req.params.studentId,
+            testType,
+            parseInt(req.query.limit) || 20
+        );
+        res.json({ success: true, reviews, total: reviews.length });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// =====================================================
+// WEBHOOK ROUTES
+// =====================================================
+
+// GET /api/webhooks/events — list all supported events
+app.get('/api/webhooks/events', authenticate, authorize('admin'), (req, res) => {
+    res.json({ success: true, events: WebhookService.EVENTS });
+});
+
+// GET /api/webhooks — list all webhooks for admin
+app.get('/api/webhooks', authenticate, authorize('admin'), async (req, res) => {
+    try {
+        const adminId = req.user.id;
+        const webhooks = await webhookService.getWebhooks(adminId);
+        res.json({ success: true, webhooks, total: webhooks.length });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// POST /api/webhooks — create webhook
+app.post('/api/webhooks', authenticate, authorize('admin'), async (req, res) => {
+    try {
+        const { name, url, secret, events } = req.body;
+        if (!name || !url || !secret || !events || !events.length) {
+            return res.status(400).json({ error: 'name, url, secret, and events[] are required' });
+        }
+        const result = await webhookService.createWebhook(req.user.id, { name, url, secret, events });
+        res.status(201).json({ success: true, ...result });
+    } catch (err) {
+        res.status(400).json({ error: err.message });
+    }
+});
+
+// PUT /api/webhooks/:webhookId — update webhook
+app.put('/api/webhooks/:webhookId', authenticate, authorize('admin'), async (req, res) => {
+    try {
+        const result = await webhookService.updateWebhook(req.params.webhookId, req.body);
+        res.json(result);
+    } catch (err) {
+        res.status(400).json({ error: err.message });
+    }
+});
+
+// DELETE /api/webhooks/:webhookId — delete webhook
+app.delete('/api/webhooks/:webhookId', authenticate, authorize('admin'), async (req, res) => {
+    try {
+        const result = await webhookService.deleteWebhook(req.params.webhookId);
+        res.json(result);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// POST /api/webhooks/:webhookId/test — send test delivery
+app.post('/api/webhooks/:webhookId/test', authenticate, authorize('admin'), async (req, res) => {
+    try {
+        const result = await webhookService.testWebhook(req.params.webhookId);
+        res.json({ success: true, ...result });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// GET /api/webhooks/:webhookId/deliveries — get delivery log
+app.get('/api/webhooks/:webhookId/deliveries', authenticate, authorize('admin'), async (req, res) => {
+    try {
+        const deliveries = await webhookService.getDeliveries(req.params.webhookId, parseInt(req.query.limit) || 50);
+        res.json({ success: true, deliveries, total: deliveries.length });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
 
 // Start server
 (async () => {

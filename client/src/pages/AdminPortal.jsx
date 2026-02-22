@@ -18,6 +18,10 @@ import SkillSubmissions from '../components/SkillSubmissions'
 import AdminPlagiarismDashboard from '../components/AdminPlagiarismDashboard'
 import ExportReports from '../components/ExportReports'
 import CodeReviewPanel from '../components/CodeReviewPanel'
+import { MentorAIReviewDashboard } from '../components/AICodeReview'
+// New Features
+import WebhookManager from '../components/WebhookManager'
+import { AdminCertificateManager } from '../components/CertificatePortal'
 import { useAuth } from '../App'
 import { useI18n } from '../services/i18n.jsx'
 import axios from 'axios'
@@ -174,7 +178,8 @@ function AdminPortal() {
                 { path: '/admin/live-monitoring', label: t('live_monitoring'), icon: <Activity size={20} /> },
                 { path: '/admin/analytics', label: t('analytics'), icon: <TrendingUp size={20} /> },
                 { path: '/admin/plagiarism', label: 'Plagiarism Dashboard', icon: <Shield size={20} /> },
-                { path: '/admin/code-reviews', label: 'Code Reviews', icon: <Github size={20} /> }
+                { path: '/admin/code-reviews', label: 'Code Reviews', icon: <Github size={20} /> },
+                { path: '/admin/ai-reviews', label: 'AI Code Reviews', icon: <Bot size={20} /> }
             ]
         },
         {
@@ -185,6 +190,8 @@ function AdminPortal() {
                 { path: '/admin/operations', label: t('admin_operations'), icon: <Settings size={20} /> },
                 { path: '/admin/user-management', label: 'User Management', icon: <Shield size={20} /> },
                 { path: '/admin/messaging', label: 'Messaging', icon: <Mail size={20} />, badge: unreadCount },
+                { path: '/admin/certificates', label: 'Issue Certificates', icon: <Award size={20} /> },
+                { path: '/admin/webhooks', label: 'Webhook Manager', icon: <Zap size={20} /> },
                 { path: '/admin/reports', label: 'Export Reports', icon: <Download size={20} /> }
             ]
         },
@@ -210,8 +217,11 @@ function AdminPortal() {
                 <Route path="/operations" element={<AdminOperations />} />
                 <Route path="/user-management" element={<UserManagement />} />
                 <Route path="/messaging" element={<DirectMessaging currentUser={{ ...user, role: 'admin' }} />} />
+                <Route path="/webhooks" element={<WebhookManager />} />
+                <Route path="/certificates" element={<AdminCertificateManager />} />
                 <Route path="/plagiarism" element={<AdminPlagiarismDashboard adminId={user?.id} adminName={user?.name} />} />
                 <Route path="/code-reviews" element={<AdminCodeReviews />} />
+                <Route path="/ai-reviews" element={<MentorAIReviewDashboard user={user} />} />
                 <Route path="/reports" element={<ExportReports />} />
             </Routes>
         </DashboardLayout>

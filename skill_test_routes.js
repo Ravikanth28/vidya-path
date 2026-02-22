@@ -883,6 +883,28 @@ function registerSkillTestRoutes(app, pool) {
                 [JSON.stringify(currentSubmissions), attemptId]
             );
 
+            // Auto-trigger AI Code Review in background (non-blocking)
+            try {
+                if (code && attempt.student_id && problemId) {
+                    global.aiCodeReviewService.triggerReview(
+                        null, // submissionId (not used for skill tests)
+                        attempt.student_id,
+                        code,
+                        language,
+                        problem.title || problem.name || `Skill Test - Problem ${problemId}`,
+                        problem.description || '',
+                        `skill-${attemptId}-${problemId}`, // testSubmissionId
+                        'skill-test'
+                    ).then(() => {
+                        console.log(`[AI Review] Auto-triggered for skill test submission skill-${attemptId}-${problemId}`);
+                    }).catch(err => {
+                        console.error(`[AI Review] Auto-trigger failed for skill test:`, err.message);
+                    });
+                }
+            } catch (aiErr) {
+                console.error('Skill test AI review auto-trigger error:', aiErr.message);
+            }
+
             res.json({
                 success: true,
                 all_passed: allPassed,
@@ -1390,6 +1412,50 @@ function registerSkillTestRoutes(app, pool) {
                         await advanced.gamificationService.updateStreak(studentId);
                         console.log(`🎮 Gamification: Skill Test points awarded to student ${studentId}`);
                     }
+
+                    // ── Auto-issue certificate if overall status = completed (passed all stages)
+                    if (overallStatus === 'completed') {
+                        try {
+                            const certService = global.certificateService;
+                            const hookService = global.webhookService;
+                            if (certService) {
+                                const [userRows] = await pool.query('SELECT name FROM users WHERE id = ?', [studentId]);
+                                let mentorName = 'MentorHub Platform';
+                                try {
+                                    const [mentorRows] = await pool.query(
+                                        `SELECT u.name FROM users u JOIN mentor_student_allocations msa ON msa.mentor_id = u.id WHERE msa.student_id = ? LIMIT 1`,
+                                        [studentId]
+                                    );
+                                    if (mentorRows.length > 0) mentorName = mentorRows[0].name;
+                                } catch (_) {}
+
+                                if (userRows.length > 0) {
+                                    const overallInterviewPct = Math.round(interviewScore * 10); // score is /10, convert to %
+                                    const certResult = await certService.issueCertificate({
+                                        studentId,
+                                        studentName: userRows[0].name,
+                                        mentorName,
+                                        type: 'skill_test',
+                                        sourceId: attempt.test_id,
+                                        sourceTitle: attempt.test_title || 'Skill Assessment',
+                                        score: overallInterviewPct,
+                                        passingScore: (attempt.interview_passing_score || 6) * 10
+                                    });
+                                    if (!certResult.alreadyExists && hookService) {
+                                        await hookService.fireEvent('certificate_issued', {
+                                            studentId, studentName: userRows[0].name,
+                                            sourceTitle: attempt.test_title, score: overallInterviewPct,
+                                            certificateId: certResult.certificateId
+                                        });
+                                    }
+                                    console.log(`🏆 Certificate issued: ${userRows[0].name} completed skill test "${attempt.test_title}"`);
+                                }
+                            }
+                        } catch (certErr) {
+                            console.warn('⚠️ Certificate auto-issue failed (non-blocking):', certErr.message);
+                        }
+                    }
+                    // ─────────────────────────────────────────────────────────────
 
                     // Trigger full refresh (also clears cache)
                     await refreshStudentDashboard(studentId);

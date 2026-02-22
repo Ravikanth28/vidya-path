@@ -8,6 +8,7 @@ import {
     BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
     RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar, Cell, PieChart, Pie
 } from 'recharts';
+import TestAIReviewSection from './TestAIReviewSection';
 
 const API = import.meta.env.VITE_API_URL || 'http://localhost:3000';
 
@@ -385,6 +386,26 @@ export default function SkillTestReport({ attemptId, onBack, initialData = null,
                                     </div>
                                 )}
                             </div>
+                        ))}
+                    </div>
+                </div>
+            )}
+
+            {/* ═══════════════════════ AI CODE REVIEWS FOR CODING PROBLEMS ═══════════════════════ */}
+            {attempt.coding_submissions && Object.keys(attempt.coding_submissions).length > 0 && (
+                <div style={{ marginBottom: '32px' }}>
+                    <h3 style={{ margin: '0 0 20px', fontSize: '18px', fontWeight: 700, color: '#f1f5f9', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <Brain color="#8b5cf6" size={20} /> AI Code Reviews
+                    </h3>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                        {Object.entries(attempt.coding_submissions).map(([problemId, submission]) => (
+                            <TestAIReviewSection
+                                key={problemId}
+                                testSubmissionId={`skill-${attemptId}-${problemId}`}
+                                testType="skill-test"
+                                testTitle={attempt.test_title || 'Skill Test'}
+                                problemTitle={submission.problem_title || `Problem ${problemId}`}
+                            />
                         ))}
                     </div>
                 </div>

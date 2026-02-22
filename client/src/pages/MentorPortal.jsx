@@ -20,6 +20,8 @@ import { LearningCurveChart } from '../components/AnalyticsComponents'
 import AvailabilityCalendar from '../components/AvailabilityCalendar'
 import CodeReviewPanel from '../components/CodeReviewPanel'
 import ExportReports from '../components/ExportReports'
+// New Features
+import { MentorAIReviewDashboard } from '../components/AICodeReview'
 import './Portal.css'
 
 const API_BASE = (import.meta.env.VITE_API_URL || 'http://localhost:3000') + '/api'
@@ -132,7 +134,8 @@ function MentorPortal() {
                 { path: '/mentor/all-submissions', label: t('all_submissions'), icon: <List size={20} /> },
                 { path: '/mentor/analytics', label: t('analytics'), icon: <TrendingUp size={20} /> },
                 { path: '/mentor/live-monitoring', label: t('live_monitoring'), icon: <Activity size={20} /> },
-                { path: '/mentor/code-reviews', label: 'Code Reviews', icon: <Code size={20} /> }
+                { path: '/mentor/code-reviews', label: 'Code Reviews', icon: <Code size={20} /> },
+                { path: '/mentor/ai-reviews', label: 'AI Code Reviews', icon: <Zap size={20} /> }
             ]
         },
         {
@@ -164,6 +167,7 @@ function MentorPortal() {
                 <Route path="/messaging" element={<DirectMessaging currentUser={user} />} />
                 <Route path="/code-reviews" element={<MentorCodeReviews user={user} />} />
                 <Route path="/availability" element={<AvailabilityCalendar />} />
+                <Route path="/ai-reviews" element={<MentorAIReviewDashboard user={user} />} />
                 <Route path="/reports" element={<ExportReports />} />
             </Routes>
         </DashboardLayout>

@@ -27,6 +27,9 @@ import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContai
 // Advanced Features Components
 import { GamificationProfile, AchievementBadges, GamificationLeaderboard } from '@/components/GamificationComponents'
 import { RiskScoreCard, RecommendationsPanel } from '@/components/AnalyticsComponents'
+// New Features
+import CertificatePortal from '@/components/CertificatePortal'
+import { StudentAIReviewDashboard } from '@/components/AICodeReview'
 import './Portal.css'
 
 const API_BASE = (import.meta.env.VITE_API_URL || 'http://localhost:3000') + '/api'
@@ -151,6 +154,7 @@ function StudentPortal() {
                 { path: '/student/analytics', label: t('my_analytics'), icon: <TrendingUp size={20} /> },
                 { path: '/student/leaderboard', label: 'Leaderboard', icon: <Trophy size={20} /> },
                 { path: '/student/badges', label: 'Skill Badges', icon: <Award size={20} /> },
+                { path: '/student/certificates', label: 'My Certificates', icon: <Award size={20} /> },
                 { path: '/student/reports', label: 'Export Reports', icon: <Download size={20} /> }
             ]
         },
@@ -160,6 +164,7 @@ function StudentPortal() {
             defaultExpanded: false,
             children: [
                 { path: '/student/code-reviews', label: 'Code Reviews', icon: <Github size={20} /> },
+                { path: '/student/ai-reviews', label: 'AI Code Reviews', icon: <Zap size={20} /> },
                 { path: '/student/plagiarism', label: 'Plagiarism Check', icon: <AlertTriangle size={20} /> },
                 { path: '/student/messaging', label: 'Direct Messages', icon: <MessageSquare size={20} />, badge: unreadCount }
             ]
@@ -191,9 +196,11 @@ function StudentPortal() {
                 <Route path="/badges" element={<AchievementBadges studentId={user?.id} />} />
                 <Route path="/reports" element={<ExportReports user={user} />} />
                 <Route path="/code-reviews" element={<StudentCodeReviews user={user} />} />
+                <Route path="/ai-reviews" element={<StudentAIReviewDashboard user={user} />} />
                 <Route path="/plagiarism" element={<PlagiarismChecker user={user} />} />
                 <Route path="/messaging" element={<DirectMessaging currentUser={user} />} />
                 <Route path="/availability" element={<MentorAvailabilityView user={user} />} />
+                <Route path="/certificates" element={<CertificatePortal user={user} />} />
                 <Route path="/features" element={<FeaturesShowcase />} />
             </Routes>
         </DashboardLayout>
