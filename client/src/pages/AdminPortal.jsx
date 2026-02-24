@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { Routes, Route, useLocation } from 'react-router-dom'
-import { LayoutDashboard, Users, Trophy, Award, List, Search, Send, Activity, CheckCircle, Check, TrendingUp, Clock, Globe, FileCode, Plus, X, Code, ChevronRight, Upload, AlertTriangle, Zap, Target, Sparkles, Bot, Wand2, Eye, FileText, BarChart2, RefreshCw, Calendar, HelpCircle, Trash2, Save, Brain, XCircle, Shield, Download, ClipboardList, Settings, Database, Mail, MessageSquare, Github, ExternalLink, BarChart3, Video } from 'lucide-react'
+import { LayoutDashboard, Users, Trophy, Award, List, Search, Send, Activity, CheckCircle, Check, TrendingUp, Clock, Globe, FileCode, Plus, X, Code, ChevronRight, Upload, AlertTriangle, Zap, Target, Sparkles, Bot, Wand2, Eye, FileText, BarChart2, RefreshCw, Calendar, HelpCircle, Trash2, Save, Brain, XCircle, Shield, Download, ClipboardList, Settings, Database, Mail, MessageSquare, Github, ExternalLink, BarChart3, Video, Building2 } from 'lucide-react'
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, BarChart, Bar, Legend } from 'recharts'
 import DashboardLayout from '../components/DashboardLayout'
 import { AIChatbot, AIFloatingButton } from '../components/AIChatbot'
@@ -22,6 +22,7 @@ import { MentorAIReviewDashboard } from '../components/AICodeReview'
 // New Features
 import WebhookManager from '../components/WebhookManager'
 import { AdminCertificateManager } from '../components/CertificatePortal'
+import { CompanyTestManager } from '../components/CompanyFeatures'
 import { useAuth } from '../App'
 import { useI18n } from '../services/i18n.jsx'
 import axios from 'axios'
@@ -131,6 +132,10 @@ function AdminPortal() {
                 setTitle('Skill Test Submissions')
                 setSubtitle('View all student skill test results')
                 break
+            case 'company-tests':
+                setTitle('Company Tests')
+                setSubtitle('Manage company-specific technical interviews')
+                break
             default:
                 setTitle(t('dashboard'))
                 setSubtitle(t('system_administration'))
@@ -148,7 +153,8 @@ function AdminPortal() {
                 { path: '/admin/global-problems', label: t('global_problems'), icon: <FileCode size={20} /> },
                 { path: '/admin/aptitude-tests', label: t('aptitude_tests'), icon: <Target size={20} /> },
                 { path: '/admin/global-tests', label: t('global_complete_tests'), icon: <ClipboardList size={20} /> },
-                { path: '/admin/skill-tests', label: 'Skill Tests', icon: <Brain size={20} /> }
+                { path: '/admin/skill-tests', label: 'Skill Tests', icon: <Brain size={20} /> },
+                { path: '/admin/company-tests', label: 'Company Tests', icon: <Building2 size={20} /> }
             ]
         },
         {
@@ -223,6 +229,7 @@ function AdminPortal() {
                 <Route path="/code-reviews" element={<AdminCodeReviews />} />
                 <Route path="/ai-reviews" element={<MentorAIReviewDashboard user={user} />} />
                 <Route path="/reports" element={<ExportReports />} />
+                <Route path="/company-tests" element={<CompanyTestManager />} />
             </Routes>
         </DashboardLayout>
     )

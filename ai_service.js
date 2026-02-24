@@ -954,6 +954,229 @@ Evaluate if the student's query is correct. Return ONLY valid JSON.`
     }
 }
 
+// ═══════════════════════════════════════════
+//  COMPANY-SPECIFIC FEATURES
+// ═══════════════════════════════════════════
+
+/**
+ * Generate a detailed career roadmap for a specific company
+ */
+async function generateCompanyRoadmap(companyName) {
+    const messages = [
+        {
+            role: 'system',
+            content: `You are an expert career counselor and placement officer. Create a detailed, visualized roadmap for a student to prepare for ${companyName}.
+            The roadmap should be comprehensive, actionable, and specific to ${companyName}'s current hiring patterns.
+            
+            Return a JSON object with:
+            - "company_overview": string (Brief about the company and its culture)
+            - "hiring_process": array of strings (Steps in their recruitment)
+            - "skills_required": object with keys "Basic", "Intermediate", "Advanced", each an array of strings
+            - "preparation_strategy": array of objects with "phase" (e.g., Week 1, Week 2), "topic", "resources", "goal"
+            - "important_topics": array of objects with "subject" (e.g., DSA, DBMS, OS), "topics" (array of strings)
+            - "previous_year_questions": array of objects with "round", "question", "type" (MCQ, Coding, Theory)
+            - "interview_tips": array of strings
+            - "success_metrics": array of strings (What recruiters look for)`
+        },
+        {
+            role: 'user',
+            content: `Generate a complete preparation roadmap for ${companyName}. [Seed: ${getRandomSeed()}]`
+        }
+    ];
+
+    try {
+        const response = await callCerebras(messages, { temperature: 0.8, max_tokens: 4000 });
+        const roadmap = parseJSON(response);
+        if (roadmap && roadmap.hiring_process) return roadmap;
+        throw new Error('Invalid roadmap format');
+    } catch (err) {
+        console.error('Roadmap generation failed:', err.message);
+        return {
+            company_overview: `Preparation roadmap for ${companyName}.`,
+            hiring_process: ['Aptitude Test', 'Technical Interview', 'HR Interview'],
+            skills_required: { Basic: ['Data Structures'], Intermediate: ['Algorithms'], Advanced: ['System Design'] },
+            preparation_strategy: [{ phase: 'Week 1', topic: 'Fundamentals', resources: 'Standard docs', goal: 'Master basic logic' }],
+            important_topics: [{ subject: 'DSA', topics: ['Arrays', 'Strings', 'Linked Lists'] }],
+            previous_year_questions: [{ round: 'Technical', question: 'Explain the difference between SQL and NoSQL.', type: 'Theory' }],
+            interview_tips: ['Be confident', 'Explain your logic clearly'],
+            success_metrics: ['Problem solving ability', 'Communication skills']
+        };
+    }
+}
+
+/**
+ * Generate the next question in a long-form company-specific technical interview
+ */
+async function generateCompanyInterviewQuestion(companyName, chatHistory, stage, studentName = 'Student') {
+    const messages = [
+        {
+            role: 'system',
+            content: `You are a Senior Technical Interviewer from ${companyName}. You are conducting a 45-60 minute comprehensive technical interview.
+            
+            YOUR GOAL: Conduct a realistic, challenging, and professional interview that covers:
+            1. Core Concepts (CS Fundamentals, Company-specific tech stack)
+            2. Live Coding Challenge (The student will write code)
+            3. SQL/Database Querying
+            4. Scenario-based Architecture or Problem Solving
+            
+            INTERVIEW STAGES: 'intro', 'concepts', 'coding', 'sql', 'closing'
+            CURRENT STAGE: ${stage}
+            
+            INSTRUCTIONS:
+            - Stay in character as an interviewer from ${companyName}.
+            - Adapt your questions based on the student's previous answers.
+            - If they struggle, give subtle hints. If they find it easy, increase difficulty.
+            - Ask ONE question at a time.
+            - Provide a transition when moving between stages.
+            
+            Return a JSON object with:
+            - "message": string (What you say to the student)
+            - "type": "question" | "feedback" | "hint" | "transition"
+            - "expected_skills": array of strings
+            - "interview_progress": number (0-100 indicating overall interview progress)
+            - "coding_context": object (Optional: if this is a coding question, provide { "title": string, "description": string, "starter_code": string })
+            - "sql_context": object (Optional: if this is a SQL question, provide { "table_schema": string, "goal": string })`
+        },
+        {
+            role: 'user',
+            content: `[Company: ${companyName}, Student: ${studentName}]
+            
+            CHAT HISTORY:
+            ${JSON.stringify(chatHistory.slice(-10))}
+            
+            Generate the next part of the interview.`
+        }
+    ];
+
+    try {
+        const response = await callCerebras(messages, { temperature: 0.85, max_tokens: 2048 });
+        const data = parseJSON(response);
+        if (data && data.message) return data;
+        return { message: "Could you tell me more about your experience with technical problem solving?", type: "question", interview_progress: 10 };
+    } catch (err) {
+        console.error('Company interview question failed:', err.message);
+        return { message: "I'm sorry, I missed that. Can you repeat or tell me about your favorite project?", type: "question", interview_progress: 10 };
+    }
+}
+
+/**
+ * Evaluate the entire company interview session
+ */
+async function evaluateCompanyInterview(companyName, chatHistory, codingSubmissions = [], sqlSubmissions = []) {
+    const messages = [
+        {
+            role: 'system',
+            content: `You are the Hiring Committee at ${companyName}. Evaluate this 1-hour candidate interview session.
+            
+            Return a JSON object with:
+            - "decision": "Hired" | "Strong Hire" | "Neutral" | "Rejected"
+            - "overall_score": number (0-100)
+            - "technical_accuracy": number (0-100)
+            - "communication": number (0-100)
+            - "problem_solving": number (0-100)
+            - "strengths": array of strings (Based ONLY on their performance in this session)
+            - "weaknesses": array of strings (Identify their specific technical gaps from the chat/coding)
+            - "stage_breakdown": object with scores for 'concepts', 'coding', 'sql'
+            - "detailed_feedback": string (A professional review in 4-5 bullet points starting with keywords like [Communication]. Be specific about what happened in the chat.)
+            - "study_plan": array of objects (Provide EXACTLY 5 high-quality objects. MUST be personalized to the weaknesses identified above. Format: { "topic": "Name", "action": "Specific instructions to fix their identified gap", "duration": "E.g. 3 Days", "resources": "Specific search terms or links" }. No generic advice like 'practice coding'.)
+            - "hire_reasoning": string`
+        },
+        {
+            role: 'user',
+            content: `Session Data for ${companyName} Interview:
+            
+            CHAT HISTORY:
+            ${JSON.stringify(chatHistory)}
+            
+            CODING SUBMISSIONS:
+            ${JSON.stringify(codingSubmissions)}
+            
+            SQL SUBMISSIONS:
+            ${JSON.stringify(sqlSubmissions)}
+            
+            Provide a complete evaluation.`
+        }
+    ];
+
+    try {
+        const response = await callCerebras(messages, { temperature: 0.3, max_tokens: 3000 });
+        const evaluation = parseJSON(response);
+        if (evaluation && evaluation.decision) return evaluation;
+        return { decision: "Neutral", overall_score: 50, detailed_feedback: "Evaluation failed." };
+    } catch (err) {
+        console.error('Evaluation failed:', err.message);
+        return { decision: "Neutral", overall_score: 50, detailed_feedback: "Evaluation service error." };
+    }
+}
+
+/**
+ * Generate 50+ questions for a SINGLE round of a company interview
+ */
+async function generateRoundQuestions(companyName, year, roundName) {
+    const messages = [
+        {
+            role: 'system',
+            content: `You are an expert placement officer. Generate a COMPREHENSIVE list of interview questions from ${companyName}'s "${roundName}" round in ${year}.
+            
+            Return a JSON object: { "questions": [ { "question": "...", "type": "MCQ|Coding|SQL|Theory|Design|Behavioral", "difficulty": "Easy|Medium|Hard", "topic": "...", "hint": "..." } ] }
+            
+            CRITICAL RULES:
+            - Generate EXACTLY 50 questions (or more)
+            - Cover diverse sub-topics within this round
+            - Mix: 30% Easy, 40% Medium, 30% Hard
+            - Each question must be detailed and specific to ${companyName}
+            - Hints should be 1-2 sentences suggesting the approach
+            - Make questions realistic — the kind actually asked in ${companyName} interviews`
+        },
+        {
+            role: 'user',
+            content: `Generate 50 detailed "${roundName}" questions from ${companyName}'s ${year} placement. [Seed: ${getRandomSeed()}]`
+        }
+    ];
+    try {
+        const response = await callCerebras(messages, { temperature: 0.9, max_tokens: 8000 });
+        const data = parseJSON(response);
+        if (data && data.questions && data.questions.length > 0) return data.questions;
+    } catch (e) { console.error(`Round "${roundName}" generation failed:`, e.message); }
+    return [{ question: `Sample ${roundName} question for ${companyName}`, type: 'Theory', difficulty: 'Medium', topic: roundName, hint: 'Review this topic thoroughly' }];
+}
+
+/**
+ * Generate a full question bank — 50+ questions PER ROUND via parallel calls
+ */
+async function generateCompanyQuestionBank(companyName, year) {
+    // Phase 1: Get the rounds list
+    const roundsPrompt = [
+        {
+            role: 'system',
+            content: `List the interview rounds for ${companyName}'s ${year} campus placement process. Return JSON: { "rounds": ["Round Name 1", "Round Name 2", ...] }. Include 5-7 rounds like: Aptitude Test, Coding Test, Technical Interview - DSA, Technical Interview - CS Fundamentals, System Design Round, HR Interview, etc. Be specific to ${companyName}'s actual process.`
+        },
+        { role: 'user', content: `What rounds does ${companyName} have in their ${year} hiring? [Seed: ${getRandomSeed()}]` }
+    ];
+
+    let roundNames = ['Aptitude Test', 'Coding Test', 'Technical Interview - DSA', 'Technical Interview - CS Fundamentals', 'System Design', 'HR Interview'];
+    try {
+        const rr = await callCerebras(roundsPrompt, { temperature: 0.5, max_tokens: 500 });
+        const parsed = parseJSON(rr);
+        if (parsed && parsed.rounds && parsed.rounds.length >= 3) roundNames = parsed.rounds;
+    } catch (e) { console.error('Rounds list failed, using defaults:', e.message); }
+
+    console.log(`📝 Generating 50+ questions for ${roundNames.length} rounds: ${roundNames.join(', ')}`);
+
+    // Phase 2: Generate 50+ questions per round IN PARALLEL
+    const roundResults = await Promise.all(
+        roundNames.map(rn => generateRoundQuestions(companyName, year, rn))
+    );
+
+    const rounds = roundNames.map((rn, i) => ({
+        round_name: rn,
+        questions: roundResults[i]
+    }));
+
+    const totalQ = rounds.reduce((s, r) => s + r.questions.length, 0);
+    return { company: companyName, year, total_questions: totalQ, rounds };
+}
+
 module.exports = {
     generateMCQQuestions,
     generateCodingProblems,
@@ -962,5 +1185,10 @@ module.exports = {
     generateInterviewQuestion,
     evaluateInterviewAnswer,
     evaluateSQLQuery,
-    generateFinalReport
+    generateFinalReport,
+    generateCompanyRoadmap,
+    generateCompanyQuestionBank,
+    generateCompanyInterviewQuestion,
+    evaluateCompanyInterview
 };
+

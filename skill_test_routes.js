@@ -1427,7 +1427,7 @@ function registerSkillTestRoutes(app, pool) {
                                         [studentId]
                                     );
                                     if (mentorRows.length > 0) mentorName = mentorRows[0].name;
-                                } catch (_) {}
+                                } catch (_) { }
 
                                 if (userRows.length > 0) {
                                     const overallInterviewPct = Math.round(interviewScore * 10); // score is /10, convert to %

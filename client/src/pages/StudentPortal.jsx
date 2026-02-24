@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { Routes, Route, useLocation } from 'react-router-dom'
-import { LayoutDashboard, ClipboardList, Code, Send, Trophy, Clock, CheckCircle, XCircle, ChevronRight, Play, Upload, FileText, Trash2, Eye, AlertTriangle, Download, Lightbulb, HelpCircle, Sparkles, Target, Zap, BookOpen, Brain, Award, X, Video, Shield, Search, BarChart3, Flame, Layers, Database, RefreshCw, TrendingUp, Radar, Users, ArrowUpRight, ArrowDownRight, Minus, PieChart, MessageSquare, Github, ExternalLink, Link2, Calendar } from 'lucide-react'
+import { LayoutDashboard, ClipboardList, Code, Send, Trophy, Clock, CheckCircle, XCircle, ChevronRight, Play, Upload, FileText, Trash2, Eye, AlertTriangle, Download, Lightbulb, HelpCircle, Sparkles, Target, Zap, BookOpen, Brain, Award, X, Video, Shield, Search, BarChart3, Flame, Layers, Database, RefreshCw, TrendingUp, Radar, Users, ArrowUpRight, ArrowDownRight, Minus, PieChart, MessageSquare, Github, ExternalLink, Link2, Calendar, Map, Building2 } from 'lucide-react'
 import DashboardLayout from '@/components/DashboardLayout'
 import AptitudeTestInterface from '@/components/AptitudeTestInterface'
 import GlobalTestInterface from '@/components/GlobalTestInterface'
@@ -30,6 +30,7 @@ import { RiskScoreCard, RecommendationsPanel } from '@/components/AnalyticsCompo
 // New Features
 import CertificatePortal from '@/components/CertificatePortal'
 import { StudentAIReviewDashboard } from '@/components/AICodeReview'
+import { CompanyRoadmap, CompanyPrep } from '@/components/CompanyFeatures'
 import './Portal.css'
 
 const API_BASE = (import.meta.env.VITE_API_URL || 'http://localhost:3000') + '/api'
@@ -124,6 +125,14 @@ function StudentPortal() {
                 setTitle('Connect Alumni')
                 setSubtitle('Network with alumni for career growth')
                 break
+            case 'company-roadmap':
+                setTitle('Company Roadmap')
+                setSubtitle('Your personalized guide to crack top companies')
+                break
+            case 'company-prep':
+                setTitle('Company Preparation')
+                setSubtitle('AI-powered interactive interview drills')
+                break
             default:
                 setTitle(t('dashboard'))
                 setSubtitle(t('welcome_back_name', { name: user?.name || '' }))
@@ -141,7 +150,9 @@ function StudentPortal() {
                 { path: '/student/assignments', label: t('coding_problems'), icon: <Code size={20} /> },
                 { path: '/student/aptitude', label: t('aptitude_tests'), icon: <Brain size={20} /> },
                 { path: '/student/global-tests', label: t('global_complete_tests'), icon: <Layers size={20} /> },
-                { path: '/student/skill-tests', label: 'Skill Tests', icon: <Target size={20} /> }
+                { path: '/student/skill-tests', label: 'Skill Tests', icon: <Target size={20} /> },
+                { path: '/student/company-roadmap', label: 'Company Roadmap', icon: <Map size={20} /> },
+                { path: '/student/company-prep', label: 'Company Prep', icon: <Building2 size={20} /> }
             ]
         },
         {
@@ -202,6 +213,8 @@ function StudentPortal() {
                 <Route path="/availability" element={<MentorAvailabilityView user={user} />} />
                 <Route path="/certificates" element={<CertificatePortal user={user} />} />
                 <Route path="/features" element={<FeaturesShowcase />} />
+                <Route path="/company-roadmap" element={<CompanyRoadmap user={user} />} />
+                <Route path="/company-prep" element={<CompanyPrep user={user} />} />
             </Routes>
         </DashboardLayout>
     )
@@ -4502,7 +4515,7 @@ function StudentCodeReviews({ user }) {
             </p>
             {submissions.map(sub => {
                 const statusColor = sub.status === 'accepted' ? '#4ade80' : sub.status === 'rejected' ? '#f87171' : '#94a3b8'
-                const statusBg   = sub.status === 'accepted' ? 'rgba(34,197,94,0.12)' : sub.status === 'rejected' ? 'rgba(239,68,68,0.12)' : 'rgba(148,163,184,0.12)'
+                const statusBg = sub.status === 'accepted' ? 'rgba(34,197,94,0.12)' : sub.status === 'rejected' ? 'rgba(239,68,68,0.12)' : 'rgba(148,163,184,0.12)'
                 return (
                     <div
                         key={sub.id}

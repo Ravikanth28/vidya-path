@@ -170,6 +170,8 @@ const pool = mysql.createPool({
     connectionLimit: 10,
     queueLimit: 0,
     enableKeepAlive: true,
+    keepAliveInitialDelay: 10000,
+    idleTimeout: 60000,
     timezone: '+00:00'
 });
 
@@ -231,7 +233,7 @@ const allowedOrigins = [
     'http://localhost:3000', // Local Backend
     'https://mentor-hub-frontend-zttb.onrender.com', // Hosted Frontend
     // Additional origins from env (comma-separated)
-    ...( process.env.CORS_ORIGINS ? process.env.CORS_ORIGINS.split(',').map(o => o.trim()) : [] ),
+    ...(process.env.CORS_ORIGINS ? process.env.CORS_ORIGINS.split(',').map(o => o.trim()) : []),
 ];
 
 app.use(cors({
@@ -268,6 +270,9 @@ setupSwagger(app);
 // Import and mount skill test routes AFTER middleware
 const skillTestRoutes = require('./skill_test_routes');
 skillTestRoutes(app, pool);
+
+const companyRoutes = require('./company_routes');
+companyRoutes(app, pool);
 
 // ==================== AUTH ROUTES ====================
 
@@ -327,8 +332,8 @@ app.post('/api/auth/login', authLimiter, validate(loginSchema), async (req, res)
         // If password is still plaintext, upgrade to bcrypt hash in background
         if (!user.password.startsWith('$2a$') && !user.password.startsWith('$2b$')) {
             hashPassword(password).then(hash => {
-                pool.query('UPDATE users SET password = ? WHERE id = ?', [hash, user.id]).catch(() => {});
-            }).catch(() => {});
+                pool.query('UPDATE users SET password = ? WHERE id = ?', [hash, user.id]).catch(() => { });
+            }).catch(() => { });
         }
 
         res.json({ success: true, token, user: responseUser });
@@ -468,7 +473,7 @@ app.get('/api/keybindings/default', authenticate, (req, res) => {
         'save': { keys: 'Ctrl+S', description: 'Save' },
         'help': { keys: 'F1', description: 'Help' }
     };
-    
+
     res.json(defaultShortcuts);
 });
 
@@ -476,7 +481,7 @@ app.get('/api/keybindings/default', authenticate, (req, res) => {
 app.get('/api/users/:id/keybindings', authenticate, async (req, res) => {
     try {
         const { id } = req.params;
-        
+
         // Check authorization
         if (req.user.id !== parseInt(id)) {
             return res.status(403).json({ error: 'Unauthorized' });
@@ -620,16 +625,16 @@ app.get('/api/mentors/:mentorId/students', async (req, res) => {
 app.get('/api/users/:id/tier', authenticate, async (req, res) => {
     try {
         const userId = req.params.id;
-        
+
         // Get user tier
         const [user] = await pool.query('SELECT id, tier, tier_start_date, tier_expiry_date FROM users WHERE id = ?', [userId]);
         if (user.length === 0) return res.status(404).json({ error: 'User not found' });
 
         const userTier = user[0];
-        
+
         // Get tier limits from tier_limits table
         const [tierLimits] = await pool.query('SELECT * FROM tier_limits WHERE tier = ?', [userTier.tier || 'free']);
-        
+
         if (tierLimits.length === 0) {
             return res.json({
                 tier: userTier.tier || 'free',
@@ -674,7 +679,7 @@ app.get('/api/users/:id/tier', authenticate, async (req, res) => {
 app.get('/api/tiers', async (req, res) => {
     try {
         const [tiers] = await pool.query('SELECT tier, daily_api_limit, code_execution_limit, submissions_per_day, file_upload_limit_mb, ai_chat_limit_daily, priority_support, features FROM tier_limits ORDER BY daily_api_limit ASC');
-        
+
         const formattedTiers = tiers.map(t => ({
             tier: t.tier,
             dailyApiLimit: t.daily_api_limit,
@@ -4141,7 +4146,7 @@ app.post('/api/global-tests/:id/submit', validate(globalTestSubmitSchema), async
                         [studentId]
                     );
                     if (mentorRows.length > 0) mentorName = mentorRows[0].name;
-                } catch (_) {}
+                } catch (_) { }
 
                 if (userRows.length > 0) {
                     certificateResult = await certificateService.issueCertificate({
@@ -10057,7 +10062,7 @@ app.patch('/api/notifications/read-multiple', authenticate, async (req, res) => 
         // Verify all belong to user
         const placeholders = notificationIds.map(() => '?').join(',');
         const params = [...notificationIds, userId];
-        
+
         const [owned] = await pool.query(
             `SELECT COUNT(*) as count FROM notifications WHERE id IN (${placeholders}) AND user_id = ?`,
             params
@@ -10129,7 +10134,7 @@ app.patch('/api/notification-preferences', authenticate, async (req, res) => {
             // Update existing
             const setClauses = Object.keys(updates).map(k => `${k} = ?`).join(', ');
             const values = [...Object.values(updates), userId];
-            
+
             await pool.query(
                 `UPDATE notification_preferences SET ${setClauses} WHERE user_id = ?`,
                 values
@@ -10322,11 +10327,11 @@ app.post('/api/reports/export', authenticate, async (req, res) => {
         const now = new Date();
         let filterDate = new Date(0);
         switch (dateRange) {
-            case 'week':    filterDate = new Date(now); filterDate.setDate(now.getDate() - 7); break;
-            case 'month':   filterDate = new Date(now); filterDate.setMonth(now.getMonth() - 1); break;
+            case 'week': filterDate = new Date(now); filterDate.setDate(now.getDate() - 7); break;
+            case 'month': filterDate = new Date(now); filterDate.setMonth(now.getMonth() - 1); break;
             case 'quarter': filterDate = new Date(now); filterDate.setMonth(now.getMonth() - 3); break;
-            case 'year':    filterDate = new Date(now); filterDate.setFullYear(now.getFullYear() - 1); break;
-            default:        filterDate = new Date(0); break;
+            case 'year': filterDate = new Date(now); filterDate.setFullYear(now.getFullYear() - 1); break;
+            default: filterDate = new Date(0); break;
         }
 
         // Fetch submissions with problem titles
@@ -10644,7 +10649,7 @@ app.get('/api/messages/conversations', authenticate, async (req, res) => {
 
         // Group conversations by participant
         const conversationMap = new Map();
-        
+
         for (const msg of messages) {
             const participantId = msg.sender_id === userId ? msg.receiver_id : msg.sender_id;
             if (!conversationMap.has(participantId)) {
@@ -10931,8 +10936,8 @@ app.post('/api/plagiarism/check', authenticate, async (req, res) => {
 
         const maxSimilarity = scoredMatches.length > 0 ? scoredMatches[0].similarity : 0;
         const verdict = maxSimilarity >= 70 ? 'PLAGIARISM_DETECTED'
-                      : maxSimilarity >= 40 ? 'SUSPICIOUS'
-                      : 'ORIGINAL';
+            : maxSimilarity >= 40 ? 'SUSPICIOUS'
+                : 'ORIGINAL';
 
         // Only surface matches >= 30% as meaningful
         const significantMatches = scoredMatches.filter(m => m.similarity >= 30).slice(0, 5);
@@ -11419,7 +11424,7 @@ app.post('/api/certificates/issue', authenticate, async (req, res) => {
                  WHERE msa.student_id = ? LIMIT 1`, [studentId]
             );
             if (mentors.length > 0) mentorName = mentors[0].name;
-        } catch {}
+        } catch { }
 
         const result = await certificateService.issueCertificate({
             studentId,
@@ -11460,7 +11465,7 @@ app.post('/api/certificates/auto-issue', authenticate, async (req, res) => {
                 [studentId]
             );
             if (mentors.length > 0) mentorName = mentors[0].name;
-        } catch {}
+        } catch { }
 
         if (parseFloat(score) < parseFloat(passingScore)) {
             return res.json({ success: false, reason: 'Score below passing threshold', score, passingScore });
@@ -11616,7 +11621,7 @@ app.post('/api/certificates/bulk-issue', authenticate, authorize('admin', 'mento
                         [studentId]
                     );
                     if (mentors.length > 0) mentorName = mentors[0].name;
-                } catch {}
+                } catch { }
 
                 const result = await certificateService.issueCertificate({
                     studentId, studentName: users[0].name, mentorName,
