@@ -108,24 +108,22 @@ const bulkDeleteSchema = z.object({
 
 const aptitudeSubmitSchema = z.object({
     studentId: z.string().min(1, 'Student ID is required'),
-    testId: z.string().min(1, 'Test ID is required'),
-    answers: z.array(z.object({
-        questionId: z.string(),
-        selectedOption: z.union([z.string(), z.number()])
-    })).min(1),
+    testId: z.string().optional(),
+    answers: z.any(),
     timeTaken: z.number().int().min(0).optional(),
-    score: z.number().min(0).max(100).optional()
-});
+    timeSpent: z.number().int().min(0).optional(),
+    score: z.number().min(0).max(100).optional(),
+    tabSwitches: z.number().optional()
+}).passthrough();
 
 const globalTestSubmitSchema = z.object({
     studentId: z.string().min(1, 'Student ID is required'),
-    testId: z.string().min(1, 'Test ID is required'),
-    answers: z.array(z.object({
-        questionId: z.string(),
-        selectedOption: z.union([z.string(), z.number()])
-    })).min(1),
-    timeTaken: z.number().int().min(0).optional()
-});
+    testId: z.string().optional(),
+    answers: z.any(),
+    timeTaken: z.number().int().min(0).optional(),
+    timeSpent: z.number().int().min(0).optional(),
+    tabSwitches: z.number().optional()
+}).passthrough();
 
 const plagiarismCheckSchema = z.object({
     submissionId: z.string().min(1, 'Submission ID is required'),
@@ -175,7 +173,11 @@ function validate(schema) {
             req.body = result.data;
             next();
         } catch (error) {
-            return res.status(400).json({ error: 'Invalid request data' });
+            console.error('[Validation] Internal error during parsing:', error.message);
+            return res.status(400).json({
+                error: 'Invalid request data',
+                message: error.message
+            });
         }
     };
 }
@@ -200,7 +202,11 @@ function validateQuery(schema) {
             req.query = result.data;
             next();
         } catch (error) {
-            return res.status(400).json({ error: 'Invalid query parameters' });
+            console.error('[ValidationQuery] Internal error during parsing:', error.message);
+            return res.status(400).json({
+                error: 'Invalid query parameters',
+                message: error.message
+            });
         }
     };
 }

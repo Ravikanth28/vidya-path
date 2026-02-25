@@ -8,21 +8,21 @@ const API_BASE = (import.meta.env.VITE_API_URL || 'http://localhost:3000') + '/a
 // Colour maps
 // ─────────────────────────────────────────────────────
 const TYPE_STYLE = {
-    bug:         { icon: <XCircle size={13} />,       color: '#f87171', bg: '#450a0a', label: 'Bug' },
-    performance: { icon: <Zap size={13} />,            color: '#fbbf24', bg: '#451a03', label: 'Performance' },
-    style:       { icon: <Paintbrush size={13} />,     color: '#a78bfa', bg: '#2e1065', label: 'Style' },
-    security:    { icon: <Shield size={13} />,          color: '#34d399', bg: '#052e16', label: 'Security' },
-    suggestion:  { icon: <Star size={13} />,            color: '#60a5fa', bg: '#1e3a5f', label: 'Suggestion' },
-    praise:      { icon: <ThumbsUp size={13} />,        color: '#34d399', bg: '#052e16', label: 'Praise' },
+    bug: { icon: <XCircle size={13} />, color: '#f87171', bg: '#450a0a', label: 'Bug' },
+    performance: { icon: <Zap size={13} />, color: '#fbbf24', bg: '#451a03', label: 'Performance' },
+    style: { icon: <Paintbrush size={13} />, color: '#a78bfa', bg: '#2e1065', label: 'Style' },
+    security: { icon: <Shield size={13} />, color: '#34d399', bg: '#052e16', label: 'Security' },
+    suggestion: { icon: <Star size={13} />, color: '#60a5fa', bg: '#1e3a5f', label: 'Suggestion' },
+    praise: { icon: <ThumbsUp size={13} />, color: '#34d399', bg: '#052e16', label: 'Praise' },
 }
 
 const SEVERITY_COLOR = { critical: '#f87171', major: '#fbbf24', minor: '#60a5fa', info: '#94a3b8' }
 
 const QUALITY_STYLE = {
-    excellent:         { color: '#34d399', bg: '#052e16', label: '⭐ Excellent' },
-    good:              { color: '#60a5fa', bg: '#1e3a5f', label: '👍 Good' },
+    excellent: { color: '#34d399', bg: '#052e16', label: '⭐ Excellent' },
+    good: { color: '#60a5fa', bg: '#1e3a5f', label: '👍 Good' },
     needs_improvement: { color: '#fbbf24', bg: '#451a03', label: '⚡ Needs Improvement' },
-    poor:              { color: '#f87171', bg: '#450a0a', label: '⚠️ Poor' },
+    poor: { color: '#f87171', bg: '#450a0a', label: '⚠️ Poor' },
 }
 
 // ─────────────────────────────────────────────────────
@@ -198,7 +198,7 @@ export default function AICodeReview({ submissionId, code = '', language = 'unkn
             {/* Filter bar */}
             <div style={{ display: 'flex', gap: '6px', marginBottom: '14px', flexWrap: 'wrap' }}>
                 {['all', 'bug', 'performance', 'style', 'security', 'suggestion', 'praise'].map(f => (
-                    <button key={f} onClick={() => setFilterType(f)} style={{ padding: '5px 13px', borderRadius: '20px', border: 'none', cursor: 'pointer', fontSize: '12px', fontWeight: 500, background: filterType === f ? '#6366f1' : '#1e293b', color: filterType === f ? 'white' : '#94a3b8', textTransform: 'capitalize', border: `1px solid ${filterType === f ? '#6366f1' : '#334155'}` }}>
+                    <button key={f} onClick={() => setFilterType(f)} style={{ padding: '5px 13px', borderRadius: '20px', cursor: 'pointer', fontSize: '12px', fontWeight: 500, background: filterType === f ? '#6366f1' : '#1e293b', color: filterType === f ? 'white' : '#94a3b8', textTransform: 'capitalize', border: `1px solid ${filterType === f ? '#6366f1' : '#334155'}` }}>
                         {f === 'all' ? `All (${comments.length})` : f}
                     </button>
                 ))}
@@ -387,112 +387,112 @@ export function StudentAIReviewDashboard({ user }) {
         const unresolvedCount = comments.filter(c => !c.is_resolved).length
 
         return (
-        <div style={{ padding: '24px', color: '#f1f5f9' }}>
-            {/* Back Button */}
-            <button onClick={() => setSelectedReview(null)} style={{ marginBottom: '24px', padding: '9px 16px', background: 'rgba(99, 102, 241, 0.08)', border: '1px solid #475569', color: '#cbd5e1', borderRadius: '8px', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: '14px', fontWeight: 500, transition: 'all 0.3s', boxShadow: '0 1px 3px rgba(0,0,0,0.1)' }} onMouseEnter={(e) => { e.target.style.background = 'rgba(99, 102, 241, 0.12)'; e.target.style.borderColor = '#64748b'; }} onMouseLeave={(e) => { e.target.style.background = 'rgba(99, 102, 241, 0.08)'; e.target.style.borderColor = '#475569'; }}>
-                ← Back to Reviews
-            </button>
+            <div style={{ padding: '24px', color: '#f1f5f9' }}>
+                {/* Back Button */}
+                <button onClick={() => setSelectedReview(null)} style={{ marginBottom: '24px', padding: '9px 16px', background: 'rgba(99, 102, 241, 0.08)', border: '1px solid #475569', color: '#cbd5e1', borderRadius: '8px', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: '14px', fontWeight: 500, transition: 'all 0.3s', boxShadow: '0 1px 3px rgba(0,0,0,0.1)' }} onMouseEnter={(e) => { e.target.style.background = 'rgba(99, 102, 241, 0.12)'; e.target.style.borderColor = '#64748b'; }} onMouseLeave={(e) => { e.target.style.background = 'rgba(99, 102, 241, 0.08)'; e.target.style.borderColor = '#475569'; }}>
+                    ← Back to Reviews
+                </button>
 
-            {/* Review Header */}
-            <div style={{ background: 'linear-gradient(135deg,#0f172a,#1e293b)', borderRadius: '16px', padding: '24px', border: '1px solid #334155', marginBottom: '24px' }}>
-                {/* Title and Status */}
-                <div style={{ display: 'flex', alignItems: 'start', gap: '16px', marginBottom: '20px' }}>
-                    <div style={{ background: 'linear-gradient(135deg,#6366f1,#8b5cf6)', borderRadius: '12px', padding: '12px', border: 'none' }}>
-                        <Bot size={24} color="white" />
-                    </div>
-                    <div style={{ flex: 1 }}>
-                        <h2 style={{ margin: '0 0 4px', fontSize: '20px', fontWeight: 700, color: '#f1f5f9' }}>AI Code Review</h2>
-                        <p style={{ margin: 0, fontSize: '13px', color: '#94a3b8' }}>
-                            Completed {r.completed_at ? new Date(r.completed_at).toLocaleString() : 'recently'}
-                            {r.mentor_approved && <span style={{ marginLeft: '12px', color: '#34d399', fontWeight: 600 }}>✓ Approved</span>}
-                        </p>
-                    </div>
-                    <span style={{ background: qualityStyle.bg, color: qualityStyle.color, padding: '8px 16px', borderRadius: '20px', fontSize: '13px', fontWeight: 700 }}>
-                        {qualityStyle.label}
-                    </span>
-                </div>
-
-                {/* Overall Feedback - Large and Prominent */}
-                {r.overall_feedback && (
-                    <div style={{ background: '#0f172a', borderRadius: '12px', padding: '16px', fontSize: '14px', color: '#e2e8f0', lineHeight: '1.6', borderLeft: '4px solid #60a5fa', marginBottom: '20px' }}>
-                        <strong style={{ display: 'block', color: '#60a5fa', marginBottom: '8px' }}>📝 Summary:</strong>
-                        {r.overall_feedback}
-                    </div>
-                )}
-
-                {/* Stats Grid */}
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(110px, 1fr))', gap: '14px' }}>
-                    <div style={{ background: 'rgba(96, 165, 250, 0.1)', padding: '16px', borderRadius: '10px', border: '1px solid rgba(96, 165, 250, 0.2)', textAlign: 'center', transition: 'all 0.2s' }}>
-                        <div style={{ color: '#60a5fa', fontWeight: 700, fontSize: '24px', lineHeight: 1 }}>{r.ai_score || 0}</div>
-                        <div style={{ color: '#7dd3fc', fontSize: '11px', marginTop: '6px', fontWeight: 600, letterSpacing: '0.05em' }}>AI SCORE</div>
-                    </div>
-                    <div style={{ background: 'rgba(248, 113, 113, 0.1)', padding: '16px', borderRadius: '10px', border: '1px solid rgba(248, 113, 113, 0.2)', textAlign: 'center', transition: 'all 0.2s' }}>
-                        <div style={{ color: '#f87171', fontWeight: 700, fontSize: '24px', lineHeight: 1 }}>{r.bug_count || 0}</div>
-                        <div style={{ color: '#fca5a5', fontSize: '11px', marginTop: '6px', fontWeight: 600, letterSpacing: '0.05em' }}>BUGS</div>
-                    </div>
-                    <div style={{ background: 'rgba(251, 191, 36, 0.1)', padding: '16px', borderRadius: '10px', border: '1px solid rgba(251, 191, 36, 0.2)', textAlign: 'center', transition: 'all 0.2s' }}>
-                        <div style={{ color: '#fbbf24', fontWeight: 700, fontSize: '24px', lineHeight: 1 }}>{r.performance_count || 0}</div>
-                        <div style={{ color: '#fcd34d', fontSize: '11px', marginTop: '6px', fontWeight: 600, letterSpacing: '0.05em' }}>PERFORMANCE</div>
-                    </div>
-                    <div style={{ background: 'rgba(167, 139, 250, 0.1)', padding: '16px', borderRadius: '10px', border: '1px solid rgba(167, 139, 250, 0.2)', textAlign: 'center', transition: 'all 0.2s' }}>
-                        <div style={{ color: '#a78bfa', fontWeight: 700, fontSize: '24px', lineHeight: 1 }}>{r.style_count || 0}</div>
-                        <div style={{ color: '#d8b4fe', fontSize: '11px', marginTop: '6px', fontWeight: 600, letterSpacing: '0.05em' }}>STYLE</div>
-                    </div>
-                    <div style={{ background: 'rgba(52, 211, 153, 0.1)', padding: '16px', borderRadius: '10px', border: '1px solid rgba(52, 211, 153, 0.2)', textAlign: 'center', transition: 'all 0.2s' }}>
-                        <div style={{ color: '#34d399', fontWeight: 700, fontSize: '24px', lineHeight: 1 }}>{r.security_count || 0}</div>
-                        <div style={{ color: '#6ee7b7', fontSize: '11px', marginTop: '6px', fontWeight: 600, letterSpacing: '0.05em' }}>SECURITY</div>
-                    </div>
-                    <div style={{ background: 'rgba(96, 165, 250, 0.08)', padding: '16px', borderRadius: '10px', border: '1px solid rgba(96, 165, 250, 0.15)', textAlign: 'center', transition: 'all 0.2s' }}>
-                        <div style={{ color: '#93c5fd', fontWeight: 700, fontSize: '24px', lineHeight: 1 }}>{unresolvedCount}</div>
-                        <div style={{ color: '#bfdbfe', fontSize: '11px', marginTop: '6px', fontWeight: 600, letterSpacing: '0.05em' }}>UNRESOLVED</div>
-                    </div>
-                </div>
-            </div>
-
-            {/* Detailed Comments Section */}
-            <div>
-                {comments.length === 0 ? (
-                    <div style={{ padding: '40px 24px', textAlign: 'center', color: '#94a3b8', background: '#1e293b', borderRadius: '12px', border: '1px solid #334155' }}>
-                        <CheckCircle size={32} color="#34d399" style={{ margin: '0 auto 12px' }} />
-                        <h3 style={{ margin: '0 0 8px', color: '#f1f5f9', fontSize: '16px' }}>No Issues Found</h3>
-                        <p style={{ margin: 0, fontSize: '13px' }}>Your code looks great! No improvements suggested.</p>
-                    </div>
-                ) : (
-                    <>
-                        <h3 style={{ margin: '0 0 16px', fontSize: '16px', fontWeight: 700, color: '#f1f5f9' }}>📋 Detailed Feedback ({comments.length} {comments.length === 1 ? 'item' : 'items'})</h3>
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                            {comments.map(comment => {
-                                const typeStyle = TYPE_STYLE[comment.comment_type] || TYPE_STYLE.suggestion
-                                const isResolved = comment.is_resolved
-                                return (
-                                    <div key={comment.id} style={{ background: isResolved ? '#0f1a0f' : '#1e293b', borderRadius: '12px', border: `1px solid ${isResolved ? '#1a3a1a' : typeStyle.color}40`, opacity: isResolved ? 0.65 : 1, padding: '18px', overflow: 'hidden', transition: 'all 0.2s', boxShadow: isResolved ? 'none' : '0 1px 3px rgba(0,0,0,0.2)' }}>
-                                        {/* Comment Header */}
-                                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '10px', flexWrap: 'wrap' }}>
-                                            <span style={{ color: typeStyle.color, fontSize: '16px' }}>{typeStyle.icon}</span>
-                                            <span style={{ background: typeStyle.bg, color: typeStyle.color, padding: '3px 10px', borderRadius: '12px', fontSize: '10px', fontWeight: 700, textTransform: 'uppercase' }}>{typeStyle.label}</span>
-                                            <span style={{ background: '#0f172a', color: SEVERITY_COLOR[comment.severity] || '#94a3b8', padding: '3px 10px', borderRadius: '12px', fontSize: '10px', fontWeight: 600, border: '1px solid #334155' }}>
-                                                {comment.severity}
-                                            </span>
-                                            <span style={{ fontSize: '11px', color: '#64748b', marginLeft: 'auto' }}>Line {comment.line_number}{comment.end_line && comment.end_line !== comment.line_number ? `–${comment.end_line}` : ''}</span>
-                                            {isResolved && <CheckCircle size={14} color="#34d399" />}
-                                        </div>
-                                        {/* Message */}
-                                        <p style={{ margin: '0 0 10px', fontSize: '14px', color: '#f1f5f9', lineHeight: '1.5' }}>{comment.message}</p>
-                                        {/* Suggestion */}
-                                        {comment.suggestion && (
-                                            <div style={{ background: '#0f172a', borderRadius: '8px', padding: '12px 14px', fontSize: '13px', color: '#94a3b8', borderLeft: '3px solid #60a5fa', marginTop: '10px' }}>
-                                                <strong style={{ color: '#60a5fa', display: 'block', marginBottom: '4px' }}>💡 Suggestion:</strong>
-                                                {comment.suggestion}
-                                            </div>
-                                        )}
-                                    </div>
-                                )
-                            })}
+                {/* Review Header */}
+                <div style={{ background: 'linear-gradient(135deg,#0f172a,#1e293b)', borderRadius: '16px', padding: '24px', border: '1px solid #334155', marginBottom: '24px' }}>
+                    {/* Title and Status */}
+                    <div style={{ display: 'flex', alignItems: 'start', gap: '16px', marginBottom: '20px' }}>
+                        <div style={{ background: 'linear-gradient(135deg,#6366f1,#8b5cf6)', borderRadius: '12px', padding: '12px', border: 'none' }}>
+                            <Bot size={24} color="white" />
                         </div>
-                    </>
-                )}
+                        <div style={{ flex: 1 }}>
+                            <h2 style={{ margin: '0 0 4px', fontSize: '20px', fontWeight: 700, color: '#f1f5f9' }}>AI Code Review</h2>
+                            <p style={{ margin: 0, fontSize: '13px', color: '#94a3b8' }}>
+                                Completed {r.completed_at ? new Date(r.completed_at).toLocaleString() : 'recently'}
+                                {r.mentor_approved && <span style={{ marginLeft: '12px', color: '#34d399', fontWeight: 600 }}>✓ Approved</span>}
+                            </p>
+                        </div>
+                        <span style={{ background: qualityStyle.bg, color: qualityStyle.color, padding: '8px 16px', borderRadius: '20px', fontSize: '13px', fontWeight: 700 }}>
+                            {qualityStyle.label}
+                        </span>
+                    </div>
+
+                    {/* Overall Feedback - Large and Prominent */}
+                    {r.overall_feedback && (
+                        <div style={{ background: '#0f172a', borderRadius: '12px', padding: '16px', fontSize: '14px', color: '#e2e8f0', lineHeight: '1.6', borderLeft: '4px solid #60a5fa', marginBottom: '20px' }}>
+                            <strong style={{ display: 'block', color: '#60a5fa', marginBottom: '8px' }}>📝 Summary:</strong>
+                            {r.overall_feedback}
+                        </div>
+                    )}
+
+                    {/* Stats Grid */}
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(110px, 1fr))', gap: '14px' }}>
+                        <div style={{ background: 'rgba(96, 165, 250, 0.1)', padding: '16px', borderRadius: '10px', border: '1px solid rgba(96, 165, 250, 0.2)', textAlign: 'center', transition: 'all 0.2s' }}>
+                            <div style={{ color: '#60a5fa', fontWeight: 700, fontSize: '24px', lineHeight: 1 }}>{r.ai_score || 0}</div>
+                            <div style={{ color: '#7dd3fc', fontSize: '11px', marginTop: '6px', fontWeight: 600, letterSpacing: '0.05em' }}>AI SCORE</div>
+                        </div>
+                        <div style={{ background: 'rgba(248, 113, 113, 0.1)', padding: '16px', borderRadius: '10px', border: '1px solid rgba(248, 113, 113, 0.2)', textAlign: 'center', transition: 'all 0.2s' }}>
+                            <div style={{ color: '#f87171', fontWeight: 700, fontSize: '24px', lineHeight: 1 }}>{r.bug_count || 0}</div>
+                            <div style={{ color: '#fca5a5', fontSize: '11px', marginTop: '6px', fontWeight: 600, letterSpacing: '0.05em' }}>BUGS</div>
+                        </div>
+                        <div style={{ background: 'rgba(251, 191, 36, 0.1)', padding: '16px', borderRadius: '10px', border: '1px solid rgba(251, 191, 36, 0.2)', textAlign: 'center', transition: 'all 0.2s' }}>
+                            <div style={{ color: '#fbbf24', fontWeight: 700, fontSize: '24px', lineHeight: 1 }}>{r.performance_count || 0}</div>
+                            <div style={{ color: '#fcd34d', fontSize: '11px', marginTop: '6px', fontWeight: 600, letterSpacing: '0.05em' }}>PERFORMANCE</div>
+                        </div>
+                        <div style={{ background: 'rgba(167, 139, 250, 0.1)', padding: '16px', borderRadius: '10px', border: '1px solid rgba(167, 139, 250, 0.2)', textAlign: 'center', transition: 'all 0.2s' }}>
+                            <div style={{ color: '#a78bfa', fontWeight: 700, fontSize: '24px', lineHeight: 1 }}>{r.style_count || 0}</div>
+                            <div style={{ color: '#d8b4fe', fontSize: '11px', marginTop: '6px', fontWeight: 600, letterSpacing: '0.05em' }}>STYLE</div>
+                        </div>
+                        <div style={{ background: 'rgba(52, 211, 153, 0.1)', padding: '16px', borderRadius: '10px', border: '1px solid rgba(52, 211, 153, 0.2)', textAlign: 'center', transition: 'all 0.2s' }}>
+                            <div style={{ color: '#34d399', fontWeight: 700, fontSize: '24px', lineHeight: 1 }}>{r.security_count || 0}</div>
+                            <div style={{ color: '#6ee7b7', fontSize: '11px', marginTop: '6px', fontWeight: 600, letterSpacing: '0.05em' }}>SECURITY</div>
+                        </div>
+                        <div style={{ background: 'rgba(96, 165, 250, 0.08)', padding: '16px', borderRadius: '10px', border: '1px solid rgba(96, 165, 250, 0.15)', textAlign: 'center', transition: 'all 0.2s' }}>
+                            <div style={{ color: '#93c5fd', fontWeight: 700, fontSize: '24px', lineHeight: 1 }}>{unresolvedCount}</div>
+                            <div style={{ color: '#bfdbfe', fontSize: '11px', marginTop: '6px', fontWeight: 600, letterSpacing: '0.05em' }}>UNRESOLVED</div>
+                        </div>
+                    </div>
+                </div>
+
+                {/* Detailed Comments Section */}
+                <div>
+                    {comments.length === 0 ? (
+                        <div style={{ padding: '40px 24px', textAlign: 'center', color: '#94a3b8', background: '#1e293b', borderRadius: '12px', border: '1px solid #334155' }}>
+                            <CheckCircle size={32} color="#34d399" style={{ margin: '0 auto 12px' }} />
+                            <h3 style={{ margin: '0 0 8px', color: '#f1f5f9', fontSize: '16px' }}>No Issues Found</h3>
+                            <p style={{ margin: 0, fontSize: '13px' }}>Your code looks great! No improvements suggested.</p>
+                        </div>
+                    ) : (
+                        <>
+                            <h3 style={{ margin: '0 0 16px', fontSize: '16px', fontWeight: 700, color: '#f1f5f9' }}>📋 Detailed Feedback ({comments.length} {comments.length === 1 ? 'item' : 'items'})</h3>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                                {comments.map(comment => {
+                                    const typeStyle = TYPE_STYLE[comment.comment_type] || TYPE_STYLE.suggestion
+                                    const isResolved = comment.is_resolved
+                                    return (
+                                        <div key={comment.id} style={{ background: isResolved ? '#0f1a0f' : '#1e293b', borderRadius: '12px', border: `1px solid ${isResolved ? '#1a3a1a' : typeStyle.color}40`, opacity: isResolved ? 0.65 : 1, padding: '18px', overflow: 'hidden', transition: 'all 0.2s', boxShadow: isResolved ? 'none' : '0 1px 3px rgba(0,0,0,0.2)' }}>
+                                            {/* Comment Header */}
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '10px', flexWrap: 'wrap' }}>
+                                                <span style={{ color: typeStyle.color, fontSize: '16px' }}>{typeStyle.icon}</span>
+                                                <span style={{ background: typeStyle.bg, color: typeStyle.color, padding: '3px 10px', borderRadius: '12px', fontSize: '10px', fontWeight: 700, textTransform: 'uppercase' }}>{typeStyle.label}</span>
+                                                <span style={{ background: '#0f172a', color: SEVERITY_COLOR[comment.severity] || '#94a3b8', padding: '3px 10px', borderRadius: '12px', fontSize: '10px', fontWeight: 600, border: '1px solid #334155' }}>
+                                                    {comment.severity}
+                                                </span>
+                                                <span style={{ fontSize: '11px', color: '#64748b', marginLeft: 'auto' }}>Line {comment.line_number}{comment.end_line && comment.end_line !== comment.line_number ? `–${comment.end_line}` : ''}</span>
+                                                {isResolved && <CheckCircle size={14} color="#34d399" />}
+                                            </div>
+                                            {/* Message */}
+                                            <p style={{ margin: '0 0 10px', fontSize: '14px', color: '#f1f5f9', lineHeight: '1.5' }}>{comment.message}</p>
+                                            {/* Suggestion */}
+                                            {comment.suggestion && (
+                                                <div style={{ background: '#0f172a', borderRadius: '8px', padding: '12px 14px', fontSize: '13px', color: '#94a3b8', borderLeft: '3px solid #60a5fa', marginTop: '10px' }}>
+                                                    <strong style={{ color: '#60a5fa', display: 'block', marginBottom: '4px' }}>💡 Suggestion:</strong>
+                                                    {comment.suggestion}
+                                                </div>
+                                            )}
+                                        </div>
+                                    )
+                                })}
+                            </div>
+                        </>
+                    )}
+                </div>
             </div>
-        </div>
         )
     }
 
