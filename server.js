@@ -39,6 +39,184 @@ const GamificationService = require('./services/gamification_service');
 const PredictiveAnalyticsService = require('./services/analytics_service');
 const ViolationScoringService = require('./services/violation_scoring_service');
 
+// sql.js for local SQLite evaluation (no external API dependency)
+let initSqlJs = null;
+try {
+    initSqlJs = require('sql.js');
+} catch (e) {
+    console.warn('sql.js not available:', e.message);
+}
+
+// Sanitize MySQL/PostgreSQL SQL to SQLite-compatible SQL
+function sanitizeSQLForSQLite(sql) {
+    if (!sql) return '';
+    return sql
+        // Remove MySQL comments and engine/charset declarations
+        .replace(/ENGINE\s*=\s*\w+/gi, ' ')
+        .replace(/DEFAULT\s+CHARSET\s*=\s*\w+/gi, ' ')
+        .replace(/CHARSET\s*=\s*\w+/gi, ' ')
+        .replace(/CHARACTER\s+SET\s+\w+/gi, ' ')
+        .replace(/COLLATE\s*=?\s*[\w_]+/gi, ' ')
+        .replace(/ROW_FORMAT\s*=\s*\w+/gi, ' ')
+        .replace(/AUTO_INCREMENT\s*=\s*\d+/gi, ' ')
+        // Replace MySQL AUTO_INCREMENT with SQLite AUTOINCREMENT equivalent
+        .replace(/\bAUTO_INCREMENT\b/gi, ' ')
+        // Replace backtick identifiers with double-quoted
+        .replace(/`([^`]+)`/g, '"$1"')
+        // Replace MySQL-style TINYINT(1) boolean with INTEGER
+        .replace(/\bTINYINT\s*\(\s*1\s*\)/gi, 'INTEGER')
+        // Replace DECIMAL(p,s) or NUMERIC(p,s) with NUMERIC
+        .replace(/\b(DECIMAL|NUMERIC)\s*\(\s*\d+\s*(,\s*\d+\s*)?\)/gi, 'NUMERIC')
+        // Replace MEDIUMTEXT, LONGTEXT, TINYTEXT with TEXT
+        .replace(/\b(MEDIUM|LONG|TINY)TEXT\b/gi, 'TEXT')
+        // Replace MEDIUMINT, TINYINT, BIGINT with INTEGER
+        .replace(/\b(MEDIUM|TINY|BIG|SMALL)INT\b(\s*\(\s*\d+\s*\))?/gi, 'INTEGER')
+        // Replace INT(n) with INTEGER
+        .replace(/\bINT\s*\(\s*\d+\s*\)/gi, 'INTEGER')
+        // Replace VARCHAR(n) with TEXT
+        .replace(/\bVARCHAR\s*\(\s*\d+\s*\)/gi, 'TEXT')
+        // Replace ENUM(...) with TEXT
+        .replace(/\bENUM\s*\([^)]+\)/gi, 'TEXT')
+        // Remove UNSIGNED keyword
+        .replace(/\bUNSIGNED\b/gi, ' ')
+        // Remove ZEROFILL keyword
+        .replace(/\bZEROFILL\b/gi, ' ')
+        // Remove MySQL-style comments /*! ... */
+        .replace(/\/\*![\s\S]*?\*\//g, ' ')
+        // Normalize whitespace (crucial to prevent mergers)
+        .replace(/\s+/g, ' ')
+        .trim();
+}
+
+// Helper: Execute SQL schema + query using sql.js and return structured results
+async function executeSQLWithSqlJs(schema, query) {
+    if (!initSqlJs) throw new Error('sql.js is not installed');
+    const SQL = await initSqlJs();
+    const db = new SQL.Database();
+    try {
+        if (schema && schema.trim()) {
+            const cleanSchema = sanitizeSQLForSQLite(schema);
+            try {
+                // Primary: run schema as one block — same as SQLValidator in the browser
+                db.run(cleanSchema);
+            } catch (schemaErr) {
+                console.warn(`Schema single-shot failed (${schemaErr.message}), trying statement-by-statement...`);
+                // Fallback: split on semicolons at end of lines and try each statement
+                const stmts = cleanSchema
+                    .split(/;[ \t]*(\r?\n|$)/)
+                    .map(s => s.trim())
+                    .filter(s => s.length > 0 && !s.startsWith('--'));
+                for (const stmt of stmts) {
+                    try {
+                        db.run(stmt + ';');
+                    } catch (stmtErr) {
+                        console.warn(`Schema stmt skipped: ${stmtErr.message} | SQL: ${stmt.substring(0, 80)}`);
+                    }
+                }
+            }
+        }
+
+        // Execute the student's query (also sanitize for MySQL-isms)
+        const cleanQuery = sanitizeSQLForSQLite(query || '');
+        const results = db.exec(cleanQuery);
+        db.close();
+        return { success: true, results };
+    } catch (err) {
+        db.close();
+        return { success: false, error: err.message, results: [] };
+    }
+}
+
+
+// Helper: Compare SQL results from sql.js with admin-defined expected result
+// Expected result can be pipe-separated output OR a plain text representation
+// Helper: Compare SQL results from sql.js with admin-defined expected result
+// Expected result can be pipe-separated output OR a plain text representation
+function compareSQLResults(actualResults, expectedQueryResult) {
+    try {
+        // Parse the expected result (pipe-separated format: col1|col2\nval1|val2)
+        const expectedLines = (expectedQueryResult || '').trim().split('\n')
+            .map(l => l.trim())
+            .filter(l => l.length > 0);
+
+        // Check if both are empty - if so, it's a match!
+        const actualEmpty = !actualResults || actualResults.length === 0 || !actualResults[0].values || actualResults[0].values.length === 0;
+        const expectedEmpty = expectedLines.length === 0 || (expectedLines.length === 1 && expectedLines[0].toLowerCase().includes('no rows'));
+
+        if (actualEmpty && expectedEmpty) return true;
+        if (actualEmpty || expectedEmpty) return false;
+
+        // Get the first result set (main SELECT result)
+        const resultSet = actualResults[0];
+        const columns = (resultSet.columns || []).map(c => c.toString().toLowerCase().trim());
+        const values = resultSet.values || [];
+
+        // Normalize a single cell value for comparison:
+        const normalizeCell = (v) => {
+            if (v === null || v === undefined) return '';
+            const s = v.toString().trim();
+            const num = Number(s.replace(/,/g, ''));
+            if (!isNaN(num) && s !== '') {
+                // handles numeric: parseFloat(s) to normalize 52000.00 to 52000
+                return String(parseFloat(num));
+            }
+            return s.toLowerCase();
+        };
+
+        // Build rows from actual results
+        const actualRowsArr = values.map(row => row.map(normalizeCell));
+
+        // Parse expected rows from admin-saved text
+        const parseExpectedRow = (line) => {
+            const cells = line.includes('|')
+                ? line.split('|').map(v => v.trim())
+                : line.split(/\s{2,}/).map(v => v.trim()).filter(v => v.length > 0);
+            return cells.map(normalizeCell);
+        };
+
+        const expectedRowsRaw = expectedLines.map(parseExpectedRow);
+        let finalExpectedRows = expectedRowsRaw;
+
+        // Smart Header Detection:
+        // If actual has N rows, and expected has N+1 lines, AND the first line of expected 
+        // doesn't numerically match the first actual row, it's likely a header.
+        if (actualRowsArr.length === expectedRowsRaw.length - 1 && expectedRowsRaw.length > 0) {
+            finalExpectedRows = expectedRowsRaw.slice(1);
+        } else if (actualRowsArr.length === expectedRowsRaw.length) {
+            // Check if first line of expected matches the column headers exactly
+            const firstLineExpected = expectedLines[0].toLowerCase().split(/[|\t]/).map(s => s.trim());
+            const colMatch = columns.every(c => firstLineExpected.includes(c)) || firstLineExpected.join('|') === columns.join('|');
+
+            // If the first row of expected is identical to column headers but actual row count 
+            // is SAME as total lines, then the table might have data that looks like headers 
+            // OR the admin expects the headers to be part of data (rare).
+            // Usually, we trust the count over the content for header detection.
+        }
+
+        if (actualRowsArr.length !== finalExpectedRows.length) return false;
+
+        // Sort both for order-independent comparison (handles GROUP BY, ORDER BY differences)
+        const sortRows = (rows) => [...rows].sort((a, b) => a.join('|').localeCompare(b.join('|')));
+
+        const sortedActual = sortRows(actualRowsArr);
+        const sortedExpected = sortRows(finalExpectedRows);
+
+        for (let i = 0; i < sortedActual.length; i++) {
+            const ar = sortedActual[i];
+            const er = sortedExpected[i];
+            if (ar.length !== er.length) return false;
+            for (let j = 0; j < ar.length; j++) {
+                if (ar[j] !== er[j]) return false;
+            }
+        }
+        return true;
+    } catch (e) {
+        console.error('SQL comparison error:', e.message);
+        return false;
+    }
+}
+
+
 const app = express();
 const PORT = process.env.PORT || 3000;
 
@@ -1821,161 +1999,88 @@ Only mark as detected if similarity > 80% and code structure is nearly identical
                     const expectedQueryResult = problem.expected_query_result;
 
                     if (sqlSchema && expectedQueryResult) {
-                        // Execute the student's SQL query with the schema
-                        const fullQuery = `.headers on\n.mode list\n${sqlSchema}\n\n${code}`;
+                        // 1. Execute using local sql.js to get actual output for AI to review
+                        const sqlResult = await executeSQLWithSqlJs(sqlSchema, code);
 
-                        const response = await fetch('https://emkc.org/api/v2/piston/execute', {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({
-                                language: 'sqlite3',
-                                version: '3.36.0',
-                                files: [{ content: fullQuery }]
-                            })
-                        });
+                        let actualOutputStr = '';
+                        if (sqlResult.success && sqlResult.results && sqlResult.results.length > 0) {
+                            const r = sqlResult.results[0];
+                            actualOutputStr = r.columns.join(' | ') + '\n' + r.values.map(row => row.join(' | ')).join('\n');
+                        } else if (sqlResult.success) {
+                            actualOutputStr = 'Query executed successfully (no rows returned).';
+                        } else {
+                            actualOutputStr = `ERROR: ${sqlResult.error}`;
+                        }
 
-                        const data = await response.json();
-                        const actualOutput = (data.run?.output || '').trim();
-                        const expectedOutput = expectedQueryResult.trim();
+                        // 2. Use AI to evaluate the query and the output
+                        const sqlAiPrompt = `You are an expert SQL evaluator.
+Problem: ${problem.title}
+Description: ${problem.description}
+Schema provided to student: ${sqlSchema}
+Expected Output (Target):
+${expectedQueryResult}
 
-                        // Check if query executed successfully
-                        const executedSuccessfully = data.run?.code === 0;
+Student's Query:
+${code}
 
-                        // Helper function to parse SQL output into comparable data
-                        function parseSQLOutput(output) {
-                            if (!output || output.length === 0) return null;
+Actual Output from Student's Query:
+${actualOutputStr}
 
-                            const lines = output.trim().split('\n').filter(line => {
-                                // Remove separator lines (lines with only -, +, |, =, and spaces)
-                                return line.trim() && !/^[\-\+\|\=\s]+$/.test(line.trim());
+Evaluate the student's solution. Guidelines:
+1. If the Actual Output matches the Expected Output (even with different column aliases), give high marks (90-100).
+2. If the query failed with an error, identify the syntax error and give low marks (0-20).
+3. If the query runs but the logic is wrong (wrong rows returned), explain why and give partial marks (30-60).
+4. Be fair about sorting and column names unless specifically asked in the description.
+
+Respond with JSON:
+{
+    "score": 0-100,
+    "status": "accepted" | "partial" | "rejected",
+    "feedback": "Short encouraging feedback",
+    "aiExplanation": "Brief technical analysis of the query and output",
+    "analysis": {
+        "correctness": "Score - analysis",
+        "efficiency": "Score - analysis",
+        "codeStyle": "Score - analysis",
+        "bestPractices": "Score - analysis"
+    }
+}`;
+
+                        try {
+                            const aiEval = await cerebrasChat([
+                                { role: 'system', content: 'You are an accurate SQL evaluator. Return JSON only.' },
+                                { role: 'user', content: sqlAiPrompt }
+                            ], {
+                                model: 'gpt-oss-120b',
+                                temperature: 0.1,
+                                max_tokens: 800,
+                                response_format: { type: 'json_object' }
                             });
 
-                            if (lines.length === 0) return null;
+                            const parsedEval = typeof aiEval.choices[0].message.content === 'string'
+                                ? JSON.parse(aiEval.choices[0].message.content)
+                                : aiEval.choices[0].message.content;
 
-                            // Extract rows - handle both pipe-separated and whitespace-separated formats
-                            const rows = [];
-                            for (const line of lines) {
-                                let values;
-                                if (line.includes('|')) {
-                                    // Pipe-separated format
-                                    values = line.split('|')
-                                        .map(v => v.trim())
-                                        .filter(v => v.length > 0);
-                                } else {
-                                    // Whitespace-separated format - split by multiple spaces
-                                    values = line.trim().split(/\s{2,}/)
-                                        .map(v => v.trim())
-                                        .filter(v => v.length > 0);
-                                }
-                                if (values.length > 0) {
-                                    rows.push(values);
-                                }
-                            }
-
-                            return rows;
-                        }
-
-                        // Helper function to normalize values for comparison
-                        function normalizeValue(val) {
-                            if (!val) return '';
-                            // Convert to lowercase, trim, remove extra spaces
-                            return val.toString().toLowerCase().trim().replace(/\s+/g, ' ');
-                        }
-
-                        // Helper function to compare two parsed outputs
-                        function compareOutputs(actual, expected) {
-                            if (!actual || !expected) return false;
-                            if (actual.length !== expected.length) return false;
-
-                            // Sort both outputs to handle different row orders (especially for GROUP BY)
-                            const sortRows = (rows) => {
-                                return rows.map(row => row.map(normalizeValue))
-                                    .sort((a, b) => a.join('|').localeCompare(b.join('|')));
-                            };
-
-                            const actualSorted = sortRows(actual);
-                            const expectedSorted = sortRows(expected);
-
-                            // Compare each row
-                            for (let i = 0; i < actualSorted.length; i++) {
-                                const actualRow = actualSorted[i];
-                                const expectedRow = expectedSorted[i];
-
-                                if (actualRow.length !== expectedRow.length) return false;
-
-                                for (let j = 0; j < actualRow.length; j++) {
-                                    if (actualRow[j] !== expectedRow[j]) {
-                                        return false;
-                                    }
-                                }
-                            }
-
-                            return true;
-                        }
-
-                        // Parse both outputs
-                        const actualParsed = parseSQLOutput(actualOutput);
-                        const expectedParsed = parseSQLOutput(expectedOutput);
-
-                        // Compare the parsed data
-                        const isCorrect = compareOutputs(actualParsed, expectedParsed);
-
-                        console.log(`SQL Evaluation - Executed: ${executedSuccessfully}, Correct: ${isCorrect}`);
-                        console.log(`Expected rows:`, expectedParsed);
-                        console.log(`Actual rows:`, actualParsed);
-
-
-                        if (executedSuccessfully && isCorrect) {
-                            // Perfect match - award full points
-                            evaluationResult.score = 100;
-                            evaluationResult.status = 'accepted';
-                            evaluationResult.feedback = 'Excellent! Your SQL query is correct and produces the expected output.';
-                            evaluationResult.aiExplanation = 'Query executed successfully and output matches expected result exactly.';
-                            evaluationResult.analysis = {
-                                correctness: '100 - Excellent, Perfect match',
-                                efficiency: '95 - Good, Query structure is appropriate',
-                                codeStyle: '90 - Good, SQL syntax is clean',
-                                bestPractices: '90 - Good, Follows SQL conventions'
-                            };
-                        } else if (executedSuccessfully && !isCorrect) {
-                            // Query runs but produces wrong output
-                            evaluationResult.score = 30;
-                            evaluationResult.status = 'rejected';
-                            evaluationResult.feedback = 'Your query executes but does not produce the expected output. Review the expected result and adjust your query.';
-                            evaluationResult.aiExplanation = `Query executed but output does not match. Expected format/data differs from actual output.`;
-                            evaluationResult.analysis = {
-                                correctness: '30 - Poor, Output does not match expected result',
-                                efficiency: '50 - Fair, Query executes',
-                                codeStyle: '70 - Fair, Syntax is valid',
-                                bestPractices: '60 - Fair, Query structure needs review'
-                            };
-                        } else {
-                            // Query has syntax error or runtime error
-                            evaluationResult.score = 0;
-                            evaluationResult.status = 'rejected';
-                            evaluationResult.feedback = 'Your SQL query has syntax errors or fails to execute. Check your SQL syntax and try again.';
-                            evaluationResult.aiExplanation = `SQL execution failed: ${actualOutput.substring(0, 200)}`;
-                            evaluationResult.analysis = {
-                                correctness: '0 - Poor, Query fails to execute',
-                                efficiency: '0 - N/A',
-                                codeStyle: '0 - Poor, Syntax errors present',
-                                bestPractices: '0 - Poor, Query needs fixing'
-                            };
+                            evaluationResult = { ...evaluationResult, ...parsedEval };
+                            console.log(`SQL AI Evaluation - Score: ${evaluationResult.score}, Status: ${evaluationResult.status}`);
+                        } catch (aiErr) {
+                            console.error('SQL AI Evaluation failed, falling back to basic result:', aiErr);
+                            // Fallback to manual comparison if AI fails
+                            const isCorrect = sqlResult.success && compareSQLResults(sqlResult.results, expectedQueryResult);
+                            evaluationResult.score = isCorrect ? 100 : (sqlResult.success ? 30 : 0);
+                            evaluationResult.status = isCorrect ? 'accepted' : 'rejected';
+                            evaluationResult.feedback = isCorrect ? 'Correct output!' : (sqlResult.success ? 'Wrong output.' : `SQL Error: ${sqlResult.error}`);
                         }
                     } else {
-                        // Fall back to AI evaluation if schema or expected result is missing
                         console.log('SQL problem missing schema or expected result, falling back to AI evaluation');
-                        throw new Error('Missing SQL schema or expected result');
+                        throw new Error('Missing SQL schema or expected result - please configure the problem in the admin panel');
                     }
                 }
             } catch (sqlEvalError) {
                 console.error('SQL Evaluation error:', sqlEvalError.message);
-                // Explicitly set error result for SQL to avoid AI fallback confusion
                 evaluationResult.score = 0;
                 evaluationResult.status = 'rejected';
-                evaluationResult.feedback = `Evaluation System Error: ${sqlEvalError.message}.`;
-                evaluationResult.aiExplanation = 'Internal System Error during SQL execution.';
-                evaluationResult.analysis = { correctness: 'Error', efficiency: 'Error', codeStyle: 'Error', bestPractices: 'Error' };
+                evaluationResult.feedback = `SQL Evaluation Error: ${sqlEvalError.message}.`;
             }
         }
 
@@ -2317,108 +2422,14 @@ app.post('/api/submissions/proctored', optionalFileUpload, async (req, res) => {
                 const expectedQueryResult = problemDetails.expected_query_result;
 
                 if (sqlSchema && expectedQueryResult) {
-                    // Execute the student's SQL query with the schema
-                    const fullQuery = `.headers on\n.mode list\n${sqlSchema}\n\n${code}`;
-
-                    const response = await fetch('https://emkc.org/api/v2/piston/execute', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                            language: 'sqlite3',
-                            version: '3.36.0',
-                            files: [{ content: fullQuery }]
-                        })
-                    });
-
-                    const data = await response.json();
-                    const actualOutput = (data.run?.output || '').trim();
-                    const expectedOutput = expectedQueryResult.trim();
-
-                    // Check if query executed successfully
-                    const executedSuccessfully = data.run?.code === 0;
-
-                    // Helper function to parse SQL output into comparable data
-                    function parseSQLOutput(output) {
-                        if (!output || output.length === 0) return null;
-
-                        const lines = output.trim().split('\n').filter(line => {
-                            // Remove separator lines (lines with only -, +, |, =, and spaces)
-                            return line.trim() && !/^[\-\+\|\=\s]+$/.test(line.trim());
-                        });
-
-                        if (lines.length === 0) return null;
-
-                        // Extract rows - handle both pipe-separated and whitespace-separated formats
-                        const rows = [];
-                        for (const line of lines) {
-                            let values;
-                            if (line.includes('|')) {
-                                // Pipe-separated format
-                                values = line.split('|')
-                                    .map(v => v.trim())
-                                    .filter(v => v.length > 0);
-                            } else {
-                                // Whitespace-separated format - split by multiple spaces
-                                values = line.trim().split(/\s{2,}/)
-                                    .map(v => v.trim())
-                                    .filter(v => v.length > 0);
-                            }
-                            if (values.length > 0) {
-                                rows.push(values);
-                            }
-                        }
-
-                        return rows;
-                    }
-
-                    // Helper function to normalize values for comparison
-                    function normalizeValue(val) {
-                        if (!val) return '';
-                        // Convert to lowercase, trim, remove extra spaces
-                        return val.toString().toLowerCase().trim().replace(/\s+/g, ' ');
-                    }
-
-                    // Helper function to compare two parsed outputs
-                    function compareOutputs(actual, expected) {
-                        if (!actual || !expected) return false;
-                        if (actual.length !== expected.length) return false;
-
-                        // Sort both outputs to handle different row orders (especially for GROUP BY)
-                        const sortRows = (rows) => {
-                            return rows.map(row => row.map(normalizeValue))
-                                .sort((a, b) => a.join('|').localeCompare(b.join('|')));
-                        };
-
-                        const actualSorted = sortRows(actual);
-                        const expectedSorted = sortRows(expected);
-
-                        // Compare each row
-                        for (let i = 0; i < actualSorted.length; i++) {
-                            const actualRow = actualSorted[i];
-                            const expectedRow = expectedSorted[i];
-
-                            if (actualRow.length !== expectedRow.length) return false;
-
-                            for (let j = 0; j < actualRow.length; j++) {
-                                if (actualRow[j] !== expectedRow[j]) {
-                                    return false;
-                                }
-                            }
-                        }
-
-                        return true;
-                    }
-
-                    // Parse both outputs
-                    const actualParsed = parseSQLOutput(actualOutput);
-                    const expectedParsed = parseSQLOutput(expectedOutput);
-
-                    // Compare the parsed data
-                    const isCorrect = compareOutputs(actualParsed, expectedParsed);
+                    // Execute using local sql.js (no external API needed)
+                    const sqlResultProctored = await executeSQLWithSqlJs(sqlSchema, code);
+                    const executedSuccessfully = sqlResultProctored.success;
+                    const isCorrect = executedSuccessfully && compareSQLResults(sqlResultProctored.results, expectedQueryResult);
+                    const errorMsg = sqlResultProctored.error || '';
 
                     console.log(`Proctored SQL Evaluation - Executed: ${executedSuccessfully}, Correct: ${isCorrect}`);
-                    console.log(`Expected rows:`, expectedParsed);
-                    console.log(`Actual rows:`, actualParsed);
+                    if (!executedSuccessfully) console.log(`SQL Error: ${errorMsg}`);
 
                     if (executedSuccessfully && isCorrect) {
                         // Perfect match - award full points
@@ -2445,11 +2456,10 @@ app.post('/api/submissions/proctored', optionalFileUpload, async (req, res) => {
                             bestPractices: 'Fair - Query structure needs review'
                         };
                     } else {
-                        // Query has syntax error or runtime error
                         evaluationResult.score = 0;
                         evaluationResult.status = 'rejected';
-                        evaluationResult.feedback = 'Your SQL query has syntax errors or fails to execute. Check your SQL syntax and try again.';
-                        evaluationResult.aiExplanation = `SQL execution failed: ${actualOutput.substring(0, 200)}`;
+                        evaluationResult.feedback = `Your SQL query has errors: ${errorMsg.substring(0, 200)}`;
+                        evaluationResult.aiExplanation = `SQL execution failed: ${errorMsg.substring(0, 200)}`;
                         evaluationResult.analysis = {
                             correctness: 'Poor - Query fails to execute',
                             efficiency: 'N/A',
@@ -5422,82 +5432,21 @@ async function runInlineCodingTests(code, language, testCases) {
 }
 
 async function runSqlAndCompare(schema, query, expectedOutput) {
-    const expected = (expectedOutput || '').toString().trim().replace(/\r/g, '');
     try {
-        const fullQuery = schema ? `${schema}\n\n${query}` : query;
-        const response = await fetch('https://emkc.org/api/v2/piston/execute', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                language: 'sqlite3',
-                version: '3.36.0',
-                files: [{ content: fullQuery }]
-            })
-        });
-        const data = await response.json();
-        const actual = (data.run?.output || '').trim().replace(/\r/g, '');
-
-        // Smart comparison: check exact match, normalized match, or data-only match
-        let isCorrect = false;
-        if (data.run?.code === 0) {
-            isCorrect = actual === expected ||
-                normalizeSqlOutput(actual) === normalizeSqlOutput(expected) ||
-                compareSqlDataOnly(actual, expected);
+        const sqlResult = await executeSQLWithSqlJs(schema, query);
+        if (!sqlResult.success) {
+            return { isCorrect: false, output: sqlResult.error || 'SQL execution failed' };
         }
-        return { isCorrect, output: actual };
+        const isCorrect = compareSQLResults(sqlResult.results, expectedOutput || '');
+        // Build a human-readable output from results
+        let output = '';
+        if (sqlResult.results && sqlResult.results.length > 0) {
+            const r = sqlResult.results[0];
+            output = r.columns.join('|') + '\n' + r.values.map(row => row.join('|')).join('\n');
+        }
+        return { isCorrect, output };
     } catch (e) {
         return { isCorrect: false, output: e.message };
-    }
-}
-
-function normalizeSqlOutput(s) {
-    return s.split('\n').map(l => l.trim()).filter(Boolean).join('\n');
-}
-
-// Compare SQL output by extracting just the data values, ignoring column headers
-function compareSqlDataOnly(actual, expected) {
-    try {
-        // Extract values from pipe-separated or newline format
-        const extractValues = (str) => {
-            // Replace pipes with newlines for uniform processing
-            const normalized = str.replace(/\|/g, '\n').replace(/\r/g, '');
-            // Split by newlines and filter out empty lines
-            const lines = normalized.split('\n').map(l => l.trim()).filter(Boolean);
-            // Extract just numeric values and data (not column names which typically contain letters only)
-            const dataValues = lines.filter(line => {
-                // Keep lines that have numbers or are clearly data rows
-                return /\d/.test(line) || line.includes('|');
-            });
-            // Also try to extract just the values from each line
-            const allValues = lines.flatMap(line => {
-                // Split by common delimiters and get values
-                return line.split(/[\|\s]+/).map(v => v.trim()).filter(Boolean);
-            });
-            return {
-                dataLines: dataValues.join('|').toLowerCase(),
-                allValues: allValues.map(v => v.toLowerCase()).sort().join('|')
-            };
-        };
-
-        const actualData = extractValues(actual);
-        const expectedData = extractValues(expected);
-
-        // Compare data lines (ignoring column headers)
-        if (actualData.dataLines === expectedData.dataLines) return true;
-
-        // Compare all extracted values (for different formatting)
-        if (actualData.allValues === expectedData.allValues) return true;
-
-        // Try comparing just the numeric/data portions
-        const extractNumbers = (str) => {
-            const nums = str.match(/[\d.]+/g) || [];
-            return nums.sort().join(',');
-        };
-        if (extractNumbers(actual) === extractNumbers(expected)) return true;
-
-        return false;
-    } catch (e) {
-        return false;
     }
 }
 
@@ -5573,9 +5522,18 @@ app.post('/api/run-with-tests', async (req, res) => {
 
         // If no test cases, run code once and return output
         if (testCases.length === 0) {
-            let codeToExecute = code;
-            if (language === 'SQL' && sqlSchema) {
-                codeToExecute = `${sqlSchema}\n\n${code}`;
+            if (language === 'SQL') {
+                const sqlResult = await executeSQLWithSqlJs(sqlSchema || '', code);
+                let output = '';
+                if (sqlResult.success && sqlResult.results && sqlResult.results.length > 0) {
+                    const r = sqlResult.results[0];
+                    output = r.columns.join('|') + '\n' + r.values.map(row => row.join('|')).join('\n');
+                } else if (!sqlResult.success) {
+                    output = sqlResult.error || 'SQL execution failed';
+                } else {
+                    output = 'Query executed successfully (no rows returned)';
+                }
+                return res.json({ hasTestCases: false, output, status: sqlResult.success ? 'success' : 'error', results: [] });
             }
 
             const response = await fetch('https://emkc.org/api/v2/piston/execute', {
@@ -5584,7 +5542,7 @@ app.post('/api/run-with-tests', async (req, res) => {
                 body: JSON.stringify({
                     language: runtime.language,
                     version: runtime.version,
-                    files: [{ content: codeToExecute }]
+                    files: [{ content: code }]
                 })
             });
 
@@ -5611,21 +5569,38 @@ app.post('/api/run-with-tests', async (req, res) => {
             }
 
             try {
-                const response = await fetch('https://emkc.org/api/v2/piston/execute', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        language: runtime.language,
-                        version: runtime.version,
-                        files: [{ content: codeWithInput }],
-                        stdin: tc.input || ''
-                    })
-                });
+                let actualOutput, passed;
 
-                const data = await response.json();
-                const actualOutput = (data.run?.output || '').trim();
+                if (language === 'SQL') {
+                    // Use sql.js for SQL test case evaluation
+                    const sqlTestResult = await executeSQLWithSqlJs(sqlSchema || '', code);
+                    if (sqlTestResult.success && sqlTestResult.results && sqlTestResult.results.length > 0) {
+                        const r = sqlTestResult.results[0];
+                        actualOutput = r.columns.join('|') + '\n' + r.values.map(row => row.join('|')).join('\n');
+                    } else if (sqlTestResult.success) {
+                        actualOutput = 'Query executed (no rows returned)';
+                    } else {
+                        actualOutput = sqlTestResult.error || 'SQL error';
+                    }
+                    const expectedOutput = (tc.expected_output || '').trim();
+                    passed = sqlTestResult.success && compareSQLResults(sqlTestResult.results, expectedOutput);
+                } else {
+                    const response = await fetch('https://emkc.org/api/v2/piston/execute', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            language: runtime.language,
+                            version: runtime.version,
+                            files: [{ content: code }],
+                            stdin: tc.input || ''
+                        })
+                    });
+                    const data = await response.json();
+                    actualOutput = (data.run?.output || '').trim();
+                    passed = actualOutput === (tc.expected_output || '').trim();
+                }
+
                 const expectedOutput = (tc.expected_output || '').trim();
-                const passed = actualOutput === expectedOutput;
 
                 if (passed) {
                     passedCount++;
@@ -5684,51 +5659,33 @@ app.post('/api/sql/execute-visualize', async (req, res) => {
     try {
         const { query, schema } = req.body;
 
-        // Execute via Piston
-        let fullQuery = schema ? `${schema}\n\n${query}` : query;
+        // Execute via sql.js (local, no external API)
+        const sqlResult = await executeSQLWithSqlJs(schema || '', query);
 
-        const response = await fetch('https://emkc.org/api/v2/piston/execute', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                language: 'sqlite3',
-                version: '3.36.0',
-                files: [{ content: fullQuery }]
-            })
-        });
+        let parsedData = { columns: [], rows: [], rawOutput: '' };
+        let output = '';
 
-        const data = await response.json();
-        const output = data.run?.output || '';
-        const isError = data.run?.code !== 0;
-
-        // Parse the output into table format
-        let parsedData = { columns: [], rows: [], rawOutput: output };
-
-        if (!isError && output.trim()) {
-            const lines = output.trim().split('\n');
-            if (lines.length > 0) {
-                // Try to detect if it's tabular output
-                const firstLine = lines[0];
-                if (firstLine.includes('|')) {
-                    // Pipe-separated format
-                    parsedData.columns = firstLine.split('|').map(c => c.trim()).filter(c => c);
-                    parsedData.rows = lines.slice(1)
-                        .filter(line => line.includes('|') && !line.match(/^[\-\+]+$/))
-                        .map(line => line.split('|').map(c => c.trim()).filter(c => c));
-                } else {
-                    // Plain output - parse as column-separated
-                    parsedData.columns = ['Result'];
-                    parsedData.rows = lines.map(line => [line]);
-                }
+        if (sqlResult.success) {
+            if (sqlResult.results && sqlResult.results.length > 0) {
+                const r = sqlResult.results[0];
+                parsedData.columns = r.columns;
+                parsedData.rows = r.values.map(row => row.map(v => (v === null ? 'NULL' : String(v))));
+                output = r.columns.join('|') + '\n' + r.values.map(row => row.join('|')).join('\n');
+            } else {
+                output = 'Query executed successfully (no rows returned)';
             }
+            parsedData.rawOutput = output;
+        } else {
+            output = sqlResult.error || 'SQL execution failed';
+            parsedData.rawOutput = output;
         }
 
         res.json({
-            success: !isError,
+            success: sqlResult.success,
             output,
             parsedData,
-            executionTime: data.run?.time || 0,
-            error: isError ? output : null
+            executionTime: 0,
+            error: sqlResult.success ? null : output
         });
     } catch (error) {
         res.status(500).json({ error: error.message });
