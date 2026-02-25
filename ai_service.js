@@ -271,15 +271,27 @@ Return ONLY a valid JSON array with exactly ${count} problem(s).`
         let problems = parseJSON(response);
         if (problems && Array.isArray(problems) && problems.length > 0) {
             // Transform sample_input/output to examples format and trim to exact count
-            problems = problems.slice(0, count).map((p, idx) => ({
-                ...p,
-                id: p.id || idx + 1,
-                examples: p.sample_input && p.sample_output ? [{
-                    input: p.sample_input,
-                    output: p.sample_output,
-                    explanation: p.sample_explanation || ''
-                }] : (p.examples || [])
-            }));
+            problems = problems.slice(0, count).map((p, idx) => {
+                // Normalize test_cases: ensure snake_case field names and valid format
+                let testCases = p.test_cases || [];
+                if (!Array.isArray(testCases)) testCases = [];
+                testCases = testCases.map(tc => ({
+                    input: String(tc.input != null ? tc.input : ''),
+                    // Accept both expected_output (snake_case) and expectedOutput (camelCase)
+                    expected_output: String(tc.expected_output != null ? tc.expected_output : (tc.expectedOutput != null ? tc.expectedOutput : ''))
+                }));
+
+                return {
+                    ...p,
+                    id: p.id || idx + 1,
+                    test_cases: testCases,
+                    examples: p.sample_input && p.sample_output ? [{
+                        input: p.sample_input,
+                        output: p.sample_output,
+                        explanation: p.sample_explanation || ''
+                    }] : (p.examples || [])
+                };
+            });
             return problems;
         }
         return generateFallbackCoding(skills, count, difficultyLevel);

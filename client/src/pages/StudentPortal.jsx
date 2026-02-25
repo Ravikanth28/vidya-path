@@ -195,8 +195,8 @@ function StudentPortal() {
         <DashboardLayout navItems={navItems} title={title} subtitle={subtitle} mentorInfo={mentorInfo}>
             <Routes>
                 <Route path="/" element={<Dashboard user={user} />} />
-                <Route path="/tasks" element={<Tasks user={user} />} />
-                <Route path="/assignments" element={<Assignments user={user} />} />
+                <Route path="/tasks" element={<Tasks key={user?.id} user={user} />} />
+                <Route path="/assignments" element={<Assignments key={user?.id} user={user} />} />
                 <Route path="/aptitude" element={<AptitudeTests user={user} />} />
                 <Route path="/global-tests" element={<GlobalTests user={user} />} />
                 <Route path="/skill-tests" element={<SkillTestPortal user={user} />} />
@@ -576,24 +576,59 @@ function Dashboard({ user }) {
 function Tasks({ user }) {
     const [tasks, setTasks] = useState([])
     const [loading, setLoading] = useState(true)
+    const [fetchError, setFetchError] = useState(null)
     const [activeTask, setActiveTask] = useState(null)
     const [viewingTask, setViewingTask] = useState(null)
 
     const fetchTasks = (showLoading = true) => {
+        if (!user?.id) return
         if (showLoading) setLoading(true)
+        setFetchError(null)
         axios.get(`${API_BASE}/students/${user.id}/tasks`)
             .then(res => {
-                setTasks(res.data)
+                setTasks(Array.isArray(res.data) ? res.data : [])
+                setFetchError(null)
                 setLoading(false)
             })
-            .catch(err => setLoading(false))
+            .catch(err => {
+                setLoading(false)
+                const msg = err?.response?.data?.error || err?.message || 'Failed to load tasks'
+                setFetchError(msg)
+                console.error('Task fetch error:', msg)
+            })
     }
 
     useEffect(() => {
+        if (!user?.id) return
         fetchTasks(true)
-    }, [user.id])
+    }, [user?.id])
 
     if (loading) return <div className="loading-spinner"></div>
+
+    if (fetchError) return (
+        <div style={{ textAlign: 'center', padding: '3rem', maxWidth: 480, margin: '0 auto' }}>
+            <div style={{ fontSize: '3rem', marginBottom: '1rem' }}>⚠️</div>
+            <h3 style={{ marginBottom: '0.5rem', color: 'var(--text-primary)' }}>Could not load tasks</h3>
+            <p style={{ color: 'var(--text-muted)', marginBottom: '1.5rem', fontSize: '0.9rem' }}>{fetchError}</p>
+            <button
+                onClick={() => fetchTasks()}
+                style={{
+                    padding: '0.6rem 1.5rem',
+                    background: 'var(--primary)',
+                    color: '#fff',
+                    border: 'none',
+                    borderRadius: '8px',
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '0.5rem'
+                }}
+            >
+                <RefreshCw size={16} /> Try Again
+            </button>
+        </div>
+    )
 
     return (
         <>
@@ -1158,6 +1193,7 @@ function TaskSubmitModal({ task, user, onClose, onSubmissionComplete }) {
 function Assignments({ user }) {
     const [problems, setProblems] = useState([])
     const [loading, setLoading] = useState(true)
+    const [fetchError, setFetchError] = useState(null)
     const [activeProblem, setActiveProblem] = useState(null)
     const [useProctoredEditor, setUseProctoredEditor] = useState(false)
     const [activeTab, setActiveTab] = useState('coding') // 'coding' or 'sql'
@@ -1177,22 +1213,31 @@ function Assignments({ user }) {
     }
 
     const refreshProblems = (silent = false) => {
+        if (!user?.id) return
         if (!silent) setLoading(true)
+        if (!silent) setFetchError(null)
         axios.get(`${API_BASE}/students/${user.id}/problems`)
             .then(res => {
-                const data = res.data
+                const data = Array.isArray(res.data) ? res.data : []
                 setProblems(data)
+                setFetchError(null)
                 if (!silent) setLoading(false)
                 fetchAttemptCounts(data)
             })
             .catch(err => {
-                if (!silent) setLoading(false)
+                if (!silent) {
+                    setLoading(false)
+                    const msg = err?.response?.data?.error || err?.message || 'Failed to load problems'
+                    setFetchError(msg)
+                    console.error('Problem fetch error:', msg)
+                }
             })
     }
 
     useEffect(() => {
+        if (!user?.id) return
         refreshProblems()
-    }, [user.id])
+    }, [user?.id])
 
     const handleSolve = (problem) => {
         const maxAttempts = problem.maxAttempts || problem.max_attempts || 0
@@ -1218,6 +1263,31 @@ function Assignments({ user }) {
     const sqlProblems = problems.filter(p => p.language === 'SQL' || p.type === 'SQL')
 
     if (loading) return <div className="loading-spinner"></div>
+
+    if (fetchError) return (
+        <div style={{ textAlign: 'center', padding: '3rem', maxWidth: 480, margin: '0 auto' }}>
+            <div style={{ fontSize: '3rem', marginBottom: '1rem' }}>⚠️</div>
+            <h3 style={{ marginBottom: '0.5rem', color: 'var(--text-primary)' }}>Could not load problems</h3>
+            <p style={{ color: 'var(--text-muted)', marginBottom: '1.5rem', fontSize: '0.9rem' }}>{fetchError}</p>
+            <button
+                onClick={() => refreshProblems()}
+                style={{
+                    padding: '0.6rem 1.5rem',
+                    background: 'var(--primary)',
+                    color: '#fff',
+                    border: 'none',
+                    borderRadius: '8px',
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '0.5rem'
+                }}
+            >
+                <RefreshCw size={16} /> Try Again
+            </button>
+        </div>
+    )
 
     // Helper function to render problem cards
     const renderProblemCard = (problem) => (

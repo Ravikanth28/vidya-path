@@ -26,7 +26,7 @@ const getUserKeyFromRequest = (req, res) => {
 // Tier limits configuration (can be fetched from DB in production)
 const TIER_LIMITS = {
     free: {
-        general: 100,           // API calls per day
+        general: 500,           // API calls per 15 min (increased — students share IP in classrooms)
         auth: 10,               // Login attempts per 15 min
         ai: 5,                  // AI requests per day
         code: 10,               // Code executions per 5 min
@@ -36,7 +36,7 @@ const TIER_LIMITS = {
         windowMs: 24 * 60 * 60 * 1000  // 1 day
     },
     pro: {
-        general: 1000,
+        general: 2000,
         auth: 50,
         ai: 50,
         code: 100,

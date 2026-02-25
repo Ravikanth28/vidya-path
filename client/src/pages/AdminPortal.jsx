@@ -2243,6 +2243,7 @@ function GlobalTasks() {
     const [showStudentAllocationModal, setShowStudentAllocationModal] = useState(false)
     const [allStudents, setAllStudents] = useState([])
     const [selectedStudents, setSelectedStudents] = useState([])
+    const [originallyAllocated, setOriginallyAllocated] = useState([])
     const [allocatingTaskId, setAllocatingTaskId] = useState(null)
     const [studentSearchTerm, setStudentSearchTerm] = useState('')
     const [taskSearchTerm, setTaskSearchTerm] = useState('')
@@ -2286,20 +2287,25 @@ function GlobalTasks() {
         setAllocatingTaskId(taskId)
         setStudentSearchTerm('')
         setSelectedStudents([])
+        setOriginallyAllocated([])
         await fetchAllStudents()
 
         try {
             const res = await axios.get(`${API_BASE}/tests/${taskId}/allocated-students`)
-            // Using studentIds from our standardized API response
-            setSelectedStudents(res.data.studentIds || [])
+            const existing = res.data.studentIds || []
+            setSelectedStudents(existing)
+            setOriginallyAllocated(existing)
         } catch (e) {
             console.error(e)
             setSelectedStudents([])
+            setOriginallyAllocated([])
         }
         setShowStudentAllocationModal(true)
     }
 
     const toggleStudentSelection = (studentId) => {
+        // Cannot deselect already-allocated students
+        if (originallyAllocated.includes(studentId)) return
         setSelectedStudents(prev =>
             prev.includes(studentId)
                 ? prev.filter(id => id !== studentId)
@@ -2660,11 +2666,16 @@ function GlobalTasks() {
                                         (s.name || s.username || '').toLowerCase().includes(studentSearchTerm.toLowerCase()) ||
                                         (s.batch || '').toLowerCase().includes(studentSearchTerm.toLowerCase())
                                     )
-                                    const allSelected = filtered.every(s => selectedStudents.includes(s.id))
-                                    if (allSelected) {
-                                        setSelectedStudents(prev => prev.filter(id => !filtered.map(s => s.id).includes(id)))
+                                    // Only toggle non-locked students
+                                    const toggleable = filtered.filter(s => !originallyAllocated.includes(s.id))
+                                    const allToggleableSelected = toggleable.every(s => selectedStudents.includes(s.id))
+                                    if (allToggleableSelected) {
+                                        // Deselect only non-locked students
+                                        setSelectedStudents(prev => prev.filter(id =>
+                                            originallyAllocated.includes(id) || !toggleable.map(s => s.id).includes(id)
+                                        ))
                                     } else {
-                                        setSelectedStudents(prev => [...new Set([...prev, ...filtered.map(s => s.id)])])
+                                        setSelectedStudents(prev => [...new Set([...prev, ...toggleable.map(s => s.id)])])
                                     }
                                 }}
                                 style={{
@@ -2682,7 +2693,8 @@ function GlobalTasks() {
                                 {allStudents.filter(s =>
                                     (s.name || s.username || '').toLowerCase().includes(studentSearchTerm.toLowerCase()) ||
                                     (s.batch || '').toLowerCase().includes(studentSearchTerm.toLowerCase())
-                                ).every(s => selectedStudents.includes(s.id)) ? 'Deselect All' : 'Select All'}
+                                ).filter(s => !originallyAllocated.includes(s.id))
+                                    .every(s => selectedStudents.includes(s.id)) ? 'Deselect All' : 'Select All'}
                             </button>
                         </div>
 
@@ -2708,18 +2720,19 @@ function GlobalTasks() {
                                                 padding: '1rem',
                                                 borderRadius: '1rem',
                                                 background: selectedStudents.includes(student.id) ? 'var(--primary-alpha)' : 'var(--bg-card)',
-                                                border: `1.5px solid ${selectedStudents.includes(student.id) ? 'var(--primary)' : 'var(--border-color)'}`,
-                                                cursor: 'pointer',
+                                                border: `1.5px solid ${originallyAllocated.includes(student.id) ? '#10b981' : selectedStudents.includes(student.id) ? 'var(--primary)' : 'var(--border-color)'}`,
+                                                cursor: originallyAllocated.includes(student.id) ? 'default' : 'pointer',
                                                 display: 'flex',
                                                 alignItems: 'center',
                                                 gap: '1rem',
                                                 transition: 'all 0.2s',
-                                                boxShadow: selectedStudents.includes(student.id) ? '0 4px 12px var(--primary-alpha)' : 'none'
+                                                boxShadow: selectedStudents.includes(student.id) ? '0 4px 12px var(--primary-alpha)' : 'none',
+                                                opacity: originallyAllocated.includes(student.id) ? 0.85 : 1
                                             }}
                                         >
                                             <div style={{
                                                 width: '36px', height: '36px', borderRadius: '50%',
-                                                background: selectedStudents.includes(student.id) ? 'var(--primary)' : 'var(--bg-secondary)',
+                                                background: originallyAllocated.includes(student.id) ? '#10b981' : selectedStudents.includes(student.id) ? 'var(--primary)' : 'var(--bg-secondary)',
                                                 display: 'flex', alignItems: 'center', justifyContent: 'center',
                                                 fontSize: '0.9rem', fontWeight: 700, color: 'white'
                                             }}>
@@ -2729,13 +2742,20 @@ function GlobalTasks() {
                                                 <div style={{ fontWeight: 600, fontSize: '0.9rem', color: 'var(--text-main)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                                                     {student.name || student.username}
                                                 </div>
-                                                <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                                <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '4px', flexWrap: 'wrap' }}>
                                                     <span style={{ padding: '2px 6px', borderRadius: '4px', background: 'var(--bg-secondary)', border: '1px solid var(--border-color)' }}>
                                                         {student.batch || 'No Batch'}
                                                     </span>
+                                                    {originallyAllocated.includes(student.id) && (
+                                                        <span style={{ padding: '2px 6px', borderRadius: '4px', background: 'rgba(16, 185, 129, 0.1)', border: '1px solid rgba(16,185,129,0.3)', color: '#10b981', fontSize: '0.7rem', fontWeight: 600 }}>
+                                                            ✓ Already Assigned
+                                                        </span>
+                                                    )}
                                                 </div>
                                             </div>
-                                            {selectedStudents.includes(student.id) && <CheckCircle size={18} color="var(--primary)" />}
+                                            {originallyAllocated.includes(student.id)
+                                                ? <CheckCircle size={18} color="#10b981" />
+                                                : selectedStudents.includes(student.id) && <CheckCircle size={18} color="var(--primary)" />}
                                         </div>
                                     ))
                                 )}
@@ -2743,8 +2763,13 @@ function GlobalTasks() {
                         </div>
 
                         <div className="modal-footer" style={{ padding: '1.2rem 1.5rem', borderTop: '1px solid var(--border-color)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'var(--bg-secondary)' }}>
-                            <div style={{ fontSize: '0.95rem', color: 'var(--text-main)', fontWeight: 500 }}>
-                                <span style={{ color: 'var(--primary)', fontWeight: 800, fontSize: '1.1rem' }}>{selectedStudents.length}</span> students selected
+                            <div style={{ fontSize: '0.9rem', color: 'var(--text-main)', fontWeight: 500 }}>
+                                <span style={{ color: 'var(--primary)', fontWeight: 800, fontSize: '1.1rem' }}>{selectedStudents.length}</span> total&nbsp;
+                                {originallyAllocated.length > 0 && (
+                                    <span style={{ color: 'var(--text-muted)', fontSize: '0.82rem' }}>
+                                        ({originallyAllocated.length} already assigned, +{selectedStudents.filter(id => !originallyAllocated.includes(id)).length} new)
+                                    </span>
+                                )}
                             </div>
                             <div style={{ display: 'flex', gap: '1rem' }}>
                                 <button className="btn-reset" onClick={() => {
@@ -2922,6 +2947,7 @@ function GlobalProblems() {
     const [showStudentAllocationModal, setShowStudentAllocationModal] = useState(false)
     const [allStudents, setAllStudents] = useState([])
     const [selectedStudents, setSelectedStudents] = useState([])
+    const [originallyAllocated, setOriginallyAllocated] = useState([])
     const [allocatingProblemId, setAllocatingProblemId] = useState(null)
     const [studentSearchTerm, setStudentSearchTerm] = useState('')
     const [problemSearchTerm, setProblemSearchTerm] = useState('')
@@ -2982,19 +3008,26 @@ function GlobalProblems() {
         setAllocatingProblemId(problemId)
         setStudentSearchTerm('')
         setSelectedStudents([])
+        setOriginallyAllocated([])
         await fetchAllStudents()
 
         try {
-            const res = await axios.get(`${API_BASE}/tests/${problemId}/allocated-students`)
-            setSelectedStudents(res.data.studentIds || [])
+            // Use the correct problems allocated-students endpoint
+            const res = await axios.get(`${API_BASE}/problems/${problemId}/allocated-students`)
+            const existing = res.data.studentIds || []
+            setSelectedStudents(existing)
+            setOriginallyAllocated(existing)
         } catch (e) {
             console.error(e)
             setSelectedStudents([])
+            setOriginallyAllocated([])
         }
         setShowStudentAllocationModal(true)
     }
 
     const toggleStudentSelection = (studentId) => {
+        // Cannot deselect already-allocated students
+        if (originallyAllocated.includes(studentId)) return
         setSelectedStudents(prev =>
             prev.includes(studentId)
                 ? prev.filter(id => id !== studentId)
@@ -3539,11 +3572,15 @@ function GlobalProblems() {
                                         (s.name || s.username || '').toLowerCase().includes(studentSearchTerm.toLowerCase()) ||
                                         (s.batch || '').toLowerCase().includes(studentSearchTerm.toLowerCase())
                                     )
-                                    const allSelected = filtered.every(s => selectedStudents.includes(s.id))
-                                    if (allSelected) {
-                                        setSelectedStudents(prev => prev.filter(id => !filtered.map(s => s.id).includes(id)))
+                                    // Only toggle non-locked students
+                                    const toggleable = filtered.filter(s => !originallyAllocated.includes(s.id))
+                                    const allToggleableSelected = toggleable.every(s => selectedStudents.includes(s.id))
+                                    if (allToggleableSelected) {
+                                        setSelectedStudents(prev => prev.filter(id =>
+                                            originallyAllocated.includes(id) || !toggleable.map(s => s.id).includes(id)
+                                        ))
                                     } else {
-                                        setSelectedStudents(prev => [...new Set([...prev, ...filtered.map(s => s.id)])])
+                                        setSelectedStudents(prev => [...new Set([...prev, ...toggleable.map(s => s.id)])])
                                     }
                                 }}
                                 style={{
@@ -3561,7 +3598,8 @@ function GlobalProblems() {
                                 {allStudents.filter(s =>
                                     (s.name || s.username || '').toLowerCase().includes(studentSearchTerm.toLowerCase()) ||
                                     (s.batch || '').toLowerCase().includes(studentSearchTerm.toLowerCase())
-                                ).every(s => selectedStudents.includes(s.id)) ? 'Deselect All' : 'Select All'}
+                                ).filter(s => !originallyAllocated.includes(s.id))
+                                    .every(s => selectedStudents.includes(s.id)) ? 'Deselect All' : 'Select All'}
                             </button>
                         </div>
 
@@ -3587,18 +3625,19 @@ function GlobalProblems() {
                                                 padding: '1rem',
                                                 borderRadius: '1rem',
                                                 background: selectedStudents.includes(student.id) ? 'var(--primary-alpha)' : 'var(--bg-card)',
-                                                border: `1.5px solid ${selectedStudents.includes(student.id) ? 'var(--primary)' : 'var(--border-color)'}`,
-                                                cursor: 'pointer',
+                                                border: `1.5px solid ${originallyAllocated.includes(student.id) ? '#10b981' : selectedStudents.includes(student.id) ? 'var(--primary)' : 'var(--border-color)'}`,
+                                                cursor: originallyAllocated.includes(student.id) ? 'default' : 'pointer',
                                                 display: 'flex',
                                                 alignItems: 'center',
                                                 gap: '1rem',
                                                 transition: 'all 0.2s',
-                                                boxShadow: selectedStudents.includes(student.id) ? '0 4px 12px var(--primary-alpha)' : 'none'
+                                                boxShadow: selectedStudents.includes(student.id) ? '0 4px 12px var(--primary-alpha)' : 'none',
+                                                opacity: originallyAllocated.includes(student.id) ? 0.85 : 1
                                             }}
                                         >
                                             <div style={{
                                                 width: '36px', height: '36px', borderRadius: '50%',
-                                                background: selectedStudents.includes(student.id) ? 'var(--primary)' : 'var(--bg-secondary)',
+                                                background: originallyAllocated.includes(student.id) ? '#10b981' : selectedStudents.includes(student.id) ? 'var(--primary)' : 'var(--bg-secondary)',
                                                 display: 'flex', alignItems: 'center', justifyContent: 'center',
                                                 fontSize: '0.9rem', fontWeight: 700, color: 'white'
                                             }}>
@@ -3608,13 +3647,20 @@ function GlobalProblems() {
                                                 <div style={{ fontWeight: 600, fontSize: '0.9rem', color: 'var(--text-main)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                                                     {student.name || student.username}
                                                 </div>
-                                                <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                                <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '4px', flexWrap: 'wrap' }}>
                                                     <span style={{ padding: '2px 6px', borderRadius: '4px', background: 'var(--bg-secondary)', border: '1px solid var(--border-color)' }}>
                                                         {student.batch || 'No Batch'}
                                                     </span>
+                                                    {originallyAllocated.includes(student.id) && (
+                                                        <span style={{ padding: '2px 6px', borderRadius: '4px', background: 'rgba(16, 185, 129, 0.1)', border: '1px solid rgba(16,185,129,0.3)', color: '#10b981', fontSize: '0.7rem', fontWeight: 600 }}>
+                                                            ✓ Already Assigned
+                                                        </span>
+                                                    )}
                                                 </div>
                                             </div>
-                                            {selectedStudents.includes(student.id) && <CheckCircle size={18} color="var(--primary)" />}
+                                            {originallyAllocated.includes(student.id)
+                                                ? <CheckCircle size={18} color="#10b981" />
+                                                : selectedStudents.includes(student.id) && <CheckCircle size={18} color="var(--primary)" />}
                                         </div>
                                     ))
                                 )}
@@ -3622,8 +3668,13 @@ function GlobalProblems() {
                         </div>
 
                         <div className="modal-footer" style={{ padding: '1.2rem 1.5rem', borderTop: '1px solid var(--border-color)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'var(--bg-secondary)' }}>
-                            <div style={{ fontSize: '0.95rem', color: 'var(--text-main)', fontWeight: 500 }}>
-                                <span style={{ color: 'var(--primary)', fontWeight: 800, fontSize: '1.1rem' }}>{selectedStudents.length}</span> students selected
+                            <div style={{ fontSize: '0.9rem', color: 'var(--text-main)', fontWeight: 500 }}>
+                                <span style={{ color: 'var(--primary)', fontWeight: 800, fontSize: '1.1rem' }}>{selectedStudents.length}</span> total&nbsp;
+                                {originallyAllocated.length > 0 && (
+                                    <span style={{ color: 'var(--text-muted)', fontSize: '0.82rem' }}>
+                                        ({originallyAllocated.length} already assigned, +{selectedStudents.filter(id => !originallyAllocated.includes(id)).length} new)
+                                    </span>
+                                )}
                             </div>
                             <div style={{ display: 'flex', gap: '1rem' }}>
                                 <button className="btn-reset" onClick={() => {

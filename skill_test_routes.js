@@ -840,6 +840,19 @@ function registerSkillTestRoutes(app, pool) {
             let allPassed = true;
             const testResults = [];
 
+            // Normalize output for robust comparison: trim, lower case, remove \r, and remove trailing spaces on each line
+            const normalizeOutput = (str) => {
+                if (!str) return '';
+                return str.toString()
+                    .replace(/\r\n/g, '\n')      // Normalize line endings
+                    .replace(/\r/g, '\n')
+                    .split('\n')
+                    .map(line => line.trimEnd())  // Remove trailing spaces on each line
+                    .join('\n')
+                    .trim()                      // Trim entire string
+                    .toLowerCase();              // Case-insensitive comparison
+            };
+
             // Execute against all test cases
             for (let i = 0; i < testCases.length; i++) {
                 const tc = testCases[i];
@@ -850,10 +863,10 @@ function registerSkillTestRoutes(app, pool) {
                     result.success = true;
                 }
 
-                // Simple trim comparison
-                const actual = (result.output || '').trim();
-                const expected = (tc.expected_output || '').trim();
-                const passed = result.success && actual === expected;
+                // Robust comparison
+                const actual = (result.output || '').toString();
+                const expected = (tc.expected_output || '').toString();
+                const passed = result.success && normalizeOutput(actual) === normalizeOutput(expected);
 
                 if (!passed) allPassed = false;
                 testResults.push({
@@ -1145,33 +1158,74 @@ function registerSkillTestRoutes(app, pool) {
             const problem = sqlProblems.find(p => String(p.id) === String(problemId));
             if (!problem) return res.status(404).json({ error: 'Problem not found' });
 
-            // Use AI to evaluate the query (no production DB execution)
-            const evaluation = await evaluateSQLQuery(problem, sqlQuery);
-            const passed = evaluation.passed;
-            const feedback = evaluation.feedback || (passed ? '✅ Correct!' : '❌ Incorrect query.');
-
-            // Get actual and expected results for comparison
+            // 1. Prepare for execution check (prioritize actual results over AI)
+            let passed = false;
+            let feedback = '';
             let actual = null;
             let expected = null;
 
             try {
-                const [aRows, aFields] = await pool.query(sqlQuery);
-                actual = {
-                    rows: aRows.slice(0, 10),
-                    columns: aFields ? aFields.map(f => f.name) : []
-                };
+                // Security: determine allowed sandbox tables for this test
+                let allowedTables = [];
+                const [att] = await pool.query('SELECT test_id FROM skill_test_attempts WHERE id = ?', [attemptId]);
+                if (att.length > 0) {
+                    const t = getSandboxTableNames(att[0].test_id);
+                    allowedTables = Object.values(t);
+                }
 
-                if (problem.reference_query) {
-                    const [eRows, eFields] = await pool.query(problem.reference_query);
-                    expected = {
-                        rows: eRows.slice(0, 10),
-                        columns: eFields ? eFields.map(f => f.name) : []
+                // Security: check that the student query only references sandbox tables
+                const tablePattern = /(?:from|join)\s+([a-zA-Z_][a-zA-Z0-9_]*)/gi;
+                let match;
+                const referencedTables = [];
+                while ((match = tablePattern.exec(sqlQuery)) !== null) {
+                    referencedTables.push(match[1].toLowerCase());
+                }
+                const disallowedTables = referencedTables.filter(t => !allowedTables.includes(t));
+
+                if (disallowedTables.length === 0 && allowedTables.length > 0) {
+                    // Execute student query
+                    const [aRows, aFields] = await pool.query(sqlQuery);
+                    actual = {
+                        rows: aRows.slice(0, 10),
+                        columns: aFields ? aFields.map(f => f.name) : []
                     };
+
+                    // Execute reference query for comparison
+                    if (problem.reference_query) {
+                        try {
+                            const [eRows, eFields] = await pool.query(problem.reference_query);
+                            expected = {
+                                rows: eRows.slice(0, 10),
+                                columns: eFields ? eFields.map(f => f.name) : []
+                            };
+
+                            // Compare Results (Row-based comparison)
+                            // We use a simplified version of compareSQLResults if available, or just deep compare
+                            const actualJson = JSON.stringify(actual.rows);
+                            const expectedJson = JSON.stringify(expected.rows);
+
+                            if (actualJson === expectedJson) {
+                                passed = true;
+                                feedback = '✅ Excellent! Your query returned the correct results.';
+                            }
+                        } catch (refErr) {
+                            expected = { error: 'Reference query error: ' + refErr.message };
+                        }
+                    }
+                } else if (disallowedTables.length > 0) {
+                    actual = { error: `Access denied for tables: ${disallowedTables.join(', ')}` };
                 }
             } catch (queryErr) {
                 actual = { error: queryErr.message };
             }
 
+            // 2. If not passed by execution, OR we want detailed AI feedback
+            // Use AI to evaluate the query if it didn't pass or for detailed mentoring
+            if (!passed) {
+                const evaluation = await evaluateSQLQuery(problem, sqlQuery);
+                passed = evaluation.passed;
+                feedback = evaluation.feedback || (passed ? '✅ Correct!' : '❌ Incorrect query.');
+            }
             // Store the submission result
             const currentSubmissions = attempt.sql_submissions ? (typeof attempt.sql_submissions === 'string' ? JSON.parse(attempt.sql_submissions) : attempt.sql_submissions) : {};
             currentSubmissions[String(problemId)] = {

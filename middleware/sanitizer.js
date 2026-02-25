@@ -9,12 +9,11 @@
 function sanitizeString(str) {
     if (typeof str !== 'string') return str;
     // Remove HTML tags, keep only text
-    // Note: We NO LONGER strip angle brackets < > here because they are needed for SQL operators 
-    // and programming languages (e.g. #include <iostream>, List <String>).
+    // Note: We only remove actual HTML tags (e.g. <p>, <div/>), not single angle brackets
+    // used in SQL comparisons (e.g. salary > 50000) or templates (e.g. List<String>)
     return str
         .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '')  // Remove script tags
-        // We only remove actual HTML opening/closing tags, not single angle brackets
-        .replace(/<[^>]+>/g, '')  // Remove HTML tags (require at least one char inside to avoid stripping > from queries)
+        .replace(/<[a-zA-Z/][^>]*>/g, '')  // Improved: Only match <tag>, </tag>, or <tag/> (must start with letter or /)
         .trim()
         .substring(0, 10000);  // Limit to 10KB
 }

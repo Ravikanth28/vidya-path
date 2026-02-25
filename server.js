@@ -65,26 +65,45 @@ function sanitizeSQLForSQLite(sql) {
         .replace(/`([^`]+)`/g, '"$1"')
         // Replace MySQL-style TINYINT(1) boolean with INTEGER
         .replace(/\bTINYINT\s*\(\s*1\s*\)/gi, 'INTEGER')
+        // Replace BOOLEAN/BOOL with INTEGER
+        .replace(/\b(BOOLEAN|BOOL)\b/gi, 'INTEGER')
         // Replace DECIMAL(p,s) or NUMERIC(p,s) with NUMERIC
         .replace(/\b(DECIMAL|NUMERIC)\s*\(\s*\d+\s*(,\s*\d+\s*)?\)/gi, 'NUMERIC')
+        // Replace DOUBLE/FLOAT with REAL
+        .replace(/\b(DOUBLE|FLOAT)\s*(\(\s*\d+\s*(,\s*\d+\s*)?\))?/gi, 'REAL')
+        // Replace DATETIME, TIMESTAMP with TEXT (SQLite has no native date type)
+        .replace(/\b(DATETIME|TIMESTAMP)\b/gi, 'TEXT')
         // Replace MEDIUMTEXT, LONGTEXT, TINYTEXT with TEXT
         .replace(/\b(MEDIUM|LONG|TINY)TEXT\b/gi, 'TEXT')
+        // Replace MEDIUMBLOB, LONGBLOB, TINYBLOB, BLOB(n) with BLOB
+        .replace(/\b(MEDIUM|LONG|TINY)BLOB\b/gi, 'BLOB')
         // Replace MEDIUMINT, TINYINT, BIGINT with INTEGER
         .replace(/\b(MEDIUM|TINY|BIG|SMALL)INT\b(\s*\(\s*\d+\s*\))?/gi, 'INTEGER')
         // Replace INT(n) with INTEGER
         .replace(/\bINT\s*\(\s*\d+\s*\)/gi, 'INTEGER')
         // Replace VARCHAR(n) with TEXT
         .replace(/\bVARCHAR\s*\(\s*\d+\s*\)/gi, 'TEXT')
+        // Replace CHAR(n) with TEXT
+        .replace(/\bCHAR\s*\(\s*\d+\s*\)/gi, 'TEXT')
         // Replace ENUM(...) with TEXT
         .replace(/\bENUM\s*\([^)]+\)/gi, 'TEXT')
+        // Replace SET(...) with TEXT
+        .replace(/\bSET\s*\([^)]+\)/gi, 'TEXT')
         // Remove UNSIGNED keyword
         .replace(/\bUNSIGNED\b/gi, ' ')
         // Remove ZEROFILL keyword
         .replace(/\bZEROFILL\b/gi, ' ')
+        // Remove ON UPDATE CURRENT_TIMESTAMP
+        .replace(/\bON\s+UPDATE\s+CURRENT_TIMESTAMP\b/gi, ' ')
+        // Remove COMMENT '...' clauses
+        .replace(/\bCOMMENT\s+'[^']*'/gi, ' ')
+        .replace(/\bCOMMENT\s+"[^"]*"/gi, ' ')
         // Remove MySQL-style comments /*! ... */
         .replace(/\/\*![\s\S]*?\*\//g, ' ')
-        // Normalize whitespace (crucial to prevent mergers)
-        .replace(/\s+/g, ' ')
+        // Remove standalone KEY/INDEX definitions inside CREATE TABLE (SQLite doesn't support them inline)
+        .replace(/,\s*(?:UNIQUE\s+)?(?:KEY|INDEX)\s+\w+\s*\([^)]+\)/gi, ' ')
+        // Normalize only horizontal whitespace, preserving newlines
+        .replace(/[ \t]+/g, ' ')
         .trim();
 }
 
@@ -94,23 +113,26 @@ async function executeSQLWithSqlJs(schema, query) {
     const SQL = await initSqlJs();
     const db = new SQL.Database();
     try {
+        let schemaErrors = [];
         if (schema && schema.trim()) {
             const cleanSchema = sanitizeSQLForSQLite(schema);
             try {
-                // Primary: run schema as one block — same as SQLValidator in the browser
-                db.run(cleanSchema);
+                // Use .exec for schema setup — it supports multiple statements (CREATE + INSERTs)
+                // .run() often only executes the first statement in some builds
+                db.exec(cleanSchema);
             } catch (schemaErr) {
-                console.warn(`Schema single-shot failed (${schemaErr.message}), trying statement-by-statement...`);
-                // Fallback: split on semicolons at end of lines and try each statement
+                console.warn(`Schema setup failed (${schemaErr.message}), trying statement-by-statement recovery...`);
+                // Split on semicolons for fallback (more robust since we preserved newlines)
                 const stmts = cleanSchema
-                    .split(/;[ \t]*(\r?\n|$)/)
+                    .split(/;/)
                     .map(s => s.trim())
                     .filter(s => s.length > 0 && !s.startsWith('--'));
+
                 for (const stmt of stmts) {
                     try {
                         db.run(stmt + ';');
                     } catch (stmtErr) {
-                        console.warn(`Schema stmt skipped: ${stmtErr.message} | SQL: ${stmt.substring(0, 80)}`);
+                        console.warn(`Schema stmt skipped: ${stmtErr.message}`);
                     }
                 }
             }
@@ -128,8 +150,6 @@ async function executeSQLWithSqlJs(schema, query) {
 }
 
 
-// Helper: Compare SQL results from sql.js with admin-defined expected result
-// Expected result can be pipe-separated output OR a plain text representation
 // Helper: Compare SQL results from sql.js with admin-defined expected result
 // Expected result can be pipe-separated output OR a plain text representation
 function compareSQLResults(actualResults, expectedQueryResult) {
@@ -178,19 +198,20 @@ function compareSQLResults(actualResults, expectedQueryResult) {
         let finalExpectedRows = expectedRowsRaw;
 
         // Smart Header Detection:
-        // If actual has N rows, and expected has N+1 lines, AND the first line of expected 
-        // doesn't numerically match the first actual row, it's likely a header.
+        // If actual has N rows, and expected has N+1 lines, the first line is likely a header.
         if (actualRowsArr.length === expectedRowsRaw.length - 1 && expectedRowsRaw.length > 0) {
             finalExpectedRows = expectedRowsRaw.slice(1);
-        } else if (actualRowsArr.length === expectedRowsRaw.length) {
+        } else if (actualRowsArr.length === expectedRowsRaw.length && expectedRowsRaw.length > 0) {
             // Check if first line of expected matches the column headers exactly
-            const firstLineExpected = expectedLines[0].toLowerCase().split(/[|\t]/).map(s => s.trim());
-            const colMatch = columns.every(c => firstLineExpected.includes(c)) || firstLineExpected.join('|') === columns.join('|');
+            const firstLineNormalized = expectedRowsRaw[0].map(c => c.toLowerCase().replace(/[_\s]/g, ''));
+            const colsNormalized = columns.map(c => c.toLowerCase().replace(/[_\s]/g, ''));
+            const colMatch = colsNormalized.every(c => firstLineNormalized.includes(c))
+                || firstLineNormalized.join('|') === colsNormalized.join('|');
 
-            // If the first row of expected is identical to column headers but actual row count 
-            // is SAME as total lines, then the table might have data that looks like headers 
-            // OR the admin expects the headers to be part of data (rare).
-            // Usually, we trust the count over the content for header detection.
+            if (colMatch) {
+                // First row is headers — skip it (the actual data starts at row index 1)
+                finalExpectedRows = expectedRowsRaw.slice(1);
+            }
         }
 
         if (actualRowsArr.length !== finalExpectedRows.length) return false;
@@ -1049,11 +1070,14 @@ app.get('/api/students/:studentId/tasks', async (req, res) => {
         const mentorId = students[0].mentor_id;
 
         // Tasks allocated to this student from their mentor OR admin
+        // Handle case where mentorId might be NULL (unassigned students)
         const [tasks] = await pool.query(
             `SELECT t.* FROM tasks t
             INNER JOIN test_student_allocations tsa ON t.id = tsa.test_id
-            WHERE tsa.student_id = ? AND (t.mentor_id = ? OR t.mentor_id = "admin-001") AND t.status = "live"`,
-            [req.params.studentId, mentorId]
+            WHERE tsa.student_id = ? 
+            AND (t.mentor_id = ? OR (t.mentor_id IS NULL AND ? IS NULL) OR t.mentor_id = "admin-001") 
+            AND t.status = "live"`,
+            [req.params.studentId, mentorId, mentorId]
         );
 
         const enrichedTasks = await Promise.all(tasks.map(async t => {
@@ -1071,7 +1095,8 @@ app.get('/api/students/:studentId/tasks', async (req, res) => {
 
         res.json(enrichedTasks);
     } catch (error) {
-        res.status(500).json({ error: error.message });
+        console.error('Fetch tasks error:', error);
+        res.status(500).json({ error: 'Failed to fetch tasks' });
     }
 });
 
@@ -1201,22 +1226,37 @@ app.get('/api/problems', async (req, res) => {
 
 // Get problems for a student
 app.get('/api/students/:studentId/problems', async (req, res) => {
+    const { studentId } = req.params;
+
+    // Validate studentId — guard against "undefined" or empty strings sent from frontend
+    if (!studentId || studentId === 'undefined' || studentId === 'null') {
+        console.warn('[problems] Received invalid studentId:', studentId);
+        return res.status(400).json({ error: 'Invalid student ID' });
+    }
+
     try {
-        const [students] = await pool.query('SELECT mentor_id FROM users WHERE id = ?', [req.params.studentId]);
-        if (students.length === 0) return res.status(404).json({ error: 'Student not found' });
+        const [students] = await pool.query('SELECT mentor_id FROM users WHERE id = ?', [studentId]);
+        if (students.length === 0) {
+            console.warn('[problems] Student not found:', studentId);
+            return res.status(404).json({ error: 'Student not found' });
+        }
 
         const mentorId = students[0].mentor_id;
 
         // Problems allocated to this student from their mentor OR admin
+        // Handle case where mentorId might be NULL (unassigned students)
         const [problems] = await pool.query(
             `SELECT p.* FROM problems p
             INNER JOIN problem_student_allocations psa ON p.id = psa.problem_id
-            WHERE psa.student_id = ? AND (p.mentor_id = ? OR p.mentor_id = "admin-001") AND p.status = "live"`,
-            [req.params.studentId, mentorId]
+            WHERE psa.student_id = ? 
+            AND (p.mentor_id = ? OR (p.mentor_id IS NULL AND ? IS NULL) OR p.mentor_id = "admin-001") 
+            AND p.status = "live"`,
+            [studentId, mentorId, mentorId]
         );
 
         const enrichedProblems = await Promise.all(problems.map(async p => {
             const [completions] = await pool.query('SELECT student_id FROM problem_completions WHERE problem_id = ?', [p.id]);
+            const [[{ count }]] = await pool.query('SELECT COUNT(*) as count FROM submissions WHERE student_id = ? AND problem_id = ?', [studentId, p.id]);
             return {
                 ...p,
                 mentorId: p.mentor_id,
@@ -1227,6 +1267,7 @@ app.get('/api/students/:studentId/problems', async (req, res) => {
                 createdAt: p.created_at,
                 completedBy: completions.map(c => c.student_id),
                 maxAttempts: p.max_attempts || 0,
+                attemptCount: count,
                 proctoring: {
                     enabled: p.enable_proctoring === 'true',
                     videoAudio: p.enable_video_audio === 'true',
@@ -1240,8 +1281,10 @@ app.get('/api/students/:studentId/problems', async (req, res) => {
             };
         }));
 
+        console.log(`[problems] Student ${studentId}: returned ${enrichedProblems.length} problems (mentor: ${mentorId})`);
         res.json(enrichedProblems);
     } catch (error) {
+        console.error('[problems] Error fetching problems for student:', studentId, error.message);
         res.status(500).json({ error: error.message });
     }
 });
@@ -1551,6 +1594,31 @@ app.post('/api/problems/:id/difficulty-feedback', authenticate, async (req, res)
             updated_difficulty: parseFloat(newScore.toFixed(1))
         });
     } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Get submission count for a student and problem/task
+app.get('/api/submissions/count', async (req, res) => {
+    try {
+        const { studentId, problemId, taskId } = req.query;
+        let count = 0;
+        if (problemId) {
+            const [[{ count: pCount }]] = await pool.query(
+                'SELECT COUNT(*) as count FROM submissions WHERE student_id = ? AND problem_id = ?',
+                [studentId, problemId]
+            );
+            count = pCount;
+        } else if (taskId) {
+            const [[{ count: tCount }]] = await pool.query(
+                'SELECT COUNT(*) as count FROM submissions WHERE student_id = ? AND task_id = ?',
+                [studentId, taskId]
+            );
+            count = tCount;
+        }
+        res.json({ attemptCount: count });
+    } catch (error) {
+        console.error('Count error:', error);
         res.status(500).json({ error: error.message });
     }
 });
@@ -1884,6 +1952,7 @@ app.get('/api/submissions/count', async (req, res) => {
 app.post('/api/submissions', submissionLimiter, async (req, res) => {
     try {
         const { studentId, problemId, taskId, language, code, submissionType, fileName, tabSwitches } = req.body;
+        const upperLanguage = (language || '').toUpperCase();
         const submissionId = uuidv4();
         const submittedAt = new Date();
 
@@ -1918,7 +1987,7 @@ app.post('/api/submissions', submissionLimiter, async (req, res) => {
 
         // Check for plagiarism - get other submissions for same problem (SKIP for SQL)
         let plagiarismResult = { detected: false, copiedFrom: null, copiedFromName: null, similarity: 0 };
-        if (problemId && language !== 'SQL') {
+        if (problemId && upperLanguage !== 'SQL' && upperLanguage !== 'SQLITE') {
             const [otherSubs] = await pool.query(
                 `SELECT s.id, s.student_id, s.code, u.name as student_name 
                  FROM submissions s 
@@ -1989,7 +2058,7 @@ Only mark as detected if similarity > 80% and code structure is nearly identical
         };
 
         // Check if this is a SQL submission
-        if (language === 'SQL' && problemId) {
+        if ((upperLanguage === 'SQL' || upperLanguage === 'SQLITE') && problemId) {
             try {
                 // Get problem details including SQL schema and expected result
                 const [probs] = await pool.query('SELECT * FROM problems WHERE id = ?', [problemId]);
@@ -1999,24 +2068,41 @@ Only mark as detected if similarity > 80% and code structure is nearly identical
                     const expectedQueryResult = problem.expected_query_result;
 
                     if (sqlSchema && expectedQueryResult) {
-                        // 1. Execute using local sql.js to get actual output for AI to review
+                        // 1. Execute using local sql.js to get actual output
                         const sqlResult = await executeSQLWithSqlJs(sqlSchema, code);
+                        const isCorrect = sqlResult.success && compareSQLResults(sqlResult.results, expectedQueryResult);
 
-                        let actualOutputStr = '';
-                        if (sqlResult.success && sqlResult.results && sqlResult.results.length > 0) {
-                            const r = sqlResult.results[0];
-                            actualOutputStr = r.columns.join(' | ') + '\n' + r.values.map(row => row.join(' | ')).join('\n');
-                        } else if (sqlResult.success) {
-                            actualOutputStr = 'Query executed successfully (no rows returned).';
+                        if (isCorrect) {
+                            // If execution is perfect, we don't need AI (avoid hallucination risks)
+                            console.log('SQL Execution match! Skipping AI to ensure 100% score.');
+                            evaluationResult = {
+                                score: 100,
+                                status: 'accepted',
+                                feedback: 'Excellent! Your query produces the correct output.',
+                                aiExplanation: 'The query executed successfully and returned the exact expected result set.',
+                                analysis: {
+                                    correctness: 100,
+                                    efficiency: 100,
+                                    codeStyle: 100,
+                                    bestPractices: 100
+                                }
+                            };
                         } else {
-                            actualOutputStr = `ERROR: ${sqlResult.error}`;
-                        }
+                            // 2. Only use AI to evaluate if it failed or returned wrong output
+                            let actualOutputStr = '';
+                            if (sqlResult.success && sqlResult.results && sqlResult.results.length > 0) {
+                                const r = sqlResult.results[0];
+                                actualOutputStr = r.columns.join(' | ') + '\n' + r.values.map(row => row.join(' | ')).join('\n');
+                            } else if (sqlResult.success) {
+                                actualOutputStr = 'Query executed successfully (no rows returned).';
+                            } else {
+                                actualOutputStr = `ERROR: ${sqlResult.error}`;
+                            }
 
-                        // 2. Use AI to evaluate the query and the output
-                        const sqlAiPrompt = `You are an expert SQL evaluator.
+                            const sqlAiPrompt = `You are an expert SQL evaluator. Analyze this submission.
 Problem: ${problem.title}
 Description: ${problem.description}
-Schema provided to student: ${sqlSchema}
+Schema provided: ${sqlSchema}
 Expected Output (Target):
 ${expectedQueryResult}
 
@@ -2026,50 +2112,51 @@ ${code}
 Actual Output from Student's Query:
 ${actualOutputStr}
 
-Evaluate the student's solution. Guidelines:
-1. If the Actual Output matches the Expected Output (even with different column aliases), give high marks (90-100).
-2. If the query failed with an error, identify the syntax error and give low marks (0-20).
-3. If the query runs but the logic is wrong (wrong rows returned), explain why and give partial marks (30-60).
-4. Be fair about sorting and column names unless specifically asked in the description.
+Evaluate the error. Guidelines:
+1. Since the output didn't perfectly match, explain why.
+2. If the query failed with an error, identify the syntax error.
+3. If the query runs but logic is wrong, explain the discrepancy.
+4. Scale metrics 0-100 (numeric only).
 
 Respond with JSON:
 {
     "score": 0-100,
     "status": "accepted" | "partial" | "rejected",
-    "feedback": "Short encouraging feedback",
-    "aiExplanation": "Brief technical analysis of the query and output",
+    "feedback": "Encouraging feedback",
+    "aiExplanation": "Detailed analysis of why the output differed or failed",
     "analysis": {
-        "correctness": "Score - analysis",
-        "efficiency": "Score - analysis",
-        "codeStyle": "Score - analysis",
-        "bestPractices": "Score - analysis"
+        "correctness": 0-100,
+        "efficiency": 0-100,
+        "codeStyle": 0-100,
+        "bestPractices": 0-100
     }
 }`;
 
-                        try {
-                            const aiEval = await cerebrasChat([
-                                { role: 'system', content: 'You are an accurate SQL evaluator. Return JSON only.' },
-                                { role: 'user', content: sqlAiPrompt }
-                            ], {
-                                model: 'gpt-oss-120b',
-                                temperature: 0.1,
-                                max_tokens: 800,
-                                response_format: { type: 'json_object' }
-                            });
+                            try {
+                                const aiEval = await cerebrasChat([
+                                    { role: 'system', content: 'You are a technical SQL reviewer. Return JSON only.' },
+                                    { role: 'user', content: sqlAiPrompt }
+                                ], {
+                                    model: 'gpt-oss-120b',
+                                    temperature: 0.1,
+                                    max_tokens: 800,
+                                    response_format: { type: 'json_object' }
+                                });
 
-                            const parsedEval = typeof aiEval.choices[0].message.content === 'string'
-                                ? JSON.parse(aiEval.choices[0].message.content)
-                                : aiEval.choices[0].message.content;
+                                const parsedEval = typeof aiEval.choices[0].message.content === 'string'
+                                    ? JSON.parse(aiEval.choices[0].message.content)
+                                    : aiEval.choices[0].message.content;
 
-                            evaluationResult = { ...evaluationResult, ...parsedEval };
-                            console.log(`SQL AI Evaluation - Score: ${evaluationResult.score}, Status: ${evaluationResult.status}`);
-                        } catch (aiErr) {
-                            console.error('SQL AI Evaluation failed, falling back to basic result:', aiErr);
-                            // Fallback to manual comparison if AI fails
-                            const isCorrect = sqlResult.success && compareSQLResults(sqlResult.results, expectedQueryResult);
-                            evaluationResult.score = isCorrect ? 100 : (sqlResult.success ? 30 : 0);
-                            evaluationResult.status = isCorrect ? 'accepted' : 'rejected';
-                            evaluationResult.feedback = isCorrect ? 'Correct output!' : (sqlResult.success ? 'Wrong output.' : `SQL Error: ${sqlResult.error}`);
+                                evaluationResult = { ...evaluationResult, ...parsedEval };
+                                console.log(`SQL AI Evaluation - Score: ${evaluationResult.score}, Status: ${evaluationResult.status}`);
+                            } catch (aiErr) {
+                                console.error('SQL AI Evaluation fallback:', aiErr);
+                                evaluationResult.score = sqlResult.success ? 30 : 0;
+                                evaluationResult.status = 'rejected';
+                                evaluationResult.feedback = sqlResult.success ? 'Wrong output.' : `SQL Error: ${sqlResult.error}`;
+                                evaluationResult.aiExplanation = `Manual Fallback: ${sqlResult.success ? 'Query returned incorrect data.' : `Execution error: ${sqlResult.error}`}`;
+                                evaluationResult.analysis = { correctness: evaluationResult.score, efficiency: 50, codeStyle: 50, bestPractices: 50 };
+                            }
                         }
                     } else {
                         console.log('SQL problem missing schema or expected result, falling back to AI evaluation');
@@ -2085,7 +2172,7 @@ Respond with JSON:
         }
 
         // For non-SQL ONLY (Strictly skip if SQL was attempted)
-        if (language !== 'SQL') {
+        if (upperLanguage !== 'SQL' && upperLanguage !== 'SQLITE') {
             const evaluationPrompt = `You are an expert code evaluator for a coding education platform.
 
 ${problemContext}
@@ -2415,8 +2502,11 @@ app.post('/api/submissions/proctored', optionalFileUpload, async (req, res) => {
         // SQL-Specific Evaluation or AI Code Evaluation
         let evaluationResult = { score: 0, status: 'rejected', feedback: 'Evaluation pending...', analysis: {} };
 
+        // Normalize language for comparison
+        const upperLanguage = (language || '').toUpperCase();
+
         // Check if this is a SQL submission
-        if (language === 'SQL' && problemDetails) {
+        if ((upperLanguage === 'SQL' || upperLanguage === 'SQLITE') && problemDetails) {
             try {
                 const sqlSchema = problemDetails.sql_schema;
                 const expectedQueryResult = problemDetails.expected_query_result;
@@ -2432,40 +2522,81 @@ app.post('/api/submissions/proctored', optionalFileUpload, async (req, res) => {
                     if (!executedSuccessfully) console.log(`SQL Error: ${errorMsg}`);
 
                     if (executedSuccessfully && isCorrect) {
-                        // Perfect match - award full points
+                        // Perfect match - award full points immediately (skip AI)
+                        console.log('Proctored SQL Execution match! Skipping AI.');
                         evaluationResult.score = 100;
                         evaluationResult.status = 'accepted';
                         evaluationResult.feedback = 'Excellent! Your SQL query is correct and produces the expected output.';
-                        evaluationResult.aiExplanation = 'Query executed successfully and output matches expected result exactly.';
+                        evaluationResult.aiExplanation = 'The query executed perfectly and matched the expected output format and data.';
                         evaluationResult.analysis = {
-                            correctness: 'Excellent - Query produces correct output',
-                            efficiency: 'Good - Query structure is appropriate',
-                            codeStyle: 'Good - SQL syntax is clean',
-                            bestPractices: 'Good - Follows SQL conventions'
-                        };
-                    } else if (executedSuccessfully && !isCorrect) {
-                        // Query runs but produces wrong output
-                        evaluationResult.score = 30;
-                        evaluationResult.status = 'rejected';
-                        evaluationResult.feedback = 'Your query executes but does not produce the expected output. Review the expected result and adjust your query.';
-                        evaluationResult.aiExplanation = `Query executed but output does not match. Expected format/data differs from actual output.`;
-                        evaluationResult.analysis = {
-                            correctness: 'Poor - Output does not match expected result',
-                            efficiency: 'Fair - Query executes',
-                            codeStyle: 'Fair - Syntax is valid',
-                            bestPractices: 'Fair - Query structure needs review'
+                            correctness: 100,
+                            efficiency: 100,
+                            codeStyle: 100,
+                            bestPractices: 100
                         };
                     } else {
-                        evaluationResult.score = 0;
-                        evaluationResult.status = 'rejected';
-                        evaluationResult.feedback = `Your SQL query has errors: ${errorMsg.substring(0, 200)}`;
-                        evaluationResult.aiExplanation = `SQL execution failed: ${errorMsg.substring(0, 200)}`;
-                        evaluationResult.analysis = {
-                            correctness: 'Poor - Query fails to execute',
-                            efficiency: 'N/A',
-                            codeStyle: 'Poor - Syntax errors present',
-                            bestPractices: 'Poor - Query needs fixing'
-                        };
+                        // Execution failed or output mismatch - call AI for detailed analysis
+                        let actualOutputStr = '';
+                        if (sqlResultProctored.success && sqlResultProctored.results && sqlResultProctored.results.length > 0) {
+                            const r = sqlResultProctored.results[0];
+                            actualOutputStr = r.columns.join(' | ') + '\n' + r.values.map(row => row.join(' | ')).join('\n');
+                        } else if (sqlResultProctored.success) {
+                            actualOutputStr = 'Query executed successfully (no rows returned).';
+                        } else {
+                            actualOutputStr = `ERROR: ${sqlResultProctored.error}`;
+                        }
+
+                        const sqlAiPrompt = `You are an expert SQL evaluator. Analyze this proctored submission.
+Problem: ${problemDetails.title}
+Description: ${problemDetails.description}
+Schema provided: ${sqlSchema}
+Expected Output (Target):
+${expectedQueryResult}
+
+Student's Query:
+${code}
+
+Actual Output from Student's Query:
+${actualOutputStr}
+
+Provide a detailed evaluation JSON. Scale metrics 0-100 (numeric only).
+{
+    "score": 0-100,
+    "status": "accepted" | "partial" | "rejected",
+    "feedback": "Encouraging feedback",
+    "aiExplanation": "Why the output differed or what was wrong",
+    "analysis": {
+        "correctness": 0-100,
+        "efficiency": 0-100,
+        "codeStyle": 0-100,
+        "bestPractices": 0-100
+    }
+}`;
+
+                        try {
+                            const aiEval = await cerebrasChat([
+                                { role: 'system', content: 'You are an accurate SQL evaluator. Return JSON only.' },
+                                { role: 'user', content: sqlAiPrompt }
+                            ], {
+                                model: 'gpt-oss-120b',
+                                temperature: 0.1,
+                                max_tokens: 800,
+                                response_format: { type: 'json_object' }
+                            });
+
+                            const parsedEval = typeof aiEval.choices[0].message.content === 'string'
+                                ? JSON.parse(aiEval.choices[0].message.content)
+                                : aiEval.choices[0].message.content;
+
+                            evaluationResult = { ...evaluationResult, ...parsedEval };
+                            console.log(`Proctored SQL AI Evaluation - Score: ${evaluationResult.score}, Status: ${evaluationResult.status}`);
+                        } catch (aiErr) {
+                            console.warn('Proctored SQL AI Fallback:', aiErr.message);
+                            evaluationResult.score = executedSuccessfully ? 30 : 0;
+                            evaluationResult.status = 'rejected';
+                            evaluationResult.feedback = executedSuccessfully ? 'Wrong output.' : `SQL Error: ${errorMsg}`;
+                            evaluationResult.analysis = { correctness: evaluationResult.score, efficiency: 50, codeStyle: 50, bestPractices: 50 };
+                        }
                     }
                 } else {
                     console.log('SQL problem missing schema or expected result, falling back to AI evaluation');
@@ -2478,12 +2609,12 @@ app.post('/api/submissions/proctored', optionalFileUpload, async (req, res) => {
                 evaluationResult.status = 'rejected';
                 evaluationResult.feedback = `Evaluation System Error: ${sqlEvalError.message}.`;
                 evaluationResult.aiExplanation = 'Internal System Error during SQL execution.';
-                evaluationResult.analysis = { correctness: 'Error', efficiency: 'Error', codeStyle: 'Error', bestPractices: 'Error' };
+                evaluationResult.analysis = { correctness: 0, efficiency: 0, codeStyle: 0, bestPractices: 0 };
             }
         }
 
         // For non-SQL ONLY (Strictly skip if SQL was attempted)
-        if (language !== 'SQL') {
+        if (upperLanguage !== 'SQL' && upperLanguage !== 'SQLITE') {
             try {
                 const evaluationPrompt = `You are an expert code evaluator. Analyze this ${language} code submission for a coding problem.
 
@@ -2497,21 +2628,22 @@ ${code}
 \`\`\`
 
 Evaluate this code on:
-1. Correctness (0-40 points): Does it solve the problem correctly?
-2. Efficiency (0-25 points): Is the algorithm efficient?
-3. Code Style (0-20 points): Is it readable and well-structured?
-4. Best Practices (0-15 points): Does it follow ${language} best practices?
+1. Correctness (0-100): Does it solve the problem correctly?
+2. Efficiency (0-100): Is the algorithm efficient?
+3. Code Style (0-100): Is it readable and well-structured?
+4. Best Practices (0-100): Does it follow ${language} best practices?
 
 Respond in this exact JSON format:
 {
-  "score": <total score 0-100>,
+  "score": <total weighted score 0-100 calculated as (correctness*0.4 + efficiency*0.25 + style*0.2 + bestPractices*0.15)>,
   "status": "<accepted if score>=70, partial if score>=40, else rejected>",
   "feedback": "<2-3 sentence feedback for the student>",
+  "aiExplanation": "<detailed breakdown of what the student did well and what can be improved>",
   "analysis": {
-    "correctness": <0-40>,
-    "efficiency": <0-25>,
-    "codeStyle": <0-20>,
-    "bestPractices": <0-15>
+    "correctness": <0-100>,
+    "efficiency": <0-100>,
+    "codeStyle": <0-100>,
+    "bestPractices": <0-100>
   }
 }`;
 
@@ -2545,7 +2677,7 @@ Respond in this exact JSON format:
         const faceLookawayCnt = parseInt(faceLookawayCount) || 0;
 
         // Apply penalties ONLY if not SQL
-        if (language !== 'SQL') {
+        if (upperLanguage !== 'SQL' && upperLanguage !== 'SQLITE') {
             // Penalty for tab switches (each switch = -5 points, max -25)
             if (tabSwitchCount > 0) {
                 const tabPenalty = Math.min(tabSwitchCount * 5, 25);
@@ -4044,7 +4176,22 @@ app.post('/api/global-tests/:id/submit', validate(globalTestSubmitSchema), async
             } else if (q.question_type === 'sql') {
                 const schema = q.starter_code || '';
                 const testCasesRaw = q.test_cases ? (typeof q.test_cases === 'string' ? JSON.parse(q.test_cases) : q.test_cases) : null;
-                const expectedOutput = (testCasesRaw && testCasesRaw.expectedOutput) ? testCasesRaw.expectedOutput : (Array.isArray(testCasesRaw) ? '' : '');
+
+                // For SQL, we usually compare against a single reference result
+                // Extract expected output from test_cases (might be an object or first element of an array)
+                let expectedOutput = '';
+                if (testCasesRaw) {
+                    if (Array.isArray(testCasesRaw) && testCasesRaw.length > 0) {
+                        const firstCase = testCasesRaw[0];
+                        expectedOutput = firstCase.expected_output || firstCase.expectedOutput || firstCase.expected_query_result || '';
+                    } else if (typeof testCasesRaw === 'object') {
+                        expectedOutput = testCasesRaw.expected_output || testCasesRaw.expectedOutput || testCasesRaw.expected_query_result || '';
+                    }
+                }
+
+                // Fallback to correct_answer column if not found in test_cases
+                if (!expectedOutput) expectedOutput = q.correct_answer || '';
+
                 const result = await runSqlAndCompare(schema, userAns, expectedOutput);
                 isCorrect = result.isCorrect;
                 pointsEarned = isCorrect ? (q.points ?? 10) : 0;
@@ -4476,6 +4623,7 @@ app.get('/api/global-test-submissions/:id/report', async (req, res) => {
 // ==================== GENERIC TEST ALLOCATION ENDPOINTS (All Test Types) ====================
 
 // Allocate students to ANY test type (aptitude, global, skill, etc.)
+// Uses INSERT IGNORE to only ADD new allocations — existing ones are never removed
 app.post('/api/tests/:testId/allocate-students', async (req, res) => {
     const connection = await pool.getConnection();
     try {
@@ -4488,20 +4636,18 @@ app.post('/api/tests/:testId/allocate-students', async (req, res) => {
 
         await connection.beginTransaction();
 
-        // Delete existing allocations for this test
-        await connection.query('DELETE FROM test_student_allocations WHERE test_id = ?', [testId]);
-
-        // Insert new allocations with shorter, unique IDs using UUID
+        // INSERT IGNORE: only adds new allocations, never removes existing ones
         const values = studentIds.map((studentId) => [uuidv4(), testId, studentId]);
 
         if (values.length > 0) {
             await connection.query(
-                'INSERT INTO test_student_allocations (id, test_id, student_id) VALUES ?',
+                'INSERT IGNORE INTO test_student_allocations (id, test_id, student_id) VALUES ?',
                 [values]
             );
         }
 
         await connection.commit();
+        console.log(`[test-allocate] Added ${studentIds.length} allocations for test ${testId}`);
         res.json({ success: true, allocatedCount: studentIds.length });
 
     } catch (error) {
@@ -4513,7 +4659,8 @@ app.post('/api/tests/:testId/allocate-students', async (req, res) => {
     }
 });
 
-// Allocate students to PROBLEM (stores in problem_allocations table)
+// Allocate students to PROBLEM (stores in problem_student_allocations table)
+// Uses INSERT IGNORE to only ADD new allocations — existing ones are never removed
 app.post('/api/problems/:problemId/allocate-students', async (req, res) => {
     const connection = await pool.getConnection();
     try {
@@ -4545,20 +4692,18 @@ app.post('/api/problems/:problemId/allocate-students', async (req, res) => {
             )
         `);
 
-        // Delete existing allocations for this problem
-        await connection.query('DELETE FROM problem_student_allocations WHERE problem_id = ?', [problemId]);
-
-        // Insert new allocations with UUID
+        // INSERT IGNORE: only adds new allocations, never removes existing ones
         const values = studentIds.map((studentId) => [uuidv4(), problemId, studentId]);
 
         if (values.length > 0) {
             await connection.query(
-                'INSERT INTO problem_student_allocations (id, problem_id, student_id) VALUES ?',
+                'INSERT IGNORE INTO problem_student_allocations (id, problem_id, student_id) VALUES ?',
                 [values]
             );
         }
 
         await connection.commit();
+        console.log(`[problem-allocate] Added ${studentIds.length} allocations for problem ${problemId}`);
         res.json({ success: true, allocatedCount: studentIds.length });
 
     } catch (error) {
@@ -4567,6 +4712,22 @@ app.post('/api/problems/:problemId/allocate-students', async (req, res) => {
         res.status(500).json({ error: error.message });
     } finally {
         connection.release();
+    }
+});
+
+// Get students already allocated to a PROBLEM (reads from problem_student_allocations)
+app.get('/api/problems/:problemId/allocated-students', async (req, res) => {
+    try {
+        const { problemId } = req.params;
+        const [rows] = await pool.query(
+            'SELECT student_id FROM problem_student_allocations WHERE problem_id = ?',
+            [problemId]
+        );
+        const studentIds = rows.map(r => r.student_id);
+        res.json({ problemId, studentIds, count: studentIds.length });
+    } catch (error) {
+        console.error('Error getting problem allocations:', error);
+        res.status(500).json({ error: error.message });
     }
 });
 
@@ -5407,9 +5568,21 @@ async function runInlineCodingTests(code, language, testCases) {
     }
     const runtime = languageMap[language] || { language: 'python', version: '3.10.0' };
     let passedCount = 0;
+    const normalizeOutput = (str) => {
+        if (!str) return '';
+        return str.toString()
+            .replace(/\r\n/g, '\n')
+            .replace(/\r/g, '\n')
+            .split('\n')
+            .map(line => line.trimEnd())
+            .join('\n')
+            .trim()
+            .toLowerCase();
+    };
+
     for (const tc of testCases) {
         const input = (tc.input != null ? tc.input : '').toString();
-        const expected = (tc.expected_output != null ? tc.expected_output : tc.expectedOutput || '').toString().trim();
+        const expected = (tc.expected_output != null ? tc.expected_output : tc.expectedOutput || '').toString();
         try {
             const response = await fetch('https://emkc.org/api/v2/piston/execute', {
                 method: 'POST',
@@ -5422,8 +5595,8 @@ async function runInlineCodingTests(code, language, testCases) {
                 })
             });
             const data = await response.json();
-            const actual = (data.run?.output || '').trim();
-            if (actual === expected) passedCount++;
+            const actual = (data.run?.output || '').toString();
+            if (normalizeOutput(actual) === normalizeOutput(expected)) passedCount++;
         } catch (_) { /* fail this case */ }
     }
     const total = testCases.length;
