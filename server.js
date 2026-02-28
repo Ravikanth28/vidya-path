@@ -392,6 +392,18 @@ pool.getConnection()
                 console.warn('⚠️ Could not add max_attempts to problems:', e.message);
             }
         }
+
+        // Ensure deadline column exists on problems table
+        try {
+            await pool.query(`ALTER TABLE problems ADD COLUMN deadline DATETIME DEFAULT NULL`);
+            console.log('✅ Added deadline column to problems table');
+        } catch (e) {
+            if (e.code === 'ER_DUP_FIELDNAME' || (e.message && e.message.includes('Duplicate column'))) {
+                // Column already exists — fine
+            } else {
+                console.warn('⚠️ Could not add deadline to problems:', e.message);
+            }
+        }
     })
     .catch(err => {
         console.error('❌ Database Connection Failed:', err.message);
@@ -1309,8 +1321,8 @@ app.post('/api/problems', authenticate, validate(createProblemSchema), async (re
         const createdAt = new Date();
 
         await pool.query(
-            `INSERT INTO problems (id, mentor_id, title, description, sample_input, expected_output, sql_schema, expected_query_result, difficulty, type, language, status, created_at, enable_proctoring, enable_video_audio, disable_copy_paste, track_tab_switches, max_tab_switches, enable_face_detection, detect_multiple_faces, track_face_lookaway, max_attempts) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-            [problemId, mentorId, title, description, sampleInput || '', expectedOutput || '', sqlSchema || null, expectedQueryResult || null, difficulty, type, language, status || 'live', createdAt, enableProctoring ? 'true' : 'false', enableVideoAudio ? 'true' : 'false', disableCopyPaste ? 'true' : 'false', trackTabSwitches ? 'true' : 'false', maxTabSwitches || 3, enableFaceDetection ? 'true' : 'false', detectMultipleFaces ? 'true' : 'false', trackFaceLookaway ? 'true' : 'false', parseInt(maxAttempts) || 0]
+            `INSERT INTO problems (id, mentor_id, title, description, sample_input, expected_output, sql_schema, expected_query_result, difficulty, type, language, status, deadline, created_at, enable_proctoring, enable_video_audio, disable_copy_paste, track_tab_switches, max_tab_switches, enable_face_detection, detect_multiple_faces, track_face_lookaway, max_attempts) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            [problemId, mentorId, title, description, sampleInput || '', expectedOutput || '', sqlSchema || null, expectedQueryResult || null, difficulty, type, language, status || 'live', deadline || null, createdAt, enableProctoring ? 'true' : 'false', enableVideoAudio ? 'true' : 'false', disableCopyPaste ? 'true' : 'false', trackTabSwitches ? 'true' : 'false', maxTabSwitches || 3, enableFaceDetection ? 'true' : 'false', detectMultipleFaces ? 'true' : 'false', trackFaceLookaway ? 'true' : 'false', parseInt(maxAttempts) || 0]
         );
 
         res.json({
@@ -1394,9 +1406,45 @@ app.delete('/api/problems/:id', authenticate, async (req, res) => {
         const connection = await pool.getConnection();
         try {
             await connection.beginTransaction();
-            await connection.query('DELETE FROM problem_completions WHERE problem_id = ?', [req.params.id]);
-            await connection.query('DELETE FROM submissions WHERE problem_id = ?', [req.params.id]);
-            await connection.query('DELETE FROM problems WHERE id = ?', [req.params.id]);
+            const problemId = req.params.id;
+
+            // 1. Get all submission IDs for this problem (needed to clean child tables of submissions)
+            const [subs] = await connection.query('SELECT id FROM submissions WHERE problem_id = ?', [problemId]);
+            const subIds = subs.map(s => s.id);
+
+            // 2. Delete children of submissions (FK references submissions.id)
+            if (subIds.length > 0) {
+                await connection.query('DELETE FROM plagiarism_analysis WHERE submission_id IN (?)', [subIds]);
+                await connection.query('DELETE FROM test_case_results WHERE submission_id IN (?)', [subIds]);
+                // These tables may reference submission IDs via two columns
+                await connection.query('DELETE FROM plagiarism_matches WHERE submission_1_id IN (?) OR submission_2_id IN (?)', [subIds, subIds]);
+                await connection.query('DELETE FROM code_reviews WHERE submission_id IN (?)', [subIds]);
+            }
+
+            // 3. Delete direct children of problems (FK references problems.id)
+            await connection.query('DELETE FROM problem_completions WHERE problem_id = ?', [problemId]);
+            await connection.query('DELETE FROM submissions WHERE problem_id = ?', [problemId]);
+            await connection.query('DELETE FROM test_cases WHERE problem_id = ?', [problemId]);
+            await connection.query('DELETE FROM ai_generated_testcases WHERE problem_id = ?', [problemId]);
+            await connection.query('DELETE FROM code_execution_logs WHERE problem_id = ?', [problemId]);
+
+            // 4. Clean up tables referencing problem_id without strict FK (safe to try-catch)
+            const optionalTables = [
+                'problem_student_allocations', 'problem_recommendations',
+                'learning_recommendations', 'plagiarism_settings',
+                'problem_attempts', 'proctoring_sessions',
+                'plagiarism_reports', 'ai_code_reviews',
+                'problem_set_template_items'
+            ];
+            for (const table of optionalTables) {
+                try {
+                    const col = table === 'learning_recommendations' ? 'recommended_problem_id' : 'problem_id';
+                    await connection.query(`DELETE FROM ${table} WHERE ${col} = ?`, [problemId]);
+                } catch (_) { /* table may not exist or column mismatch */ }
+            }
+
+            // 5. Finally delete the problem itself
+            await connection.query('DELETE FROM problems WHERE id = ?', [problemId]);
             await connection.commit();
             res.json({ success: true });
         } catch (err) {
@@ -1406,6 +1454,7 @@ app.delete('/api/problems/:id', authenticate, async (req, res) => {
             connection.release();
         }
     } catch (error) {
+        console.error('Problem Delete Error:', error);
         res.status(500).json({ error: error.message });
     }
 });
@@ -4013,6 +4062,10 @@ app.delete('/api/global-tests/:id', async (req, res) => {
         }
         await connection.query('DELETE FROM global_test_submissions WHERE test_id = ?', [id]);
         await connection.query('DELETE FROM test_questions WHERE test_id = ?', [id]);
+        // Clean up student allocations (table may not exist yet)
+        try {
+            await connection.query('DELETE FROM test_student_allocations WHERE test_id = ?', [id]);
+        } catch (_) { /* table may not exist yet */ }
         const [r] = await connection.query('DELETE FROM global_tests WHERE id = ?', [id]);
         await connection.commit();
         if (r.affectedRows === 0) return res.status(404).json({ error: 'Test not found' });

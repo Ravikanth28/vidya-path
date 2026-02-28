@@ -2559,25 +2559,37 @@ function Submissions({ user }) {
 // ==================== SUBMISSION REPORT MODAL WITH DETAILED SCORING ====================
 function SubmissionReportModal({ submission, user, onClose }) {
     // Parse analysis scores for visual display
-    const parseScore = (str) => {
-        if (!str) return { score: 0, max: 0, comment: '' };
-        const match = str.match(/(\d+)\/(\d+)/);
-        if (match) {
+    // Handles: "30/40 - comment", "85/100 - text", plain number 90, or string "90"
+    const parseScore = (val, categoryMax) => {
+        if (val === null || val === undefined || val === '') return { score: 0, max: 0, comment: '' };
+        const str = String(val);
+        // Try "X/Y" format first (e.g., "35/40 - Good correctness")
+        const slashMatch = str.match(/(\d+)\s*\/\s*(\d+)/);
+        if (slashMatch) {
             return {
-                score: parseInt(match[1]),
-                max: parseInt(match[2]),
-                comment: str.replace(/\d+\/\d+\s*[-–]?\s*/, '').trim()
+                score: parseInt(slashMatch[1]),
+                max: parseInt(slashMatch[2]),
+                comment: str.replace(/\d+\s*\/\s*\d+\s*[-–]?\s*/, '').trim()
             };
         }
-        return { score: 0, max: 0, comment: str };
+        // Try plain number (e.g., 90 or "90" or "85 - Good approach")
+        const numMatch = str.match(/^(\d+)/);
+        if (numMatch) {
+            const rawScore = parseInt(numMatch[1]);
+            // Scale from 0-100 to the category max (e.g., 90/100 → 36/40)
+            const scaled = categoryMax ? Math.round((rawScore / 100) * categoryMax) : rawScore;
+            const comment = str.replace(/^\d+\s*[-–]?\s*/, '').trim();
+            return { score: scaled, max: categoryMax || 100, comment };
+        }
+        return { score: 0, max: categoryMax || 0, comment: str };
     };
 
     const analysis = submission.analysis || {};
     const scores = {
-        correctness: parseScore(analysis.correctness),
-        efficiency: parseScore(analysis.efficiency),
-        codeStyle: parseScore(analysis.codeStyle),
-        bestPractices: parseScore(analysis.bestPractices)
+        correctness: parseScore(analysis.correctness, 40),
+        efficiency: parseScore(analysis.efficiency, 25),
+        codeStyle: parseScore(analysis.codeStyle, 20),
+        bestPractices: parseScore(analysis.bestPractices, 15)
     };
 
     // Score bar component
