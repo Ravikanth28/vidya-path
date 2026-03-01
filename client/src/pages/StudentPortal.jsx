@@ -2267,7 +2267,7 @@ function Submissions({ user }) {
     const fetchSubmissions = () => {
         setLoading(true)
         Promise.all([
-            axios.get(`${API_BASE}/submissions?studentId=${user.id}`),
+            axios.get(`${API_BASE}/submissions?studentId=${user.id}&limit=5000`),
             axios.get(`${API_BASE}/aptitude-submissions?studentId=${user.id}`),
             axios.get(`${API_BASE}/global-test-submissions?studentId=${user.id}`)
         ]).then(([codeRes, aptRes, globalRes]) => {

@@ -1677,9 +1677,9 @@ app.get('/api/submissions/count', async (req, res) => {
 // Get all submissions
 app.get('/api/submissions', async (req, res) => {
     try {
-        const { studentId, mentorId, page = 1, limit = 20 } = req.query;
+        const { studentId, mentorId, page = 1, limit = 500 } = req.query;
         const pageNum = Math.max(1, parseInt(page));
-        const pageSize = Math.min(100, Math.max(1, parseInt(limit)));
+        const pageSize = Math.min(5000, Math.max(1, parseInt(limit)));
         const offset = (pageNum - 1) * pageSize;
 
         let query = `
@@ -4189,7 +4189,7 @@ app.post('/api/global-tests/:id/submit', validate(globalTestSubmitSchema), async
     try {
         await connection.beginTransaction();
         const testId = req.params.id;
-        const { studentId, answers, sectionScores, timeSpent, tabSwitches = 0 } = req.body;
+        const { studentId, answers, selectedLanguages, sectionScores, timeSpent, tabSwitches = 0 } = req.body;
         if (!studentId) return res.status(400).json({ error: 'studentId required' });
 
         const [tests] = await connection.query('SELECT * FROM global_tests WHERE id = ?', [testId]);
@@ -4220,7 +4220,10 @@ app.post('/api/global-tests/:id/submit', validate(globalTestSubmitSchema), async
 
             if (q.question_type === 'coding') {
                 const testCasesRaw = q.test_cases ? (typeof q.test_cases === 'string' ? JSON.parse(q.test_cases) : q.test_cases) : null;
-                const language = (testCasesRaw && testCasesRaw.language) ? testCasesRaw.language : 'Python';
+                // Use student's selected language first, fall back to DB test_cases language, then default to Python
+                const language = (selectedLanguages && selectedLanguages[q.question_id])
+                    ? selectedLanguages[q.question_id]
+                    : (testCasesRaw && testCasesRaw.language) ? testCasesRaw.language : 'Python';
                 const cases = Array.isArray(testCasesRaw) ? testCasesRaw : (testCasesRaw && testCasesRaw.cases) ? testCasesRaw.cases : [];
                 const result = await runInlineCodingTests(userAns, language, cases);
                 isCorrect = result.isCorrect;

@@ -19,7 +19,7 @@ const PlagiarismChecker = ({ user }) => {
     useEffect(() => {
         if (!user?.id) return;
         setLoadingSubmissions(true);
-        axios.get(`${API_BASE}/submissions?studentId=${user.id}`)
+        axios.get(`${API_BASE}/submissions?studentId=${user.id}&limit=5000`)
             .then(res => {
                 const data = Array.isArray(res.data) ? res.data : (res.data?.data || []);
                 // Only code submissions have actual code to check
