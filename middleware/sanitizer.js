@@ -31,10 +31,16 @@ function sanitizeObject(obj) {
     }
 
     const sanitized = {};
+    // Fields that contain source code — must NOT be sanitized (they need <stdio.h>, <iostream>, etc.)
+    const codeFields = ['code', 'sqlSchema', 'sql_schema', 'defaultCode', 'default_code',
+        'testCode', 'test_code', 'solutionCode', 'solution_code', 'starterCode', 'starter_code',
+        'htmlCode', 'cssCode', 'jsCode', 'source_code', 'expected_output', 'stdin'];
     for (const [key, value] of Object.entries(obj)) {
-        // Skip sensitive fields
+        // Skip sensitive fields and source code fields
         if (['password', 'token', 'secret', 'apiKey', 'apiSecret'].includes(key.toLowerCase())) {
             sanitized[key] = value;  // Don't sanitize passwords/tokens
+        } else if (codeFields.includes(key)) {
+            sanitized[key] = value;  // Don't sanitize source code (needs <stdio.h>, <vector>, etc.)
         } else if (typeof value === 'string') {
             sanitized[key] = sanitizeString(value);
         } else if (typeof value === 'object' && value !== null) {
@@ -51,6 +57,14 @@ function sanitizeObject(obj) {
  */
 function sanitizeMiddleware(req, res, next) {
     try {
+        // Skip sanitization entirely for code execution endpoints
+        // (source code contains <stdio.h>, <iostream>, <vector>, etc. that look like HTML tags)
+        const skipPaths = ['/api/run', '/api/submit', '/api/run-with-tests', '/api/hints',
+            '/api/problems', '/api/evaluate', '/api/ai-review'];
+        if (skipPaths.some(p => req.path.startsWith(p))) {
+            return next();
+        }
+
         // Sanitize request body
         if (req.body && typeof req.body === 'object') {
             req.body = sanitizeObject(req.body);

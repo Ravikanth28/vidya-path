@@ -3205,6 +3205,15 @@ function GlobalProblems() {
         }
     }
 
+    const handleUpdateProblemStatus = async (problemId, newStatus) => {
+        try {
+            await axios.put(`${API_BASE}/problems/${problemId}`, { status: newStatus })
+            fetchProblems()
+        } catch (error) {
+            alert(error.response?.data?.error || 'Status update failed')
+        }
+    }
+
     const handleCSVUpload = async (e) => {
         const file = e.target.files[0]
         if (!file) return
@@ -3631,6 +3640,29 @@ function GlobalProblems() {
                                     >
                                         <Users size={16} /> Assign
                                     </button>
+                                    {p.status === 'live' ? (
+                                        <button
+                                            onClick={() => handleUpdateProblemStatus(p.id, 'draft')}
+                                            style={{
+                                                background: 'rgba(245, 158, 11, 0.1)', border: '1px solid rgba(245, 158, 11, 0.25)',
+                                                color: '#fbbf24', padding: '0.5rem 0.75rem', borderRadius: '0.5rem',
+                                                cursor: 'pointer', fontSize: '0.8rem', display: 'flex', alignItems: 'center', gap: '4px', fontWeight: 600
+                                            }}
+                                        >
+                                            <XCircle size={14} /> End
+                                        </button>
+                                    ) : (
+                                        <button
+                                            onClick={() => handleUpdateProblemStatus(p.id, 'live')}
+                                            style={{
+                                                background: 'rgba(16, 185, 129, 0.1)', border: '1px solid rgba(16, 185, 129, 0.25)',
+                                                color: '#6ee7b7', padding: '0.5rem 0.75rem', borderRadius: '0.5rem',
+                                                cursor: 'pointer', fontSize: '0.8rem', display: 'flex', alignItems: 'center', gap: '4px', fontWeight: 600
+                                            }}
+                                        >
+                                            <CheckCircle size={14} /> Activate
+                                        </button>
+                                    )}
                                     <button
                                         onClick={() => handleDelete(p.id)}
                                         style={{ background: 'rgba(239, 68, 68, 0.1)', border: 'none', color: '#ef4444', padding: '0.5rem 1rem', borderRadius: '0.5rem', cursor: 'pointer', fontSize: '0.8rem' }}
@@ -3876,6 +3908,7 @@ function GlobalProblems() {
                                             <option value="Python">Python</option>
                                             <option value="JavaScript">JavaScript</option>
                                             <option value="Java">Java</option>
+                                            <option value="C">C</option>
                                             <option value="C++">C++</option>
                                             <option value="SQL">SQL</option>
                                         </select>
@@ -5650,6 +5683,7 @@ function GlobalTestsAdmin() {
                                                             <option value="Python">Python</option>
                                                             <option value="JavaScript">JavaScript</option>
                                                             <option value="Java">Java</option>
+                                                            <option value="C">C</option>
                                                             <option value="C++">C++</option>
                                                         </select>
                                                     </div>
@@ -5694,6 +5728,7 @@ function GlobalTestsAdmin() {
                                                         <option value="Python">Python</option>
                                                         <option value="JavaScript">JavaScript</option>
                                                         <option value="Java">Java</option>
+                                                        <option value="C">C</option>
                                                         <option value="C++">C++</option>
                                                     </select>
                                                 </div>

@@ -13,6 +13,7 @@ const util = require('util');
 const execPromise = util.promisify(exec);
 const http = require('http');
 const { Server: SocketIOServer } = require('socket.io');
+const axios = require('axios');
 
 // Performance optimization imports
 const { paginatedResponse } = require('./utils/pagination');
@@ -2971,6 +2972,106 @@ app.delete('/api/submissions', authenticate, authorize('admin'), async (req, res
 
 // ==================== RUN CODE & SUBMIT API ====================
 
+// ── Judge0 CE API Fallback (for hosted environments without local compilers) ──
+const JUDGE0_API_URL = process.env.JUDGE0_API_URL || 'https://ce.judge0.com';
+const JUDGE0_API_KEY = process.env.JUDGE0_API_KEY || '';
+const JUDGE0_API_HOST = process.env.JUDGE0_API_HOST || '';
+
+// Judge0 language IDs: https://ce.judge0.com/languages
+const JUDGE0_LANG_IDS = {
+    'C': 50,        // C (GCC 9.2.0)
+    'C++': 54,      // C++ (GCC 9.2.0)
+    'Java': 62,     // Java (OpenJDK 13.0.1)
+    'Python': 71,   // Python (3.8.1)
+    'JavaScript': 63 // JavaScript (Node.js 12.14.0)
+};
+
+async function runCodeViaJudge0(code, language, stdin = '') {
+    const langId = JUDGE0_LANG_IDS[language];
+    if (!langId) throw new Error(`Judge0 does not support language: ${language}`);
+
+    const headers = {
+        'Content-Type': 'application/json'
+    };
+    // Support both RapidAPI-hosted and self-hosted/public Judge0
+    if (JUDGE0_API_KEY && JUDGE0_API_HOST) {
+        headers['X-RapidAPI-Key'] = JUDGE0_API_KEY;
+        headers['X-RapidAPI-Host'] = JUDGE0_API_HOST;
+    }
+
+    // Submit code
+    const submitRes = await axios.post(`${JUDGE0_API_URL}/submissions?base64_encoded=true&wait=false`, {
+        source_code: Buffer.from(code).toString('base64'),
+        language_id: langId,
+        stdin: stdin ? Buffer.from(stdin).toString('base64') : '',
+        cpu_time_limit: 10,
+        wall_time_limit: 15,
+        memory_limit: 128000
+    }, { headers, timeout: 30000 });
+
+    const token = submitRes.data.token;
+    if (!token) throw new Error('Judge0 did not return a submission token');
+
+    // Poll for result (max 20 seconds)
+    for (let i = 0; i < 20; i++) {
+        await new Promise(r => setTimeout(r, 1000));
+        const resultRes = await axios.get(
+            `${JUDGE0_API_URL}/submissions/${token}?base64_encoded=true&fields=stdout,stderr,compile_output,status,time,memory`,
+            { headers, timeout: 10000 }
+        );
+        const data = resultRes.data;
+        const status = data.status;
+
+        // Status ID: 1=In Queue, 2=Processing, 3=Accepted, 4=Wrong Answer, 5=TLE, 6=Compilation Error, etc.
+        if (status && status.id > 2) {
+            const decode = (b64) => b64 ? Buffer.from(b64, 'base64').toString('utf-8') : '';
+            const stdout = decode(data.stdout);
+            const stderr = decode(data.stderr);
+            const compileOutput = decode(data.compile_output);
+
+            if (status.id === 6) {
+                // Compilation Error
+                return { stdout: '', stderr: compileOutput || 'Compilation failed', exitCode: 1 };
+            }
+            if (status.id === 5) {
+                return { stdout: '', stderr: 'Time Limit Exceeded', exitCode: 1 };
+            }
+            if (status.id === 11) {
+                return { stdout: '', stderr: stderr || 'Runtime Error', exitCode: 1 };
+            }
+
+            return {
+                stdout: stdout,
+                stderr: stderr || compileOutput || '',
+                exitCode: (status.id === 3 || status.id === 4) ? 0 : 1
+            };
+        }
+    }
+    throw new Error('Judge0 execution timed out after 20 seconds');
+}
+
+// Check which compilers are locally available (cached once at startup)
+const _localCompilerCache = {};
+function isCompilerAvailable(command) {
+    if (_localCompilerCache[command] !== undefined) return _localCompilerCache[command];
+    try {
+        const { execSync } = require('child_process');
+        execSync(`${command} --version`, { stdio: 'ignore', timeout: 5000 });
+        _localCompilerCache[command] = true;
+        console.log(`✅ Local compiler found: ${command}`);
+    } catch {
+        _localCompilerCache[command] = false;
+        console.log(`⚠️ Local compiler NOT found: ${command} — will use Judge0 fallback`);
+    }
+    return _localCompilerCache[command];
+}
+
+// Check compilers at startup
+const LANG_TO_COMPILER = { 'C': 'gcc', 'C++': 'g++', 'Java': 'javac', 'Python': 'python', 'JavaScript': 'node', 'SQL': 'sqlite3' };
+for (const [lang, cmd] of Object.entries(LANG_TO_COMPILER)) {
+    isCompilerAvailable(cmd);
+}
+
 // Helper: Run code using local subprocess (child_process.spawn) - SECURE (No shell injection)
 function runCodeSubprocess(command, args, stdinData, timeout = 15000) {
     return new Promise((resolve, reject) => {
@@ -3024,70 +3125,70 @@ app.post('/api/run', codeLimiter, async (req, res) => {
         let codeToExecute = code;
         if (language === 'SQL') {
             let schemaToUse = sqlSchema;
-
-            // If no schema passed, try to get from database
             if (!schemaToUse && problemId) {
                 const [probs] = await pool.query('SELECT sql_schema FROM problems WHERE id = ?', [problemId]);
                 if (probs.length > 0 && probs[0].sql_schema) {
                     schemaToUse = probs[0].sql_schema;
                 }
             }
-
-            // Prepend schema to user's query
             if (schemaToUse) {
                 codeToExecute = `${schemaToUse}\n\n${code}`;
             }
         }
 
+        // ── Check if we should use Judge0 fallback for this language ──
+        const compilerCmd = LANG_TO_COMPILER[language];
+        const useJudge0 = compilerCmd && !isCompilerAvailable(compilerCmd) && JUDGE0_LANG_IDS[language] && JUDGE0_API_URL;
+
+        if (useJudge0 && language !== 'SQL') {
+            // ── Judge0 API execution (cloud fallback) ──
+            console.log(`🌐 Using Judge0 for ${language} (no local ${compilerCmd})`);
+            const result = await runCodeViaJudge0(codeToExecute, language, stdin || '');
+            const output = (result.stdout + result.stderr).trim();
+            return res.json({
+                output: output || 'No output detected',
+                status: result.exitCode === 0 ? 'success' : 'error'
+            });
+        }
+
+        // ── Local execution ──
         let result;
 
         if (language === 'Python') {
-            // --- Python ---
             const filePath = path.join(tempDir, `run_${runId}.py`);
             fs.writeFileSync(filePath, codeToExecute);
             cleanupFiles.push(filePath);
             result = await runCodeSubprocess('python', [filePath], stdin || '');
 
         } else if (language === 'JavaScript') {
-            // --- JavaScript (Node.js) ---
             const filePath = path.join(tempDir, `run_${runId}.js`);
             fs.writeFileSync(filePath, codeToExecute);
             cleanupFiles.push(filePath);
             result = await runCodeSubprocess('node', [filePath], stdin || '');
 
         } else if (language === 'C') {
-            // --- C (gcc) ---
             const srcPath = path.join(tempDir, `run_${runId}.c`);
-            const outPath = path.join(tempDir, `run_${runId}.exe`);
+            const outPath = path.join(tempDir, `run_${runId}${os.platform() === 'win32' ? '.exe' : ''}`);
             fs.writeFileSync(srcPath, codeToExecute);
             cleanupFiles.push(srcPath, outPath);
-
-            // Compile
-            const compileResult = await runCodeSubprocess('gcc', [srcPath, '-o', outPath], '');
+            const compileResult = await runCodeSubprocess('gcc', [srcPath, '-o', outPath, '-lm'], '');
             if (compileResult.exitCode !== 0) {
                 return res.json({ output: compileResult.stderr || 'Compilation failed', status: 'error' });
             }
-            // Run
             result = await runCodeSubprocess(outPath, [], stdin || '');
 
         } else if (language === 'C++') {
-            // --- C++ (g++) ---
             const srcPath = path.join(tempDir, `run_${runId}.cpp`);
-            const outPath = path.join(tempDir, `run_${runId}.exe`);
+            const outPath = path.join(tempDir, `run_${runId}${os.platform() === 'win32' ? '.exe' : ''}`);
             fs.writeFileSync(srcPath, codeToExecute);
             cleanupFiles.push(srcPath, outPath);
-
-            // Compile
-            const compileResult = await runCodeSubprocess('g++', [srcPath, '-o', outPath], '');
+            const compileResult = await runCodeSubprocess('g++', [srcPath, '-o', outPath, '-lm'], '');
             if (compileResult.exitCode !== 0) {
                 return res.json({ output: compileResult.stderr || 'Compilation failed', status: 'error' });
             }
-            // Run
             result = await runCodeSubprocess(outPath, [], stdin || '');
 
         } else if (language === 'Java') {
-            // --- Java ---
-            // Extract class name from code (look for 'public class ClassName')
             const classMatch = codeToExecute.match(/public\s+class\s+(\w+)/);
             const className = classMatch ? classMatch[1] : 'Main';
             const javaDir = path.join(tempDir, `java_${runId}`);
@@ -3095,27 +3196,21 @@ app.post('/api/run', codeLimiter, async (req, res) => {
             const srcPath = path.join(javaDir, `${className}.java`);
             fs.writeFileSync(srcPath, codeToExecute);
             cleanupFiles.push(javaDir);
-
-            // Compile
             const compileResult = await runCodeSubprocess('javac', [srcPath], '');
             if (compileResult.exitCode !== 0) {
                 return res.json({ output: compileResult.stderr || 'Compilation failed', status: 'error' });
             }
-            // Run
             result = await runCodeSubprocess('java', ['-cp', javaDir, className], stdin || '');
 
         } else if (language === 'SQL') {
-            // --- SQL (sqlite3) - Pass SQL via stdin (safe) ---
             const dbFile = path.join(tempDir, `run_${runId}.db`);
             cleanupFiles.push(dbFile);
-            // Pass SQL code directly via stdin instead of shell command
             result = await runCodeSubprocess('sqlite3', [dbFile, '-batch'], codeToExecute);
 
         } else {
             return res.status(400).json({ error: `Unsupported language: ${language}` });
         }
 
-        // Return the result
         const output = (result.stdout + result.stderr).trim();
         res.json({
             output: output || 'No output detected',
@@ -3124,9 +3219,29 @@ app.post('/api/run', codeLimiter, async (req, res) => {
 
     } catch (error) {
         console.error('Run Error:', error);
+
+        // ── If local execution failed due to missing compiler, try Judge0 as last resort ──
+        if (error.code === 'ENOENT' && JUDGE0_API_URL && JUDGE0_LANG_IDS[req.body.language]) {
+            try {
+                console.log(`🌐 Judge0 fallback (ENOENT) for ${req.body.language}`);
+                let fallbackCode = req.body.code;
+                if (req.body.language === 'SQL' && req.body.sqlSchema) {
+                    fallbackCode = `${req.body.sqlSchema}\n\n${req.body.code}`;
+                }
+                const result = await runCodeViaJudge0(fallbackCode, req.body.language, req.body.stdin || '');
+                const output = (result.stdout + result.stderr).trim();
+                return res.json({
+                    output: output || 'No output detected',
+                    status: result.exitCode === 0 ? 'success' : 'error'
+                });
+            } catch (j0err) {
+                console.error('Judge0 fallback also failed:', j0err.message);
+                return res.status(500).json({ error: 'Code execution failed', details: j0err.message });
+            }
+        }
+
         res.status(500).json({ error: 'Failed to run code', details: error.message });
     } finally {
-        // Cleanup temp files
         for (const f of cleanupFiles) {
             try {
                 if (fs.existsSync(f)) {
