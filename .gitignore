@@ -14,3 +14,6 @@ public/certificates/*.pdf
 debug_*.js
 debug_*.txt
 check_*.js
+
+# Migration scripts with credentials
+migrate_db*.js
