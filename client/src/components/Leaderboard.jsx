@@ -3,6 +3,8 @@ import { ThemeContext, useAuth } from '../App';
 import { Trophy, TrendingUp, Award, Target, Clock } from 'lucide-react';
 import '../styles/Leaderboard.css';
 
+const API_BASE = (import.meta.env.VITE_API_URL || 'http://localhost:3000') + '/api';
+
 const Leaderboard = () => {
     const { theme } = useContext(ThemeContext);
     const { user } = useAuth();
@@ -29,7 +31,7 @@ const Leaderboard = () => {
 
     const loadCategories = async () => {
         try {
-            const response = await fetch('/api/problem-categories', {
+            const response = await fetch(`${API_BASE}/problem-categories`, {
                 headers: { 'Authorization': `Bearer ${token}` }
             });
             if (response.ok) {
@@ -44,7 +46,7 @@ const Leaderboard = () => {
     const loadLeaderboard = async () => {
         try {
             setLoading(true);
-            let url = '/api/leaderboard';
+            let url = `${API_BASE}/leaderboard`;
             const params = new URLSearchParams();
 
             if (selectedTab === 'category' && selectedCategory !== 'all') {

@@ -3,6 +3,8 @@ import { ThemeContext, useAuth } from '../App';
 import { Palette, Settings } from 'lucide-react';
 import '../styles/IDEThemes.css';
 
+const API_BASE = (import.meta.env.VITE_API_URL || 'http://localhost:3000') + '/api';
+
 const IDE_THEMES = {
     'vs-light': {
         name: 'VS Light',
@@ -82,7 +84,7 @@ const IDEThemeCustomizer = () => {
     // Load preferences
     const loadPreferences = async () => {
         try {
-            const response = await fetch('/api/users/' + user?.id + '/preferences', {
+            const response = await fetch(API_BASE + '/users/' + user?.id + '/preferences', {
                 headers: { 'Authorization': `Bearer ${token}` }
             });
 
@@ -105,7 +107,7 @@ const IDEThemeCustomizer = () => {
     // Save preferences
     const savePreferences = async () => {
         try {
-            const response = await fetch('/api/users/' + user?.id + '/preferences', {
+            const response = await fetch(API_BASE + '/users/' + user?.id + '/preferences', {
                 method: 'PUT',
                 headers: {
                     'Authorization': `Bearer ${token}`,

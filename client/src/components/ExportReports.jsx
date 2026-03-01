@@ -6,6 +6,8 @@ import {
     TrendingUp, Award, Tag, Layers, ChevronRight
 } from 'lucide-react';
 
+const API_BASE = (import.meta.env.VITE_API_URL || 'http://localhost:3000') + '/api';
+
 const REPORT_TYPES = [
     { value: 'performance',  label: 'Performance Report',  icon: TrendingUp,    desc: 'Scores, pass rates & trends',       color: '#6366f1' },
     { value: 'progress',     label: 'Progress Report',     icon: BarChart2,     desc: 'Skill growth over time',            color: '#0ea5e9' },
@@ -237,7 +239,7 @@ const ExportReports = () => {
         setError(null);
         setSuccess(null);
         try {
-            const response = await fetch('/api/reports/export', {
+            const response = await fetch(`${API_BASE}/reports/export`, {
                 method: 'POST',
                 headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
                 body: JSON.stringify({ format, reportType, dateRange }),

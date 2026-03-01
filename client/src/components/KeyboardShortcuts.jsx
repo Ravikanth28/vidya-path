@@ -3,6 +3,8 @@ import { ThemeContext, useAuth } from '../App';
 import { Keyboard, X, Save } from 'lucide-react';
 import '../styles/KeyboardShortcuts.css';
 
+const API_BASE = (import.meta.env.VITE_API_URL || 'http://localhost:3000') + '/api';
+
 const DEFAULT_SHORTCUTS = {
     // Navigation
     'goto-next-problem': { keys: 'Ctrl+]', description: 'Next Problem' },
@@ -45,7 +47,7 @@ const KeyboardShortcuts = () => {
     // Load shortcuts
     const loadShortcuts = async () => {
         try {
-            const response = await fetch('/api/users/' + user?.id + '/preferences', {
+            const response = await fetch(`${API_BASE}/users/${user?.id}/preferences`, {
                 headers: { 'Authorization': `Bearer ${token}` }
             });
 
@@ -73,7 +75,7 @@ const KeyboardShortcuts = () => {
                 }
             });
 
-            const response = await fetch('/api/users/' + user?.id + '/preferences', {
+            const response = await fetch(API_BASE + '/users/' + user?.id + '/preferences', {
                 method: 'PUT',
                 headers: {
                     'Authorization': `Bearer ${token}`,

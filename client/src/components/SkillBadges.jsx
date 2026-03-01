@@ -3,6 +3,8 @@ import { ThemeContext, useAuth } from '../App';
 import { Award, Trophy, Lock, Unlock } from 'lucide-react';
 import '../styles/SkillBadges.css';
 
+const API_BASE = (import.meta.env.VITE_API_URL || 'http://localhost:3000') + '/api';
+
 const SkillBadges = () => {
     const { theme } = useContext(ThemeContext);
     const { user } = useAuth();
@@ -18,7 +20,7 @@ const SkillBadges = () => {
 
     const loadBadges = async () => {
         try {
-            const response = await fetch(`/api/users/${user?.id}/badges`, {
+            const response = await fetch(`${API_BASE}/users/${user?.id}/badges`, {
                 headers: { 'Authorization': `Bearer ${token}` }
             });
             if (response.ok) {

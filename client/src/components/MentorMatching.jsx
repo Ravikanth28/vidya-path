@@ -3,6 +3,8 @@ import { ThemeContext, useAuth } from '../App';
 import { Users, Star, MessageSquare } from 'lucide-react';
 import '../styles/MentorMatching.css';
 
+const API_BASE = (import.meta.env.VITE_API_URL || 'http://localhost:3000') + '/api';
+
 const MentorMatching = () => {
     const { theme } = useContext(ThemeContext);
     const { user } = useAuth();
@@ -17,7 +19,7 @@ const MentorMatching = () => {
 
     const loadMentors = async () => {
         try {
-            const response = await fetch(`/api/mentors/matching?studentId=${user?.id}`, {
+            const response = await fetch(`${API_BASE}/mentors/matching?studentId=${user?.id}`, {
                 headers: { 'Authorization': `Bearer ${token}` }
             });
             if (response.ok) {
@@ -33,7 +35,7 @@ const MentorMatching = () => {
 
     const requestMentor = async (mentorId) => {
         try {
-            const response = await fetch('/api/mentor-requests', {
+            const response = await fetch(`${API_BASE}/mentor-requests`, {
                 method: 'POST',
                 headers: {
                     'Authorization': `Bearer ${token}`,

@@ -3,6 +3,8 @@ import { ThemeContext } from '../App';
 import { Search, Download, AlertCircle, TrendingUp, Users, Clock } from 'lucide-react';
 import '../styles/AuditLogDashboard.css';
 
+const API_BASE = (import.meta.env.VITE_API_URL || 'http://localhost:3000') + '/api';
+
 const AuditLogDashboard = () => {
     const { theme } = useContext(ThemeContext);
     const [logs, setLogs] = useState([]);
@@ -34,7 +36,7 @@ const AuditLogDashboard = () => {
         setLoading(true);
         try {
             const filterStr = JSON.stringify(filters);
-            const url = `/api/admin/audit-logs/search?query=${searchQuery}&filters=${encodeURIComponent(filterStr)}&page=${page}&limit=${pageSize}`;
+            const url = `${API_BASE}/admin/audit-logs/search?query=${searchQuery}&filters=${encodeURIComponent(filterStr)}&page=${page}&limit=${pageSize}`;
 
             const response = await fetch(url, {
                 headers: { 'Authorization': `Bearer ${token}` }
@@ -55,7 +57,7 @@ const AuditLogDashboard = () => {
     // Fetch alerts
     const fetchAlerts = async () => {
         try {
-            const response = await fetch('/api/admin/audit-logs/alerts', {
+            const response = await fetch(`${API_BASE}/admin/audit-logs/alerts`, {
                 headers: { 'Authorization': `Bearer ${token}` }
             });
 
@@ -71,7 +73,7 @@ const AuditLogDashboard = () => {
     // Fetch stats
     const fetchStats = async () => {
         try {
-            const response = await fetch('/api/admin/audit-logs/stats', {
+            const response = await fetch(`${API_BASE}/admin/audit-logs/stats`, {
                 headers: { 'Authorization': `Bearer ${token}` }
             });
 
@@ -87,7 +89,7 @@ const AuditLogDashboard = () => {
     // Fetch analytics
     const fetchAnalytics = async () => {
         try {
-            const response = await fetch(`/api/admin/audit-logs/analytics?period=${timespan}`, {
+            const response = await fetch(`${API_BASE}/admin/audit-logs/analytics?period=${timespan}`, {
                 headers: { 'Authorization': `Bearer ${token}` }
             });
 
@@ -103,7 +105,7 @@ const AuditLogDashboard = () => {
     // Fetch real-time summary
     const fetchSummary = async () => {
         try {
-            const response = await fetch('/api/admin/audit-logs/real-time-summary', {
+            const response = await fetch(`${API_BASE}/admin/audit-logs/real-time-summary`, {
                 headers: { 'Authorization': `Bearer ${token}` }
             });
 
@@ -127,7 +129,7 @@ const AuditLogDashboard = () => {
                 userId: filters.userId
             });
 
-            const response = await fetch(`/api/admin/audit-logs/export?${params}`, {
+            const response = await fetch(`${API_BASE}/admin/audit-logs/export?${params}`, {
                 headers: { 'Authorization': `Bearer ${token}` }
             });
 

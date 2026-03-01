@@ -3,6 +3,8 @@ import { ThemeContext } from '../App';
 import { Search, Filter, Download } from 'lucide-react';
 import '../styles/AdvancedSearch.css';
 
+const API_BASE = (import.meta.env.VITE_API_URL || 'http://localhost:3000') + '/api';
+
 const AdvancedSearch = ({ onResultsChange }) => {
     const { theme } = useContext(ThemeContext);
     const [searchQuery, setSearchQuery] = useState('');
@@ -24,7 +26,7 @@ const AdvancedSearch = ({ onResultsChange }) => {
             if (filters.category !== 'all') params.append('category', filters.category);
             if (filters.status !== 'all') params.append('status', filters.status);
 
-            const response = await fetch(`/api/search?${params}`, {
+            const response = await fetch(`${API_BASE}/search?${params}`, {
                 headers: { 'Authorization': `Bearer ${token}` }
             });
 

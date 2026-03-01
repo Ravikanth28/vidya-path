@@ -3,6 +3,8 @@ import { ThemeContext, useAuth } from '../App';
 import { Cpu, RefreshCw, CheckCircle } from 'lucide-react';
 import '../styles/AITestCaseGenerator.css';
 
+const API_BASE = (import.meta.env.VITE_API_URL || 'http://localhost:3000') + '/api';
+
 const AITestCaseGenerator = ({ problemId }) => {
     const { theme } = useContext(ThemeContext);
     const { user } = useAuth();
@@ -14,7 +16,7 @@ const AITestCaseGenerator = ({ problemId }) => {
     const generateTestCases = async () => {
         setGenerating(true);
         try {
-            const response = await fetch('/api/ai/generate-test-cases', {
+            const response = await fetch(`${API_BASE}/ai/generate-test-cases`, {
                 method: 'POST',
                 headers: {
                     'Authorization': `Bearer ${token}`,

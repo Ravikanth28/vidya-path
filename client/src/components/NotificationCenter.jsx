@@ -4,6 +4,8 @@ import { useAuth } from '../App';
 import { Bell, X, Archive, Check } from 'lucide-react';
 import '../styles/NotificationCenter.css';
 
+const API_BASE = (import.meta.env.VITE_API_URL || 'http://localhost:3000') + '/api';
+
 const NotificationCenter = ({ socket }) => {
     const { theme } = useContext(ThemeContext);
     const { user } = useAuth();
@@ -24,7 +26,7 @@ const NotificationCenter = ({ socket }) => {
     const fetchNotifications = async () => {
         setLoading(true);
         try {
-            let url = `/api/notifications?page=${page}&limit=20`;
+            let url = `${API_BASE}/notifications?page=${page}&limit=20`;
             
             if (filter === 'unread') {
                 url += '&unread_only=true';
@@ -51,7 +53,7 @@ const NotificationCenter = ({ socket }) => {
     // Fetch unread count
     const fetchUnreadCount = async () => {
         try {
-            const response = await fetch('/api/notifications/unread/count', {
+            const response = await fetch(`${API_BASE}/notifications/unread/count`, {
                 headers: { 'Authorization': `Bearer ${token}` }
             });
 
@@ -67,7 +69,7 @@ const NotificationCenter = ({ socket }) => {
     // Fetch preferences
     const fetchPreferences = async () => {
         try {
-            const response = await fetch('/api/notification-preferences', {
+            const response = await fetch(`${API_BASE}/notification-preferences`, {
                 headers: { 'Authorization': `Bearer ${token}` }
             });
 
@@ -83,7 +85,7 @@ const NotificationCenter = ({ socket }) => {
     // Mark notification as read
     const markAsRead = async (notificationId) => {
         try {
-            const response = await fetch(`/api/notifications/${notificationId}/read`, {
+            const response = await fetch(`${API_BASE}/notifications/${notificationId}/read`, {
                 method: 'PATCH',
                 headers: { 'Authorization': `Bearer ${token}` }
             });
@@ -106,7 +108,7 @@ const NotificationCenter = ({ socket }) => {
     // Archive notification
     const archiveNotification = async (notificationId) => {
         try {
-            const response = await fetch(`/api/notifications/${notificationId}`, {
+            const response = await fetch(`${API_BASE}/notifications/${notificationId}`, {
                 method: 'DELETE',
                 headers: { 'Authorization': `Bearer ${token}` }
             });
@@ -127,7 +129,7 @@ const NotificationCenter = ({ socket }) => {
     // Update preferences
     const updatePreferences = async (updatedPrefs) => {
         try {
-            const response = await fetch('/api/notification-preferences', {
+            const response = await fetch(`${API_BASE}/notification-preferences`, {
                 method: 'PATCH',
                 headers: {
                     'Authorization': `Bearer ${token}`,

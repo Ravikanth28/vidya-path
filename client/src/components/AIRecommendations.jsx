@@ -4,6 +4,8 @@ import { ThemeContext, useAuth } from '../App';
 import { Zap, ArrowRight, AlertTriangle, CheckCircle } from 'lucide-react';
 import '../styles/AIRecommendations.css';
 
+const API_BASE = (import.meta.env.VITE_API_URL || 'http://localhost:3000') + '/api';
+
 const difficultyColors = {
     easy: { bg: 'rgba(34,197,94,0.15)', color: '#22c55e' },
     medium: { bg: 'rgba(234,179,8,0.15)', color: '#eab308' },
@@ -26,7 +28,7 @@ const AIRecommendations = () => {
 
     const loadRecommendations = async () => {
         try {
-            const response = await fetch(`/api/recommendations/ai?userId=${user?.id}`, {
+            const response = await fetch(`${API_BASE}/recommendations/ai?userId=${user?.id}`, {
                 headers: { 'Authorization': `Bearer ${token}` }
             });
             if (response.ok) {

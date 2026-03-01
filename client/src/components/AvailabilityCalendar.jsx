@@ -3,6 +3,8 @@ import { ThemeContext, useAuth } from '../App';
 import { Calendar, Save } from 'lucide-react';
 import '../styles/AvailabilityCalendar.css';
 
+const API_BASE = (import.meta.env.VITE_API_URL || 'http://localhost:3000') + '/api';
+
 const AvailabilityCalendar = () => {
     const { theme } = useContext(ThemeContext);
     const { user } = useAuth();
@@ -21,7 +23,7 @@ const AvailabilityCalendar = () => {
 
     const loadAvailability = async () => {
         try {
-            const response = await fetch(`/api/users/${user?.id}/availability`, {
+            const response = await fetch(`${API_BASE}/users/${user?.id}/availability`, {
                 headers: { 'Authorization': `Bearer ${token}` }
             });
             if (response.ok) {
@@ -45,7 +47,7 @@ const AvailabilityCalendar = () => {
 
     const saveAvailability = async () => {
         try {
-            const response = await fetch(`/api/users/${user?.id}/availability`, {
+            const response = await fetch(`${API_BASE}/users/${user?.id}/availability`, {
                 method: 'PUT',
                 headers: {
                     'Authorization': `Bearer ${token}`,

@@ -40,7 +40,7 @@ const PlagiarismChecker = ({ user }) => {
         setChecking(true);
         setError(null);
         try {
-            const response = await fetch('/api/plagiarism/check', {
+            const response = await fetch(`${API_BASE}/plagiarism/check`, {
                 method: 'POST',
                 headers: {
                     'Authorization': `Bearer ${token}`,

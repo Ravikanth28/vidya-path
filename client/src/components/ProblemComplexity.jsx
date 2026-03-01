@@ -3,6 +3,8 @@ import { ThemeContext } from '../App';
 import { TrendingUp, BarChart3, Clock, Target, AlertCircle } from 'lucide-react';
 import '../styles/ProblemComplexity.css';
 
+const API_BASE = (import.meta.env.VITE_API_URL || 'http://localhost:3000') + '/api';
+
 const ProblemComplexity = ({ problemId }) => {
     const { theme } = useContext(ThemeContext);
     const [complexityData, setComplexityData] = useState(null);
@@ -20,7 +22,7 @@ const ProblemComplexity = ({ problemId }) => {
     const loadComplexityData = async () => {
         try {
             setLoading(true);
-            const response = await fetch(`/api/problems/${problemId}/complexity-analysis`, {
+            const response = await fetch(`${API_BASE}/problems/${problemId}/complexity-analysis`, {
                 headers: { 'Authorization': `Bearer ${token}` }
             });
 

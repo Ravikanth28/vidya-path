@@ -3,6 +3,8 @@ import { ThemeContext } from '../App';
 import { Calendar, User, Info } from 'lucide-react';
 import '../styles/AvailabilityCalendar.css';
 
+const API_BASE = (import.meta.env.VITE_API_URL || 'http://localhost:3000') + '/api';
+
 // Read-only view of a student's assigned mentor availability
 const MentorAvailabilityView = ({ user }) => {
     const { theme } = useContext(ThemeContext);
@@ -27,7 +29,7 @@ const MentorAvailabilityView = ({ user }) => {
         setLoading(true);
         try {
             // Fetch mentor info
-            const userRes = await fetch(`/api/users/${mentorId}`, {
+            const userRes = await fetch(`${API_BASE}/users/${mentorId}`, {
                 headers: { Authorization: `Bearer ${token}` }
             });
             if (userRes.ok) {
@@ -36,7 +38,7 @@ const MentorAvailabilityView = ({ user }) => {
             }
 
             // Fetch mentor's availability
-            const availRes = await fetch(`/api/users/${mentorId}/availability`, {
+            const availRes = await fetch(`${API_BASE}/users/${mentorId}/availability`, {
                 headers: { Authorization: `Bearer ${token}` }
             });
             if (availRes.ok) {
