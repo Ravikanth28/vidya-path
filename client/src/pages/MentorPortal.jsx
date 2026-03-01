@@ -2295,7 +2295,7 @@ function AllSubmissions({ user }) {
 
     const fetchSubmissions = () => {
         Promise.all([
-            axios.get(`${API_BASE}/submissions?mentorId=${user.id}`),
+            axios.get(`${API_BASE}/submissions?mentorId=${user.id}&limit=5000`),
             axios.get(`${API_BASE}/aptitude-submissions?mentorId=${user.id}`),
             axios.get(`${API_BASE}/global-test-submissions?mentorId=${user.id}`)
         ]).then(([codeRes, aptRes, globalRes]) => {

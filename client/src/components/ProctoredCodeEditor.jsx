@@ -639,7 +639,7 @@ function ProctoredCodeEditor({ problem, user, onClose, onSubmitSuccess }) {
         try {
             const res = await axios.post(`${API_BASE}/run`, {
                 code,
-                language: problem.language,
+                language: selectedLanguage,
                 problemId: problem.id,
                 sqlSchema: problem.sqlSchema,  // Pass SQL schema for execution
                 stdin: customInput  // Pass custom input as stdin
@@ -709,7 +709,7 @@ function ProctoredCodeEditor({ problem, user, onClose, onSubmitSuccess }) {
                 try {
                     const res = await axios.post(`${API_BASE}/run`, {
                         code,
-                        language: problem.language,
+                        language: selectedLanguage,
                         problemId: problem.id,
                         sqlSchema: problem.sqlSchema,
                         stdin: testCase.input || testCase.stdin || ''

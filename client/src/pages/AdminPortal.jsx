@@ -1,6 +1,6 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useMemo } from 'react'
 import { Routes, Route, useLocation } from 'react-router-dom'
-import { LayoutDashboard, Users, Trophy, Award, List, Search, Send, Activity, CheckCircle, Check, TrendingUp, Clock, Globe, FileCode, Plus, X, Code, ChevronRight, Upload, AlertTriangle, Zap, Target, Sparkles, Bot, Wand2, Eye, FileText, BarChart2, RefreshCw, Calendar, HelpCircle, Trash2, Save, Brain, XCircle, Shield, Download, ClipboardList, Settings, Database, Mail, MessageSquare, Github, ExternalLink, BarChart3, Video, Building2 } from 'lucide-react'
+import { LayoutDashboard, Users, Trophy, Award, List, Search, Send, Activity, CheckCircle, Check, TrendingUp, Clock, Globe, FileCode, Plus, X, Code, ChevronRight, Upload, AlertTriangle, Zap, Target, Sparkles, Bot, Wand2, Eye, FileText, BarChart2, RefreshCw, Calendar, HelpCircle, Trash2, Save, Brain, XCircle, Shield, Download, ClipboardList, Settings, Database, Mail, MessageSquare, Github, ExternalLink, BarChart3, Video, Building2, Filter, ChevronDown, Hash, Percent, ArrowUpDown } from 'lucide-react'
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, BarChart, Bar, Legend } from 'recharts'
 import DashboardLayout from '../components/DashboardLayout'
 import { AIChatbot, AIFloatingButton } from '../components/AIChatbot'
@@ -1234,10 +1234,22 @@ function MentorLeaderboard() {
 
     if (loading) return <div className="loading-spinner"></div>
 
+    // Compute mentor stats
+    const mentorStats = useMemo(() => {
+        const totalMentors = leaders.length
+        const totalStudents = leaders.reduce((sum, m) => sum + (m.studentCount || 0), 0)
+        const totalSubs = leaders.reduce((sum, m) => sum + (m.totalSubmissions || 0), 0)
+        const totalContent = leaders.reduce((sum, m) => sum + (m.totalContent || 0), 0)
+        const scores = leaders.map(m => Number(m.avgStudentScore) || 0).filter(s => s > 0)
+        const avgScore = scores.length > 0 ? (scores.reduce((a, b) => a + b, 0) / scores.length) : 0
+        const topMentor = leaders.length > 0 ? leaders.reduce((best, m) => (Number(m.avgStudentScore) || 0) > (Number(best.avgStudentScore) || 0) ? m : best, leaders[0]) : null
+        return { totalMentors, totalStudents, totalSubs, totalContent, avgScore, topMentor }
+    }, [leaders])
+
     return (
-        <div className="card animate-fadeIn" style={{ padding: '0', overflow: 'hidden' }}>
-            <div style={{ padding: '2rem' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginBottom: '2rem' }}>
+        <div className="animate-fadeIn">
+            <div style={{ marginBottom: '1.5rem' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginBottom: '1rem' }}>
                     <Award size={32} style={{ color: '#8b5cf6' }} />
                     <div>
                         <h2 style={{ margin: 0 }}>Global Mentor Leaderboard</h2>
@@ -1245,33 +1257,87 @@ function MentorLeaderboard() {
                     </div>
                 </div>
 
-                <div className="table-container">
-                    <table>
-                        <thead>
-                            <tr>
-                                <th>Mentor</th>
-                                <th>Students</th>
-                                <th>Content Created</th>
-                                <th>Total Submissions</th>
-                                <th>Avg. Student Score</th>
+                {/* Mentor Stats Cards */}
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '0.75rem', marginBottom: '1rem' }}>
+                    <div style={{ background: 'linear-gradient(135deg, rgba(139,92,246,0.1), rgba(139,92,246,0.05))', border: '1px solid rgba(139,92,246,0.2)', borderRadius: '12px', padding: '1rem 1.25rem' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
+                            <span style={{ fontSize: '0.72rem', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.5px', color: '#a78bfa' }}>Total Mentors</span>
+                            <Users size={16} style={{ color: '#8b5cf6' }} />
+                        </div>
+                        <div style={{ fontSize: '1.75rem', fontWeight: 800, color: '#8b5cf6' }}>{mentorStats.totalMentors}</div>
+                        <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '2px' }}>Active mentors</div>
+                    </div>
+                    <div style={{ background: 'linear-gradient(135deg, rgba(59,130,246,0.1), rgba(59,130,246,0.05))', border: '1px solid rgba(59,130,246,0.2)', borderRadius: '12px', padding: '1rem 1.25rem' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
+                            <span style={{ fontSize: '0.72rem', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.5px', color: '#60a5fa' }}>Total Students</span>
+                            <Users size={16} style={{ color: '#3b82f6' }} />
+                        </div>
+                        <div style={{ fontSize: '1.75rem', fontWeight: 800, color: '#3b82f6' }}>{mentorStats.totalStudents}</div>
+                        <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '2px' }}>Across all mentors</div>
+                    </div>
+                    <div style={{ background: 'linear-gradient(135deg, rgba(16,185,129,0.1), rgba(16,185,129,0.05))', border: '1px solid rgba(16,185,129,0.2)', borderRadius: '12px', padding: '1rem 1.25rem' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
+                            <span style={{ fontSize: '0.72rem', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.5px', color: '#34d399' }}>Avg Student Score</span>
+                            <TrendingUp size={16} style={{ color: '#10b981' }} />
+                        </div>
+                        <div style={{ fontSize: '1.75rem', fontWeight: 800, color: '#10b981' }}>{mentorStats.avgScore.toFixed(1)}%</div>
+                        <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '2px' }}>Platform average</div>
+                    </div>
+                    <div style={{ background: 'linear-gradient(135deg, rgba(245,158,11,0.1), rgba(245,158,11,0.05))', border: '1px solid rgba(245,158,11,0.2)', borderRadius: '12px', padding: '1rem 1.25rem' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
+                            <span style={{ fontSize: '0.72rem', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.5px', color: '#fbbf24' }}>Total Submissions</span>
+                            <ClipboardList size={16} style={{ color: '#f59e0b' }} />
+                        </div>
+                        <div style={{ fontSize: '1.75rem', fontWeight: 800, color: '#f59e0b' }}>{mentorStats.totalSubs}</div>
+                        <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '2px' }}>{mentorStats.totalContent} content items</div>
+                    </div>
+                    <div style={{ background: 'linear-gradient(135deg, rgba(6,182,212,0.1), rgba(6,182,212,0.05))', border: '1px solid rgba(6,182,212,0.2)', borderRadius: '12px', padding: '1rem 1.25rem' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
+                            <span style={{ fontSize: '0.72rem', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.5px', color: '#22d3ee' }}>Top Mentor</span>
+                            <Trophy size={16} style={{ color: '#06b6d4' }} />
+                        </div>
+                        <div style={{ fontSize: '1.1rem', fontWeight: 800, color: '#06b6d4', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{mentorStats.topMentor?.name || '-'}</div>
+                        <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '2px' }}>{mentorStats.topMentor ? `${mentorStats.topMentor.avgStudentScore}% avg score` : ''}</div>
+                    </div>
+                </div>
+            </div>
+
+            <div className="card glass" style={{ padding: '0', overflow: 'hidden', borderRadius: '12px', border: '1px solid var(--border-color, #1e293b)' }}>
+                <div style={{ overflowY: 'auto', overflowX: 'auto', maxHeight: '500px' }}>
+                    <table style={{ width: '100%', borderCollapse: 'separate', borderSpacing: 0 }}>
+                        <thead style={{ position: 'sticky', top: 0, zIndex: 10 }}>
+                            <tr style={{ background: 'var(--bg-card, #0f172a)' }}>
+                                <th style={{ padding: '0.75rem 1rem', textAlign: 'left', borderBottom: '2px solid var(--border-color, #334155)', fontSize: '0.78rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px', color: 'var(--text-muted)' }}>#</th>
+                                <th style={{ padding: '0.75rem 1rem', textAlign: 'left', borderBottom: '2px solid var(--border-color, #334155)', fontSize: '0.78rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px', color: 'var(--text-muted)' }}>Mentor</th>
+                                <th style={{ padding: '0.75rem 1rem', textAlign: 'center', borderBottom: '2px solid var(--border-color, #334155)', fontSize: '0.78rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px', color: 'var(--text-muted)' }}>Students</th>
+                                <th style={{ padding: '0.75rem 1rem', textAlign: 'center', borderBottom: '2px solid var(--border-color, #334155)', fontSize: '0.78rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px', color: 'var(--text-muted)' }}>Content</th>
+                                <th style={{ padding: '0.75rem 1rem', textAlign: 'center', borderBottom: '2px solid var(--border-color, #334155)', fontSize: '0.78rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px', color: 'var(--text-muted)' }}>Submissions</th>
+                                <th style={{ padding: '0.75rem 1rem', textAlign: 'center', borderBottom: '2px solid var(--border-color, #334155)', fontSize: '0.78rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px', color: 'var(--text-muted)' }}>Avg Score</th>
                             </tr>
                         </thead>
                         <tbody>
-                            {leaders.map((mentor) => (
-                                <tr key={mentor.mentorId}>
-                                    <td>
+                            {leaders.map((mentor, idx) => (
+                                <tr key={mentor.mentorId} style={{ borderBottom: '1px solid var(--border-color, #1e293b)', transition: 'background 0.15s' }}
+                                    onMouseEnter={e => e.currentTarget.style.background = 'rgba(139,92,246,0.04)'}
+                                    onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
+                                    <td style={{ padding: '0.6rem 1rem', fontSize: '0.85rem', color: 'var(--text-muted)' }}>
+                                        {idx === 0 ? '🥇' : idx === 1 ? '🥈' : idx === 2 ? '🥉' : idx + 1}
+                                    </td>
+                                    <td style={{ padding: '0.6rem 1rem' }}>
                                         <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-                                            <div className="avatar-circle" style={{ background: 'linear-gradient(135deg, #8b5cf6, #3b82f6)' }}>
+                                            <div className="avatar-circle" style={{ background: 'linear-gradient(135deg, #8b5cf6, #3b82f6)', width: 32, height: 32, fontSize: '0.85rem' }}>
                                                 {mentor.name.charAt(0)}
                                             </div>
-                                            <span>{mentor.name}</span>
+                                            <span style={{ fontWeight: 600, fontSize: '0.9rem' }}>{mentor.name}</span>
                                         </div>
                                     </td>
-                                    <td>{mentor.studentCount}</td>
-                                    <td>{mentor.totalContent} items</td>
-                                    <td>{mentor.totalSubmissions}</td>
-                                    <td>
-                                        <span style={{ fontWeight: 700, color: '#8b5cf6' }}>{mentor.avgStudentScore}%</span>
+                                    <td style={{ padding: '0.6rem 1rem', textAlign: 'center', fontWeight: 600 }}>{mentor.studentCount}</td>
+                                    <td style={{ padding: '0.6rem 1rem', textAlign: 'center' }}>
+                                        <span style={{ fontSize: '0.78rem', padding: '3px 10px', borderRadius: '6px', background: 'rgba(59,130,246,0.1)', color: '#3b82f6', fontWeight: 600 }}>{mentor.totalContent}</span>
+                                    </td>
+                                    <td style={{ padding: '0.6rem 1rem', textAlign: 'center', fontWeight: 600 }}>{mentor.totalSubmissions}</td>
+                                    <td style={{ padding: '0.6rem 1rem', textAlign: 'center' }}>
+                                        <span style={{ fontWeight: 800, fontSize: '1rem', color: Number(mentor.avgStudentScore) >= 80 ? '#10b981' : Number(mentor.avgStudentScore) >= 60 ? '#f59e0b' : '#ef4444' }}>{mentor.avgStudentScore}%</span>
                                     </td>
                                 </tr>
                             ))}
@@ -1296,11 +1362,20 @@ function AllSubmissions() {
     const [viewAptitudeResult, setViewAptitudeResult] = useState(null)
     const [viewGlobalReport, setViewGlobalReport] = useState(null)
     const [resetting, setResetting] = useState(false)
+    // Column filters
+    const [filterStudent, setFilterStudent] = useState('')
+    const [filterLanguage, setFilterLanguage] = useState('')
+    const [filterStatus, setFilterStatus] = useState('')
+    const [filterProblem, setFilterProblem] = useState('')
+    const [filterAttempt, setFilterAttempt] = useState('')
+    const [sortField, setSortField] = useState('submittedAt')
+    const [sortDir, setSortDir] = useState('desc')
+    const [showFilters, setShowFilters] = useState(false)
 
     const fetchSubmissions = () => {
         setLoading(true)
         Promise.all([
-            axios.get(`${API_BASE}/submissions`),
+            axios.get(`${API_BASE}/submissions?limit=5000`),
             axios.get(`${API_BASE}/aptitude-submissions`),
             axios.get(`${API_BASE}/global-test-submissions`)
         ]).then(([codeRes, aptRes, globalRes]) => {
@@ -1441,6 +1516,39 @@ function AllSubmissions() {
     const allSubmissions = [...submissions, ...mlTaskSubmissions, ...aptitudeSubmissions, ...globalSubmissions]
         .sort((a, b) => new Date(b.submittedAt) - new Date(a.submittedAt))
 
+    // Compute attempt numbers: group by (studentId + problemId/testId) and assign attempt #
+    const attemptMap = useMemo(() => {
+        const map = {}
+        const sorted = [...allSubmissions].sort((a, b) => new Date(a.submittedAt) - new Date(b.submittedAt))
+        sorted.forEach(sub => {
+            const key = `${sub.studentId || sub.student_id}_${sub.problemId || sub.testId || sub.itemTitle || ''}_${sub.subType}`
+            if (!map[key]) map[key] = 0
+            map[key]++
+            sub._attemptNum = map[key]
+        })
+        // Also store total attempts per key
+        const totalMap = {}
+        sorted.forEach(sub => {
+            const key = `${sub.studentId || sub.student_id}_${sub.problemId || sub.testId || sub.itemTitle || ''}_${sub.subType}`
+            totalMap[key] = map[key]
+        })
+        sorted.forEach(sub => {
+            const key = `${sub.studentId || sub.student_id}_${sub.problemId || sub.testId || sub.itemTitle || ''}_${sub.subType}`
+            sub._totalAttempts = totalMap[key]
+        })
+        return map
+    }, [allSubmissions])
+
+    // Unique values for filter dropdowns
+    const uniqueStudents = useMemo(() => [...new Set(allSubmissions.map(s => s.studentName).filter(Boolean))].sort(), [allSubmissions])
+    const uniqueLanguages = useMemo(() => [...new Set(allSubmissions.map(s => s.language).filter(Boolean))].sort(), [allSubmissions])
+    const uniqueStatuses = useMemo(() => [...new Set(allSubmissions.map(s => s.status).filter(Boolean))].sort(), [allSubmissions])
+    const uniqueProblems = useMemo(() => [...new Set(allSubmissions.map(s => s.itemTitle || s.testTitle).filter(Boolean))].sort(), [allSubmissions])
+    const uniqueAttempts = useMemo(() => {
+        const nums = [...new Set(allSubmissions.map(s => s._attemptNum).filter(Boolean))].sort((a, b) => a - b)
+        return nums
+    }, [allSubmissions])
+
     const getFilteredSubmissions = () => {
         let filtered = activeTab === 'all'
             ? allSubmissions
@@ -1452,332 +1560,343 @@ function AllSubmissions() {
                         ? aptitudeSubmissions
                         : globalSubmissions
 
-        return filtered.filter(s =>
-            (s.studentName || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
-            (s.itemTitle || s.testTitle || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
-            s.status.toLowerCase().includes(searchTerm.toLowerCase())
-        )
+        // Text search
+        if (searchTerm) {
+            const q = searchTerm.toLowerCase()
+            filtered = filtered.filter(s =>
+                (s.studentName || '').toLowerCase().includes(q) ||
+                (s.itemTitle || s.testTitle || '').toLowerCase().includes(q) ||
+                (s.status || '').toLowerCase().includes(q)
+            )
+        }
+
+        // Column filters
+        if (filterStudent) filtered = filtered.filter(s => s.studentName === filterStudent)
+        if (filterLanguage) filtered = filtered.filter(s => s.language === filterLanguage)
+        if (filterStatus) filtered = filtered.filter(s => s.status === filterStatus)
+        if (filterProblem) filtered = filtered.filter(s => (s.itemTitle || s.testTitle) === filterProblem)
+        if (filterAttempt) filtered = filtered.filter(s => String(s._attemptNum) === filterAttempt)
+
+        // Sorting
+        filtered = [...filtered].sort((a, b) => {
+            let aVal, bVal
+            if (sortField === 'submittedAt') { aVal = new Date(a.submittedAt); bVal = new Date(b.submittedAt) }
+            else if (sortField === 'score') { aVal = Number(a.score) || 0; bVal = Number(b.score) || 0 }
+            else if (sortField === 'studentName') { aVal = (a.studentName || '').toLowerCase(); bVal = (b.studentName || '').toLowerCase() }
+            else if (sortField === 'status') { aVal = (a.status || ''); bVal = (b.status || '') }
+            else { aVal = a[sortField]; bVal = b[sortField] }
+            if (aVal < bVal) return sortDir === 'asc' ? -1 : 1
+            if (aVal > bVal) return sortDir === 'asc' ? 1 : -1
+            return 0
+        })
+
+        return filtered
     }
+
+    const toggleSort = (field) => {
+        if (sortField === field) setSortDir(d => d === 'asc' ? 'desc' : 'asc')
+        else { setSortField(field); setSortDir('desc') }
+    }
+
+    const clearAllFilters = () => {
+        setFilterStudent(''); setFilterLanguage(''); setFilterStatus(''); setFilterProblem(''); setFilterAttempt(''); setSearchTerm('')
+    }
+    const hasActiveFilters = filterStudent || filterLanguage || filterStatus || filterProblem || filterAttempt || searchTerm
 
     const filteredSubmissions = getFilteredSubmissions()
 
+    // Aggregate stats
+    const stats = useMemo(() => {
+        const data = filteredSubmissions
+        const scores = data.map(s => Number(s.score) || 0)
+        const totalStudents = new Set(data.map(s => s.studentId || s.student_id)).size
+        const accepted = data.filter(s => (s.status || '').toLowerCase() === 'accepted').length
+        const partial = data.filter(s => (s.status || '').toLowerCase() === 'partial').length
+        const rejected = data.filter(s => (s.status || '').toLowerCase() === 'rejected').length
+        const avgScore = scores.length > 0 ? (scores.reduce((a, b) => a + b, 0) / scores.length) : 0
+        const maxScore = scores.length > 0 ? Math.max(...scores) : 0
+        const minScore = scores.length > 0 ? Math.min(...scores) : 0
+        const passRate = data.length > 0 ? ((accepted / data.length) * 100) : 0
+        const avgTabSwitches = data.length > 0 ? (data.reduce((a, s) => a + (s.tabSwitches || s.integrity?.tabSwitches || 0), 0) / data.length) : 0
+        const plagCount = data.filter(s => s.plagiarism?.detected).length
+        // Score distribution
+        const dist = { '0-20': 0, '21-40': 0, '41-60': 0, '61-80': 0, '81-100': 0 }
+        scores.forEach(s => {
+            if (s <= 20) dist['0-20']++
+            else if (s <= 40) dist['21-40']++
+            else if (s <= 60) dist['41-60']++
+            else if (s <= 80) dist['61-80']++
+            else dist['81-100']++
+        })
+        return { totalStudents, accepted, partial, rejected, avgScore, maxScore, minScore, passRate, avgTabSwitches, plagCount, dist, total: data.length }
+    }, [filteredSubmissions])
+
     if (loading) return <div className="loading-spinner"></div>
 
+    const filterSelectStyle = {
+        padding: '6px 10px', background: 'var(--bg-card, #1e293b)', border: '1px solid var(--border-color, #334155)',
+        borderRadius: '6px', color: 'inherit', fontSize: '0.78rem', outline: 'none', minWidth: '120px', cursor: 'pointer'
+    }
+
+    const SortHeader = ({ label, field, style = {} }) => (
+        <th onClick={() => toggleSort(field)} style={{ cursor: 'pointer', userSelect: 'none', whiteSpace: 'nowrap', ...style }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                {label}
+                <ArrowUpDown size={12} style={{ opacity: sortField === field ? 1 : 0.3, color: sortField === field ? 'var(--primary)' : 'inherit' }} />
+            </div>
+        </th>
+    )
+
     return (
-        <div className="animate-fadeIn">
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: '2rem' }}>
+        <div className="animate-fadeIn" style={{ display: 'flex', flexDirection: 'column', gap: '0' }}>
+            {/* Header Row */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: '1rem', flexShrink: 0 }}>
                 <div>
                     <h2 style={{ fontSize: '1.75rem', fontWeight: 800, margin: 0 }}>Submission Archives</h2>
                     <p style={{ color: 'var(--text-muted)', margin: '0.25rem 0 0 0' }}>Global audit trail of all submissions</p>
                 </div>
-                <div style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
+                <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center', flexWrap: 'wrap' }}>
+                    {/* Tab Buttons */}
                     <div style={{ display: 'flex', borderRadius: '8px', overflow: 'hidden', border: '1px solid var(--border-color)' }}>
-                        <button
-                            onClick={() => setActiveTab('all')}
-                            style={{
-                                padding: '0.5rem 1rem',
-                                background: activeTab === 'all' ? 'var(--primary)' : 'transparent',
-                                border: 'none',
-                                color: activeTab === 'all' ? 'white' : 'var(--text-muted)',
-                                cursor: 'pointer',
-                                fontSize: '0.85rem'
-                            }}
-                        >All ({allSubmissions.length})</button>
-                        <button
-                            onClick={() => setActiveTab('code')}
-                            style={{
-                                padding: '0.5rem 1rem',
-                                background: activeTab === 'code' ? 'var(--primary)' : 'transparent',
-                                border: 'none',
-                                color: activeTab === 'code' ? 'white' : 'var(--text-muted)',
-                                cursor: 'pointer',
-                                fontSize: '0.85rem'
-                            }}
-                        >💻 Code ({submissions.length})</button>
-                        <button
-                            onClick={() => setActiveTab('ml-task')}
-                            style={{
-                                padding: '0.5rem 1rem',
-                                background: activeTab === 'ml-task' ? '#06b6d4' : 'transparent',
-                                border: 'none',
-                                color: activeTab === 'ml-task' ? 'white' : 'var(--text-muted)',
-                                cursor: 'pointer',
-                                fontSize: '0.85rem'
-                            }}
-                        >🧠 ML Tasks ({mlTaskSubmissions.length})</button>
-                        <button
-                            onClick={() => setActiveTab('aptitude')}
-                            style={{
-                                padding: '0.5rem 1rem',
-                                background: activeTab === 'aptitude' ? '#8b5cf6' : 'transparent',
-                                border: 'none',
-                                color: activeTab === 'aptitude' ? 'white' : 'var(--text-muted)',
-                                cursor: 'pointer',
-                                fontSize: '0.85rem'
-                            }}
-                        >📝 Aptitude ({aptitudeSubmissions.length})</button>
-                        <button
-                            onClick={() => setActiveTab('global')}
-                            style={{
-                                padding: '0.5rem 1rem',
-                                background: activeTab === 'global' ? '#3b82f6' : 'transparent',
-                                border: 'none',
-                                color: activeTab === 'global' ? 'white' : 'var(--text-muted)',
-                                cursor: 'pointer',
-                                fontSize: '0.85rem'
-                            }}
-                        >🌐 Global ({globalSubmissions.length})</button>
+                        {[
+                            { key: 'all', label: 'All', count: allSubmissions.length, color: 'var(--primary)' },
+                            { key: 'code', label: '💻 Code', count: submissions.length, color: 'var(--primary)' },
+                            { key: 'ml-task', label: '🧠 ML', count: mlTaskSubmissions.length, color: '#06b6d4' },
+                            { key: 'aptitude', label: '📝 Apt', count: aptitudeSubmissions.length, color: '#8b5cf6' },
+                            { key: 'global', label: '🌐 Global', count: globalSubmissions.length, color: '#3b82f6' }
+                        ].map(tab => (
+                            <button key={tab.key} onClick={() => setActiveTab(tab.key)}
+                                style={{ padding: '0.4rem 0.75rem', background: activeTab === tab.key ? tab.color : 'transparent', border: 'none', color: activeTab === tab.key ? 'white' : 'var(--text-muted)', cursor: 'pointer', fontSize: '0.8rem', whiteSpace: 'nowrap' }}
+                            >{tab.label} ({tab.count})</button>
+                        ))}
                     </div>
                     <div style={{ position: 'relative' }}>
-                        <Search size={18} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
-                        <input
-                            type="text"
-                            placeholder="Search student, problem or status..."
-                            style={{ padding: '0.6rem 1rem 0.6rem 2.5rem', background: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: '8px', color: 'white', width: '300px' }}
-                            value={searchTerm}
-                            onChange={(e) => setSearchTerm(e.target.value)}
-                        />
+                        <Search size={15} style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
+                        <input type="text" placeholder="Search..." style={{ padding: '0.5rem 0.75rem 0.5rem 2rem', background: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: '8px', color: 'white', width: '200px', fontSize: '0.82rem' }} value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} />
                     </div>
-                    <button
-                        onClick={downloadCSV}
-                        disabled={filteredSubmissions.length === 0}
-                        style={{
-                            padding: '0.6rem 1rem',
-                            background: 'rgba(16, 185, 129, 0.1)',
-                            border: '1px solid rgba(16, 185, 129, 0.3)',
-                            borderRadius: '8px',
-                            color: '#10b981',
-                            cursor: filteredSubmissions.length === 0 ? 'not-allowed' : 'pointer',
-                            fontSize: '0.85rem',
-                            fontWeight: 600,
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: '0.5rem',
-                            opacity: filteredSubmissions.length === 0 ? 0.5 : 1,
-                            transition: 'all 0.2s ease'
-                        }}
-                        onMouseEnter={(e) => {
-                            if (filteredSubmissions.length > 0) {
-                                e.target.style.background = 'rgba(16, 185, 129, 0.2)'
-                            }
-                        }}
-                        onMouseLeave={(e) => {
-                            e.target.style.background = 'rgba(16, 185, 129, 0.1)'
-                        }}
-                    >
-                        <Download size={16} />
-                        Download CSV
+                    <button onClick={() => setShowFilters(f => !f)} style={{
+                        padding: '0.5rem 0.75rem', background: showFilters ? 'rgba(59,130,246,0.2)' : 'rgba(59,130,246,0.08)', border: `1px solid ${showFilters ? 'rgba(59,130,246,0.5)' : 'rgba(59,130,246,0.2)'}`,
+                        borderRadius: '8px', color: '#3b82f6', cursor: 'pointer', fontSize: '0.82rem', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '5px'
+                    }}>
+                        <Filter size={14} /> Filters {hasActiveFilters && <span style={{ background: '#3b82f6', color: '#fff', borderRadius: '50%', width: 16, height: 16, fontSize: 10, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>!</span>}
                     </button>
-                    <button
-                        onClick={handleResetAllSubmissions}
-                        disabled={resetting || allSubmissions.length === 0}
-                        style={{
-                            padding: '0.6rem 1rem',
-                            background: 'rgba(239, 68, 68, 0.1)',
-                            border: '1px solid rgba(239, 68, 68, 0.3)',
-                            borderRadius: '8px',
-                            color: '#ef4444',
-                            cursor: resetting || allSubmissions.length === 0 ? 'not-allowed' : 'pointer',
-                            fontSize: '0.85rem',
-                            fontWeight: 600,
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: '0.5rem',
-                            opacity: resetting || allSubmissions.length === 0 ? 0.5 : 1,
-                            transition: 'all 0.2s ease'
-                        }}
-                        onMouseEnter={(e) => {
-                            if (!resetting && allSubmissions.length > 0) {
-                                e.target.style.background = 'rgba(239, 68, 68, 0.2)'
-                            }
-                        }}
-                        onMouseLeave={(e) => {
-                            e.target.style.background = 'rgba(239, 68, 68, 0.1)'
-                        }}
-                    >
-                        <Trash2 size={16} />
-                        {resetting ? 'Resetting...' : 'Reset All'}
+                    <button onClick={downloadCSV} disabled={filteredSubmissions.length === 0} style={{
+                        padding: '0.5rem 0.75rem', background: 'rgba(16, 185, 129, 0.1)', border: '1px solid rgba(16, 185, 129, 0.3)',
+                        borderRadius: '8px', color: '#10b981', cursor: filteredSubmissions.length === 0 ? 'not-allowed' : 'pointer', fontSize: '0.82rem', fontWeight: 600,
+                        display: 'flex', alignItems: 'center', gap: '5px', opacity: filteredSubmissions.length === 0 ? 0.5 : 1
+                    }}>
+                        <Download size={14} /> CSV
+                    </button>
+                    <button onClick={handleResetAllSubmissions} disabled={resetting || allSubmissions.length === 0} style={{
+                        padding: '0.5rem 0.75rem', background: 'rgba(239, 68, 68, 0.1)', border: '1px solid rgba(239, 68, 68, 0.3)',
+                        borderRadius: '8px', color: '#ef4444', cursor: resetting || allSubmissions.length === 0 ? 'not-allowed' : 'pointer', fontSize: '0.82rem', fontWeight: 600,
+                        display: 'flex', alignItems: 'center', gap: '5px', opacity: resetting || allSubmissions.length === 0 ? 0.5 : 1
+                    }}>
+                        <Trash2 size={14} /> {resetting ? 'Resetting...' : 'Reset All'}
                     </button>
                 </div>
             </div>
 
-            <div className="table-container card glass">
-                <table>
-                    <thead>
-                        <tr>
-                            <th>Student</th>
-                            <th>Type</th>
-                            <th>Problem / Test</th>
-                            <th>Language</th>
-                            <th>Score</th>
-                            <th>Status</th>
-                            <th>Submitted At</th>
-                            <th>Actions</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {filteredSubmissions.length === 0 ? (
-                            <tr><td colSpan="8" style={{ textAlign: 'center', padding: '3rem' }}>No submissions found</td></tr>
-                        ) : filteredSubmissions.map(sub => (
-                            <tr key={sub.id}>
-                                <td>
-                                    <div style={{ fontWeight: 600 }}>{sub.studentName}</div>
-                                </td>
-                                <td>
-                                    <span style={{
-                                        fontSize: '0.75rem',
-                                        padding: '2px 8px',
-                                        borderRadius: '4px',
-                                        background: sub.subType === 'aptitude' ? 'rgba(139, 92, 246, 0.1)' : 'rgba(59, 130, 246, 0.1)',
-                                        color: sub.subType === 'ml-task' ? '#06b6d4' : sub.subType === 'aptitude' ? '#8b5cf6' : 'var(--primary)'
-                                    }}>
-                                        {sub.subType === 'ml-task' ? '🧠 ML Task' : sub.subType === 'aptitude' ? '📝 Aptitude' : sub.subType === 'global' ? '🌐 Global' : '💻 Code'}
-                                    </span>
-                                </td>
-                                <td>
-                                    <div style={{ color: 'var(--primary)', fontWeight: 500 }}>{sub.itemTitle || sub.testTitle}</div>
-                                </td>
-                                <td>
-                                    <span style={{ fontSize: '0.75rem', padding: '2px 8px', borderRadius: '4px', background: 'rgba(59, 130, 246, 0.1)', color: 'var(--primary)' }}>
-                                        {sub.subType === 'aptitude' ? 'N/A' : sub.subType === 'global' ? 'Mixed' : (sub.language?.toUpperCase() || 'N/A')}
-                                    </span>
-                                </td>
-                                <td style={{ fontWeight: 700, fontSize: '1.1rem' }}>{sub.score}%</td>
-                                <td>
-                                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.25rem', alignItems: 'center' }}>
-                                        <span className={`status-badge ${sub.status}`}>{sub.status}</span>
-                                        {sub.plagiarism?.detected && (
-                                            <span className="status-badge plagiarized" style={{ display: 'flex', alignItems: 'center', gap: '3px' }}>
-                                                <AlertTriangle size={11} /> Plag
-                                            </span>
-                                        )}
-                                        {(sub.integrity?.integrityViolation || sub.tabSwitches > 0) && (
-                                            <span style={{
-                                                fontSize: '0.65rem',
-                                                padding: '2px 6px',
-                                                borderRadius: '4px',
-                                                background: 'rgba(245, 158, 11, 0.15)',
-                                                color: '#f59e0b',
-                                                border: '1px solid rgba(245, 158, 11, 0.3)',
-                                                display: 'flex',
-                                                alignItems: 'center',
-                                                gap: '3px'
-                                            }}>
-                                                <AlertTriangle size={10} /> {sub.integrity?.tabSwitches || sub.tabSwitches || 0} Tab
-                                            </span>
-                                        )}
-                                        {sub.cameraBlockedCount > 0 && (
-                                            <span style={{
-                                                fontSize: '0.65rem',
-                                                padding: '2px 6px',
-                                                borderRadius: '4px',
-                                                background: 'rgba(239, 68, 68, 0.15)',
-                                                color: '#ef4444',
-                                                border: '1px solid rgba(239, 68, 68, 0.3)',
-                                                display: 'flex',
-                                                alignItems: 'center',
-                                                gap: '3px'
-                                            }}>
-                                                📷 {sub.cameraBlockedCount} Cam
-                                            </span>
-                                        )}
-                                        {sub.phoneDetectionCount > 0 && (
-                                            <span style={{
-                                                fontSize: '0.65rem',
-                                                padding: '2px 6px',
-                                                borderRadius: '4px',
-                                                background: 'rgba(239, 68, 68, 0.15)',
-                                                color: '#ef4444',
-                                                border: '1px solid rgba(239, 68, 68, 0.3)',
-                                                display: 'flex',
-                                                alignItems: 'center',
-                                                gap: '3px'
-                                            }}>
-                                                📱 {sub.phoneDetectionCount} Phone
-                                            </span>
-                                        )}
-                                    </div>
-                                </td>
-                                <td style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>{new Date(sub.submittedAt).toLocaleString()}</td>
-                                <td>
-                                    {sub.subType === 'aptitude' ? (
-                                        <button
-                                            onClick={() => setViewAptitudeResult(sub)}
-                                            style={{
-                                                background: 'rgba(139, 92, 246, 0.1)',
-                                                border: 'none',
-                                                color: '#8b5cf6',
-                                                padding: '0.4rem 0.75rem',
-                                                borderRadius: '6px',
-                                                cursor: 'pointer',
-                                                fontSize: '0.8rem',
-                                                display: 'flex',
-                                                alignItems: 'center',
-                                                gap: '4px'
-                                            }}
-                                        >
-                                            <Eye size={14} /> Results
-                                        </button>
-                                    ) : sub.subType === 'global' ? (
-                                        <button
-                                            onClick={() => setViewGlobalReport(sub.id)}
-                                            style={{
-                                                background: 'rgba(59, 130, 246, 0.1)',
-                                                border: 'none',
-                                                color: '#3b82f6',
-                                                padding: '0.4rem 0.75rem',
-                                                borderRadius: '6px',
-                                                cursor: 'pointer',
-                                                fontSize: '0.8rem',
-                                                display: 'flex',
-                                                alignItems: 'center',
-                                                gap: '4px'
-                                            }}
-                                        >
-                                            <Eye size={14} /> Full Report
-                                        </button>
-                                    ) : sub.subType === 'ml-task' ? (
-                                        <button
-                                            onClick={() => setViewMLReport(sub)}
-                                            style={{
-                                                background: 'rgba(6, 182, 212, 0.1)',
-                                                border: 'none',
-                                                color: '#06b6d4',
-                                                padding: '0.4rem 0.75rem',
-                                                borderRadius: '6px',
-                                                cursor: 'pointer',
-                                                fontSize: '0.8rem',
-                                                display: 'flex',
-                                                alignItems: 'center',
-                                                gap: '4px'
-                                            }}
-                                        >
-                                            <Eye size={14} /> ML Report
-                                        </button>
-                                    ) : (
-                                        <button
-                                            onClick={() => setViewReport(sub)}
-                                            style={{
-                                                background: 'rgba(59, 130, 246, 0.1)',
-                                                border: 'none',
-                                                color: '#3b82f6',
-                                                padding: '0.4rem 0.75rem',
-                                                borderRadius: '6px',
-                                                cursor: 'pointer',
-                                                fontSize: '0.8rem',
-                                                display: 'flex',
-                                                alignItems: 'center',
-                                                gap: '4px'
-                                            }}
-                                        >
-                                            <Eye size={14} /> Report
-                                        </button>
-                                    )}
-                                </td>
+            {/* Filter Bar */}
+            {showFilters && (
+                <div style={{
+                    display: 'flex', gap: '0.75rem', alignItems: 'center', padding: '0.75rem 1rem', marginBottom: '0.75rem',
+                    background: 'rgba(59,130,246,0.04)', border: '1px solid rgba(59,130,246,0.15)', borderRadius: '10px', flexShrink: 0, flexWrap: 'wrap'
+                }}>
+                    <Filter size={14} style={{ color: '#3b82f6', flexShrink: 0 }} />
+                    <select value={filterStudent} onChange={e => setFilterStudent(e.target.value)} style={filterSelectStyle}>
+                        <option value="">All Students</option>
+                        {uniqueStudents.map(s => <option key={s} value={s}>{s}</option>)}
+                    </select>
+                    <select value={filterProblem} onChange={e => setFilterProblem(e.target.value)} style={filterSelectStyle}>
+                        <option value="">All Problems/Tests</option>
+                        {uniqueProblems.map(p => <option key={p} value={p}>{p}</option>)}
+                    </select>
+                    <select value={filterLanguage} onChange={e => setFilterLanguage(e.target.value)} style={filterSelectStyle}>
+                        <option value="">All Languages</option>
+                        {uniqueLanguages.map(l => <option key={l} value={l}>{l}</option>)}
+                    </select>
+                    <select value={filterStatus} onChange={e => setFilterStatus(e.target.value)} style={filterSelectStyle}>
+                        <option value="">All Statuses</option>
+                        {uniqueStatuses.map(s => <option key={s} value={s}>{s}</option>)}
+                    </select>
+                    <select value={filterAttempt} onChange={e => setFilterAttempt(e.target.value)} style={{ ...filterSelectStyle, minWidth: '100px' }}>
+                        <option value="">All Attempts</option>
+                        {uniqueAttempts.map(a => <option key={a} value={String(a)}>Attempt #{a}</option>)}
+                    </select>
+                    {hasActiveFilters && (
+                        <button onClick={clearAllFilters} style={{ padding: '5px 12px', background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)', borderRadius: '6px', color: '#ef4444', cursor: 'pointer', fontSize: '0.75rem', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 4 }}>
+                            <X size={12} /> Clear
+                        </button>
+                    )}
+                    <span style={{ marginLeft: 'auto', fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                        Showing {filteredSubmissions.length} of {allSubmissions.length}
+                    </span>
+                </div>
+            )}
+
+            {/* Aggregate Stats Panel */}
+            <div style={{ marginBottom: '1rem', display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '0.75rem' }}>
+                <div style={{ background: 'linear-gradient(135deg, rgba(59,130,246,0.1), rgba(59,130,246,0.05))', border: '1px solid rgba(59,130,246,0.2)', borderRadius: '12px', padding: '1rem 1.25rem' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
+                        <span style={{ fontSize: '0.72rem', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.5px', color: '#60a5fa' }}>Total Submissions</span>
+                        <ClipboardList size={16} style={{ color: '#3b82f6' }} />
+                    </div>
+                    <div style={{ fontSize: '1.75rem', fontWeight: 800, color: '#3b82f6' }}>{stats.total}</div>
+                    <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '2px' }}>{stats.totalStudents} unique students</div>
+                </div>
+                <div style={{ background: 'linear-gradient(135deg, rgba(16,185,129,0.1), rgba(16,185,129,0.05))', border: '1px solid rgba(16,185,129,0.2)', borderRadius: '12px', padding: '1rem 1.25rem' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
+                        <span style={{ fontSize: '0.72rem', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.5px', color: '#34d399' }}>Pass Rate</span>
+                        <CheckCircle size={16} style={{ color: '#10b981' }} />
+                    </div>
+                    <div style={{ fontSize: '1.75rem', fontWeight: 800, color: '#10b981' }}>{stats.passRate.toFixed(1)}%</div>
+                    <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '2px' }}>{stats.accepted} accepted of {stats.total}</div>
+                </div>
+                <div style={{ background: 'linear-gradient(135deg, rgba(139,92,246,0.1), rgba(139,92,246,0.05))', border: '1px solid rgba(139,92,246,0.2)', borderRadius: '12px', padding: '1rem 1.25rem' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
+                        <span style={{ fontSize: '0.72rem', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.5px', color: '#a78bfa' }}>Avg Score</span>
+                        <BarChart2 size={16} style={{ color: '#8b5cf6' }} />
+                    </div>
+                    <div style={{ fontSize: '1.75rem', fontWeight: 800, color: '#8b5cf6' }}>{stats.avgScore.toFixed(1)}%</div>
+                    <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '2px' }}>Min {stats.minScore}% · Max {stats.maxScore}%</div>
+                </div>
+                <div style={{ background: 'linear-gradient(135deg, rgba(245,158,11,0.1), rgba(245,158,11,0.05))', border: '1px solid rgba(245,158,11,0.2)', borderRadius: '12px', padding: '1rem 1.25rem' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
+                        <span style={{ fontSize: '0.72rem', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.5px', color: '#fbbf24' }}>Status Breakdown</span>
+                        <Target size={16} style={{ color: '#f59e0b' }} />
+                    </div>
+                    <div style={{ display: 'flex', gap: '0.75rem', marginTop: '0.25rem' }}>
+                        <div style={{ textAlign: 'center' }}><div style={{ fontSize: '1.1rem', fontWeight: 800, color: '#10b981' }}>{stats.accepted}</div><div style={{ fontSize: '0.62rem', color: 'var(--text-muted)' }}>Pass</div></div>
+                        <div style={{ textAlign: 'center' }}><div style={{ fontSize: '1.1rem', fontWeight: 800, color: '#f59e0b' }}>{stats.partial}</div><div style={{ fontSize: '0.62rem', color: 'var(--text-muted)' }}>Partial</div></div>
+                        <div style={{ textAlign: 'center' }}><div style={{ fontSize: '1.1rem', fontWeight: 800, color: '#ef4444' }}>{stats.rejected}</div><div style={{ fontSize: '0.62rem', color: 'var(--text-muted)' }}>Fail</div></div>
+                        {stats.plagCount > 0 && <div style={{ textAlign: 'center' }}><div style={{ fontSize: '1.1rem', fontWeight: 800, color: '#ef4444' }}>{stats.plagCount}</div><div style={{ fontSize: '0.62rem', color: 'var(--text-muted)' }}>Plag</div></div>}
+                    </div>
+                </div>
+                <div style={{ background: 'linear-gradient(135deg, rgba(6,182,212,0.1), rgba(6,182,212,0.05))', border: '1px solid rgba(6,182,212,0.2)', borderRadius: '12px', padding: '1rem 1.25rem' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
+                        <span style={{ fontSize: '0.72rem', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.5px', color: '#22d3ee' }}>Score Distribution</span>
+                        <BarChart3 size={16} style={{ color: '#06b6d4' }} />
+                    </div>
+                    <div style={{ display: 'flex', gap: '3px', alignItems: 'flex-end', height: '40px', marginTop: '0.25rem' }}>
+                        {Object.entries(stats.dist).map(([range, count]) => {
+                            const maxCount = Math.max(...Object.values(stats.dist), 1)
+                            const height = Math.max((count / maxCount) * 36, 2)
+                            const colors = { '0-20': '#ef4444', '21-40': '#f59e0b', '41-60': '#eab308', '61-80': '#3b82f6', '81-100': '#10b981' }
+                            return (<div key={range} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '2px' }}><div style={{ width: '100%', height: `${height}px`, background: colors[range], borderRadius: '3px 3px 0 0', opacity: 0.8 }} title={`${range}: ${count}`}></div><span style={{ fontSize: '0.55rem', color: 'var(--text-muted)' }}>{range}</span></div>)
+                        })}
+                    </div>
+                </div>
+            </div>
+
+            {/* Scrollable Table */}
+            <div className="card glass" style={{ display: 'flex', flexDirection: 'column', overflow: 'hidden', borderRadius: '12px', border: '1px solid var(--border-color, #1e293b)' }}>
+                <div style={{ overflowY: 'auto', overflowX: 'auto', maxHeight: '620px' }}>
+                    <table style={{ width: '100%', borderCollapse: 'separate', borderSpacing: 0 }}>
+                        <thead style={{ position: 'sticky', top: 0, zIndex: 10 }}>
+                            <tr style={{ background: 'var(--bg-card, #0f172a)' }}>
+                                <th style={{ padding: '0.75rem 1rem', textAlign: 'left', borderBottom: '2px solid var(--border-color, #334155)', fontSize: '0.78rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px', color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>#</th>
+                                <SortHeader label="Student" field="studentName" style={{ padding: '0.75rem 1rem', textAlign: 'left', borderBottom: '2px solid var(--border-color, #334155)', fontSize: '0.78rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px', color: 'var(--text-muted)' }} />
+                                <th style={{ padding: '0.75rem 1rem', textAlign: 'left', borderBottom: '2px solid var(--border-color, #334155)', fontSize: '0.78rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px', color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>Type</th>
+                                <th style={{ padding: '0.75rem 1rem', textAlign: 'left', borderBottom: '2px solid var(--border-color, #334155)', fontSize: '0.78rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px', color: 'var(--text-muted)' }}>Problem / Test</th>
+                                <th style={{ padding: '0.75rem 1rem', textAlign: 'left', borderBottom: '2px solid var(--border-color, #334155)', fontSize: '0.78rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px', color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>Lang</th>
+                                <th style={{ padding: '0.75rem 1rem', textAlign: 'center', borderBottom: '2px solid var(--border-color, #334155)', fontSize: '0.78rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px', color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>Attempt</th>
+                                <SortHeader label="Score" field="score" style={{ padding: '0.75rem 1rem', textAlign: 'left', borderBottom: '2px solid var(--border-color, #334155)', fontSize: '0.78rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px', color: 'var(--text-muted)' }} />
+                                <SortHeader label="Status" field="status" style={{ padding: '0.75rem 1rem', textAlign: 'left', borderBottom: '2px solid var(--border-color, #334155)', fontSize: '0.78rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px', color: 'var(--text-muted)' }} />
+                                <SortHeader label="Submitted" field="submittedAt" style={{ padding: '0.75rem 1rem', textAlign: 'left', borderBottom: '2px solid var(--border-color, #334155)', fontSize: '0.78rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px', color: 'var(--text-muted)' }} />
+                                <th style={{ padding: '0.75rem 1rem', textAlign: 'center', borderBottom: '2px solid var(--border-color, #334155)', fontSize: '0.78rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px', color: 'var(--text-muted)' }}>Actions</th>
                             </tr>
-                        ))}
-                    </tbody>
-                </table>
+                        </thead>
+                        <tbody>
+                            {filteredSubmissions.length === 0 ? (
+                                <tr><td colSpan="10" style={{ textAlign: 'center', padding: '3rem', color: 'var(--text-muted)' }}>No submissions found</td></tr>
+                            ) : filteredSubmissions.map((sub, idx) => (
+                                <tr key={sub.id} style={{ borderBottom: '1px solid var(--border-color, #1e293b)', transition: 'background 0.15s' }}
+                                    onMouseEnter={e => e.currentTarget.style.background = 'rgba(59,130,246,0.04)'}
+                                    onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
+                                    <td style={{ padding: '0.6rem 1rem', fontSize: '0.78rem', color: 'var(--text-muted)' }}>{idx + 1}</td>
+                                    <td style={{ padding: '0.6rem 1rem' }}>
+                                        <div style={{ fontWeight: 600, fontSize: '0.85rem' }}>{sub.studentName}</div>
+                                    </td>
+                                    <td style={{ padding: '0.6rem 1rem' }}>
+                                        <span style={{
+                                            fontSize: '0.72rem', padding: '3px 8px', borderRadius: '4px', whiteSpace: 'nowrap',
+                                            background: sub.subType === 'aptitude' ? 'rgba(139,92,246,0.12)' : sub.subType === 'global' ? 'rgba(59,130,246,0.12)' : sub.subType === 'ml-task' ? 'rgba(6,182,212,0.12)' : 'rgba(59, 130, 246, 0.1)',
+                                            color: sub.subType === 'ml-task' ? '#06b6d4' : sub.subType === 'aptitude' ? '#8b5cf6' : sub.subType === 'global' ? '#3b82f6' : 'var(--primary)'
+                                        }}>
+                                            {sub.subType === 'ml-task' ? '🧠 ML' : sub.subType === 'aptitude' ? '📝 Apt' : sub.subType === 'global' ? '🌐 Global' : '💻 Code'}
+                                        </span>
+                                    </td>
+                                    <td style={{ padding: '0.6rem 1rem' }}>
+                                        <div style={{ color: 'var(--primary)', fontWeight: 500, fontSize: '0.85rem', maxWidth: '200px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{sub.itemTitle || sub.testTitle}</div>
+                                    </td>
+                                    <td style={{ padding: '0.6rem 1rem' }}>
+                                        <span style={{ fontSize: '0.72rem', padding: '3px 8px', borderRadius: '4px', background: 'rgba(59,130,246,0.08)', color: 'var(--primary)', whiteSpace: 'nowrap' }}>
+                                            {sub.subType === 'aptitude' ? 'N/A' : sub.subType === 'global' ? 'Mixed' : (sub.language?.toUpperCase() || 'N/A')}
+                                        </span>
+                                    </td>
+                                    <td style={{ padding: '0.6rem 1rem', textAlign: 'center' }}>
+                                        <span style={{
+                                            fontSize: '0.72rem', padding: '2px 8px', borderRadius: '10px', fontWeight: 700, whiteSpace: 'nowrap',
+                                            background: sub._attemptNum === 1 ? 'rgba(16,185,129,0.12)' : sub._attemptNum === 2 ? 'rgba(245,158,11,0.12)' : 'rgba(239,68,68,0.12)',
+                                            color: sub._attemptNum === 1 ? '#10b981' : sub._attemptNum === 2 ? '#f59e0b' : '#ef4444'
+                                        }}>
+                                            #{sub._attemptNum || 1}{sub._totalAttempts > 1 ? `/${sub._totalAttempts}` : ''}
+                                        </span>
+                                    </td>
+                                    <td style={{ padding: '0.6rem 1rem', fontWeight: 700, fontSize: '1rem' }}>{sub.score != null ? `${sub.score}%` : '-'}</td>
+                                    <td style={{ padding: '0.6rem 1rem' }}>
+                                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '3px', alignItems: 'center' }}>
+                                            <span className={`status-badge ${sub.status}`} style={{ fontSize: '0.7rem' }}>{sub.status}</span>
+                                            {sub.plagiarism?.detected && (
+                                                <span className="status-badge plagiarized" style={{ display: 'flex', alignItems: 'center', gap: '2px', fontSize: '0.65rem' }}>
+                                                    <AlertTriangle size={10} /> Plag
+                                                </span>
+                                            )}
+                                            {(sub.integrity?.integrityViolation || sub.tabSwitches > 0) && (
+                                                <span style={{ fontSize: '0.62rem', padding: '1px 5px', borderRadius: '4px', background: 'rgba(245,158,11,0.12)', color: '#f59e0b', border: '1px solid rgba(245,158,11,0.25)', display: 'flex', alignItems: 'center', gap: '2px' }}>
+                                                    <AlertTriangle size={9} /> {sub.integrity?.tabSwitches || sub.tabSwitches || 0}T
+                                                </span>
+                                            )}
+                                            {sub.cameraBlockedCount > 0 && (
+                                                <span style={{ fontSize: '0.62rem', padding: '1px 5px', borderRadius: '4px', background: 'rgba(239,68,68,0.12)', color: '#ef4444', border: '1px solid rgba(239,68,68,0.25)' }}>
+                                                    📷{sub.cameraBlockedCount}
+                                                </span>
+                                            )}
+                                            {sub.phoneDetectionCount > 0 && (
+                                                <span style={{ fontSize: '0.62rem', padding: '1px 5px', borderRadius: '4px', background: 'rgba(239,68,68,0.12)', color: '#ef4444', border: '1px solid rgba(239,68,68,0.25)' }}>
+                                                    📱{sub.phoneDetectionCount}
+                                                </span>
+                                            )}
+                                        </div>
+                                    </td>
+                                    <td style={{ padding: '0.6rem 1rem', fontSize: '0.78rem', color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>
+                                        {sub.submittedAt ? new Date(sub.submittedAt).toLocaleString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '-'}
+                                    </td>
+                                    <td style={{ padding: '0.6rem 1rem', textAlign: 'center' }}>
+                                        {sub.subType === 'aptitude' ? (
+                                            <button onClick={() => setViewAptitudeResult(sub)} style={{ background: 'rgba(139,92,246,0.1)', border: 'none', color: '#8b5cf6', padding: '4px 10px', borderRadius: '6px', cursor: 'pointer', fontSize: '0.75rem', display: 'flex', alignItems: 'center', gap: '3px' }}>
+                                                <Eye size={12} /> Results
+                                            </button>
+                                        ) : sub.subType === 'global' ? (
+                                            <button onClick={() => setViewGlobalReport(sub.id)} style={{ background: 'rgba(59,130,246,0.1)', border: 'none', color: '#3b82f6', padding: '4px 10px', borderRadius: '6px', cursor: 'pointer', fontSize: '0.75rem', display: 'flex', alignItems: 'center', gap: '3px' }}>
+                                                <Eye size={12} /> Report
+                                            </button>
+                                        ) : sub.subType === 'ml-task' ? (
+                                            <button onClick={() => setViewMLReport(sub)} style={{ background: 'rgba(6,182,212,0.1)', border: 'none', color: '#06b6d4', padding: '4px 10px', borderRadius: '6px', cursor: 'pointer', fontSize: '0.75rem', display: 'flex', alignItems: 'center', gap: '3px' }}>
+                                                <Eye size={12} /> ML
+                                            </button>
+                                        ) : (
+                                            <button onClick={() => setViewReport(sub)} style={{ background: 'rgba(59,130,246,0.1)', border: 'none', color: '#3b82f6', padding: '4px 10px', borderRadius: '6px', cursor: 'pointer', fontSize: '0.75rem', display: 'flex', alignItems: 'center', gap: '3px' }}>
+                                                <Eye size={12} /> Report
+                                            </button>
+                                        )}
+                                    </td>
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
+                </div>
             </div>
 
             {/* Report Modal */}
@@ -7822,7 +7941,7 @@ function AdminCodeReviews() {
     const token = localStorage.getItem('authToken')
 
     useEffect(() => {
-        axios.get(`${ADMIN_API_BASE}/api/submissions?limit=200`, {
+        axios.get(`${ADMIN_API_BASE}/api/submissions?limit=5000`, {
             headers: { Authorization: `Bearer ${token}` }
         })
             .then(res => {
