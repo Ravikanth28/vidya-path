@@ -181,11 +181,23 @@ export default function SkillSQLTest({ attemptId, attemptData, onComplete, onFai
     const p = problems[currentIdx];
     const solvedCount = Object.values(submissions).filter(s => s.passed).length;
 
+    // Strip st{N}_ prefix for human-readable display (e.g. "st5_employees" → "employees")
+    const getDisplayName = (prefixed) => prefixed ? prefixed.replace(/^st\d+_/, '') : prefixed;
+
+    // Replace all prefixed table names in AI-generated problem text with display names
+    const translateDescription = (text) => {
+        if (!text) return text;
+        return Object.values(tableNames).reduce(
+            (t, prefixed) => t.replace(new RegExp(prefixed, 'g'), getDisplayName(prefixed)),
+            text
+        );
+    };
+
     const TABLES_SCHEMA = [
-        { name: tableNames.employees, columns: ['id', 'name', 'department', 'salary', 'hire_date', 'manager_id'] },
-        { name: tableNames.departments, columns: ['id', 'name', 'budget', 'location'] },
-        { name: tableNames.projects, columns: ['id', 'name', 'department_id', 'start_date', 'end_date', 'status'] },
-        { name: tableNames.orders, columns: ['id', 'customer_name', 'product', 'quantity', 'price', 'order_date'] }
+        { name: getDisplayName(tableNames.employees), columns: ['id', 'name', 'department', 'salary', 'hire_date', 'manager_id'] },
+        { name: getDisplayName(tableNames.departments), columns: ['id', 'name', 'budget', 'location'] },
+        { name: getDisplayName(tableNames.projects), columns: ['id', 'name', 'department_id', 'start_date', 'end_date', 'status'] },
+        { name: getDisplayName(tableNames.orders), columns: ['id', 'customer_name', 'product', 'quantity', 'price', 'order_date'] }
     ];
 
     // Helper to render table
@@ -419,7 +431,7 @@ export default function SkillSQLTest({ attemptId, attemptData, onComplete, onFai
                                         </div>
                                     )}
                                 </div>
-                                <p style={{ fontSize: '15px', lineHeight: 1.7, color: '#f1f5f9', margin: '0 0 20px', fontWeight: 450 }}>{p.description}</p>
+                                <p style={{ fontSize: '15px', lineHeight: 1.7, color: '#f1f5f9', margin: '0 0 20px', fontWeight: 450 }}>{translateDescription(p.description)}</p>
                             </div>
 
                             <div style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '16px' }}>

@@ -763,13 +763,13 @@ function registerSkillTestRoutes(app, pool) {
                 runCmd = `java -cp "${tmpDir}" ${className} < "${inputFile}"`;
             } else if (lang === 'c') {
                 fileName = 'solution.c';
-                const outFile = path.join(tmpDir, 'solution.exe');
+                const outFile = path.join(tmpDir, os.platform() === 'win32' ? 'solution.exe' : 'solution');
                 fs.writeFileSync(path.join(tmpDir, fileName), code, 'utf-8');
                 compileCmd = `gcc "${path.join(tmpDir, fileName)}" -o "${outFile}" -lm`;
                 runCmd = `"${outFile}" < "${inputFile}"`;
             } else if (lang === 'cpp' || lang === 'c++') {
                 fileName = 'solution.cpp';
-                const outFile = path.join(tmpDir, 'solution.exe');
+                const outFile = path.join(tmpDir, os.platform() === 'win32' ? 'solution.exe' : 'solution');
                 fs.writeFileSync(path.join(tmpDir, fileName), code, 'utf-8');
                 compileCmd = `g++ "${path.join(tmpDir, fileName)}" -o "${outFile}" -lm`;
                 runCmd = `"${outFile}" < "${inputFile}"`;
@@ -1199,12 +1199,21 @@ function registerSkillTestRoutes(app, pool) {
                                 columns: eFields ? eFields.map(f => f.name) : []
                             };
 
-                            // Compare Results (Row-based comparison)
-                            // We use a simplified version of compareSQLResults if available, or just deep compare
-                            const actualJson = JSON.stringify(actual.rows);
-                            const expectedJson = JSON.stringify(expected.rows);
+                            // Compare Results (Row-based, order-independent, type-normalised)
+                            const normaliseRow = (row) => {
+                                const out = {};
+                                for (const k of Object.keys(row).sort()) {
+                                    const v = row[k];
+                                    out[k] = v === null || v === undefined ? null : String(v).trim();
+                                }
+                                return out;
+                            };
+                            const normSort = (rows) =>
+                                rows.map(normaliseRow).sort((a, b) => JSON.stringify(a) < JSON.stringify(b) ? -1 : 1);
+                            const actualNorm = JSON.stringify(normSort(actual.rows));
+                            const expectedNorm = JSON.stringify(normSort(expected.rows));
 
-                            if (actualJson === expectedJson) {
+                            if (actualNorm === expectedNorm) {
                                 passed = true;
                                 feedback = '✅ Excellent! Your query returned the correct results.';
                             }

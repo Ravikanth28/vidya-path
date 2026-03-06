@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useMemo } from 'react'
 import { Routes, Route, useLocation } from 'react-router-dom'
-import { LayoutDashboard, Users, Trophy, Award, List, Search, Send, Activity, CheckCircle, Check, TrendingUp, Clock, Globe, FileCode, Plus, X, Code, ChevronRight, Upload, AlertTriangle, Zap, Target, Sparkles, Bot, Wand2, Eye, FileText, BarChart2, RefreshCw, Calendar, HelpCircle, Trash2, Save, Brain, XCircle, Shield, Download, ClipboardList, Settings, Database, Mail, MessageSquare, Github, ExternalLink, BarChart3, Video, Building2, Filter, ChevronDown, Hash, Percent, ArrowUpDown } from 'lucide-react'
+import { LayoutDashboard, Users, Trophy, Award, List, Search, Send, Activity, CheckCircle, Check, TrendingUp, Clock, Globe, FileCode, Plus, X, Code, ChevronRight, Upload, AlertTriangle, Zap, Target, Sparkles, Bot, Wand2, Eye, FileText, BarChart2, RefreshCw, Calendar, HelpCircle, Trash2, Save, Brain, XCircle, Shield, Download, ClipboardList, Settings, Database, Mail, MessageSquare, Github, ExternalLink, BarChart3, Video, Building2, Filter, ChevronDown, Hash, Percent, ArrowUpDown, Link2 } from 'lucide-react'
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, BarChart, Bar, Legend } from 'recharts'
 import DashboardLayout from '../components/DashboardLayout'
 import { AIChatbot, AIFloatingButton } from '../components/AIChatbot'
@@ -20,9 +20,12 @@ import ExportReports from '../components/ExportReports'
 import CodeReviewPanel from '../components/CodeReviewPanel'
 import { MentorAIReviewDashboard } from '../components/AICodeReview'
 // New Features
+import AdminResourceLinks from '../components/AdminResourceLinks'
+import AdminMCQ from '../components/AdminMCQ'
 import WebhookManager from '../components/WebhookManager'
 import { AdminCertificateManager } from '../components/CertificatePortal'
 import { CompanyTestManager } from '../components/CompanyFeatures'
+import CompanyRoundManager from '../components/CompanyRoundManager'
 import { useAuth } from '../App'
 import { useI18n } from '../services/i18n.jsx'
 import axios from 'axios'
@@ -136,6 +139,18 @@ function AdminPortal() {
                 setTitle('Company Tests')
                 setSubtitle('Manage company-specific technical interviews')
                 break
+            case 'company-round-tests':
+                setTitle('Company Round Tests')
+                setSubtitle('First round multi-section assessments')
+                break
+            case 'resource-links':
+                setTitle('Resource Links')
+                setSubtitle('Share curated links and resources with students')
+                break
+            case 'mcq':
+                setTitle('MCQ Manager')
+                setSubtitle('Create and manage MCQ tests with AI evaluation')
+                break
             default:
                 setTitle(t('dashboard'))
                 setSubtitle(t('system_administration'))
@@ -154,7 +169,10 @@ function AdminPortal() {
                 { path: '/admin/aptitude-tests', label: t('aptitude_tests'), icon: <Target size={20} /> },
                 { path: '/admin/global-tests', label: t('global_complete_tests'), icon: <ClipboardList size={20} /> },
                 { path: '/admin/skill-tests', label: 'Skill Tests', icon: <Brain size={20} /> },
-                { path: '/admin/company-tests', label: 'Company Tests', icon: <Building2 size={20} /> }
+                { path: '/admin/company-tests', label: 'Company Tests', icon: <Building2 size={20} /> },
+                { path: '/admin/company-round-tests', label: 'Round Tests', icon: <Target size={20} /> },
+                { path: '/admin/resource-links', label: 'Resource Links', icon: <Link2 size={20} /> },
+                { path: '/admin/mcq', label: 'MCQ Manager', icon: <Brain size={20} /> }
             ]
         },
         {
@@ -230,6 +248,9 @@ function AdminPortal() {
                 <Route path="/ai-reviews" element={<MentorAIReviewDashboard user={user} />} />
                 <Route path="/reports" element={<ExportReports />} />
                 <Route path="/company-tests" element={<CompanyTestManager />} />
+                <Route path="/company-round-tests" element={<CompanyRoundManager />} />
+                <Route path="/resource-links" element={<AdminResourceLinks />} />
+                <Route path="/mcq" element={<AdminMCQ />} />
             </Routes>
         </DashboardLayout>
     )
@@ -1354,6 +1375,7 @@ function AllSubmissions() {
     const [mlTaskSubmissions, setMlTaskSubmissions] = useState([])
     const [aptitudeSubmissions, setAptitudeSubmissions] = useState([])
     const [globalSubmissions, setGlobalSubmissions] = useState([])
+    const [mcqSubmissions, setMcqSubmissions] = useState([])
     const [loading, setLoading] = useState(true)
     const [searchTerm, setSearchTerm] = useState('')
     const [activeTab, setActiveTab] = useState('all')
@@ -1377,8 +1399,9 @@ function AllSubmissions() {
         Promise.all([
             axios.get(`${API_BASE}/submissions?limit=5000`),
             axios.get(`${API_BASE}/aptitude-submissions`),
-            axios.get(`${API_BASE}/global-test-submissions`)
-        ]).then(([codeRes, aptRes, globalRes]) => {
+            axios.get(`${API_BASE}/global-test-submissions`),
+            axios.get(`${API_BASE}/mcq-submissions`, { headers: { Authorization: `Bearer ${localStorage.getItem('authToken')}` } }).catch(() => ({ data: { submissions: [] } }))
+        ]).then(([codeRes, aptRes, globalRes, mcqRes]) => {
             const codeData = Array.isArray(codeRes.data) ? codeRes.data : (codeRes.data?.data || [])
             const mlTasks = codeData.filter(s => s.isMLTask).map(s => ({ ...s, subType: 'ml-task' }))
             const codeSubs = codeData.filter(s => !s.isMLTask).map(s => ({ ...s, subType: 'code' }))
@@ -1395,10 +1418,20 @@ function AllSubmissions() {
                 language: 'Mixed',
                 score: s.overallPercentage
             }))
+            const mcqSubs = (mcqRes.data?.submissions || []).map(s => ({
+                ...s,
+                subType: 'mcq',
+                itemTitle: s.mcq_title,
+                language: 'MCQ',
+                studentName: s.student_name,
+                studentEmail: s.student_email,
+                submittedAt: s.submitted_at
+            }))
             setSubmissions(codeSubs)
             setMlTaskSubmissions(mlTasks)
             setAptitudeSubmissions(aptSubs)
             setGlobalSubmissions(globalSubs)
+            setMcqSubmissions(mcqSubs)
             setLoading(false)
         }).catch(err => {
             console.error('Fetch error:', err)
@@ -1513,7 +1546,7 @@ function AllSubmissions() {
         }
     }
 
-    const allSubmissions = [...submissions, ...mlTaskSubmissions, ...aptitudeSubmissions, ...globalSubmissions]
+    const allSubmissions = [...submissions, ...mlTaskSubmissions, ...aptitudeSubmissions, ...globalSubmissions, ...mcqSubmissions]
         .sort((a, b) => new Date(b.submittedAt) - new Date(a.submittedAt))
 
     // Compute attempt numbers: group by (studentId + problemId/testId) and assign attempt #
@@ -1558,7 +1591,9 @@ function AllSubmissions() {
                     ? mlTaskSubmissions
                     : activeTab === 'aptitude'
                         ? aptitudeSubmissions
-                        : globalSubmissions
+                        : activeTab === 'mcq'
+                            ? mcqSubmissions
+                            : globalSubmissions
 
         // Text search
         if (searchTerm) {
@@ -1663,7 +1698,8 @@ function AllSubmissions() {
                             { key: 'code', label: '💻 Code', count: submissions.length, color: 'var(--primary)' },
                             { key: 'ml-task', label: '🧠 ML', count: mlTaskSubmissions.length, color: '#06b6d4' },
                             { key: 'aptitude', label: '📝 Apt', count: aptitudeSubmissions.length, color: '#8b5cf6' },
-                            { key: 'global', label: '🌐 Global', count: globalSubmissions.length, color: '#3b82f6' }
+                            { key: 'global', label: '🌐 Global', count: globalSubmissions.length, color: '#3b82f6' },
+                            { key: 'mcq', label: '🔢 MCQ', count: mcqSubmissions.length, color: '#8b5cf6' }
                         ].map(tab => (
                             <button key={tab.key} onClick={() => setActiveTab(tab.key)}
                                 style={{ padding: '0.4rem 0.75rem', background: activeTab === tab.key ? tab.color : 'transparent', border: 'none', color: activeTab === tab.key ? 'white' : 'var(--text-muted)', cursor: 'pointer', fontSize: '0.8rem', whiteSpace: 'nowrap' }}

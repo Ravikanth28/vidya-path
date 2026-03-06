@@ -28,9 +28,13 @@ import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContai
 import { GamificationProfile, AchievementBadges, GamificationLeaderboard } from '@/components/GamificationComponents'
 import { RiskScoreCard, RecommendationsPanel } from '@/components/AnalyticsComponents'
 // New Features
+import StudentResourceLinks from '@/components/StudentResourceLinks'
+import StudentMCQ from '@/components/StudentMCQ'
 import CertificatePortal from '@/components/CertificatePortal'
 import { StudentAIReviewDashboard } from '@/components/AICodeReview'
 import { CompanyRoadmap, CompanyPrep } from '@/components/CompanyFeatures'
+import CompanyRoundInterface from '@/components/CompanyRoundInterface'
+import YouTubeRecommendations from '@/components/YouTubeRecommendations'
 import './Portal.css'
 
 const API_BASE = (import.meta.env.VITE_API_URL || 'http://localhost:3000') + '/api'
@@ -133,6 +137,22 @@ function StudentPortal() {
                 setTitle('Company Preparation')
                 setSubtitle('AI-powered interactive interview drills')
                 break
+            case 'company-round-tests':
+                setTitle('Company Round Tests')
+                setSubtitle('Take company first round assessments')
+                break
+            case 'youtube':
+                setTitle('YouTube Learning Resources')
+                setSubtitle('AI-curated top 5 YouTube videos for any topic you ask')
+                break
+            case 'resource-links':
+                setTitle('Resource Links')
+                setSubtitle('Curated resources and links assigned to you')
+                break
+            case 'mcq':
+                setTitle('MCQ Tests')
+                setSubtitle('Take tests and get instant AI-powered evaluation')
+                break
             default:
                 setTitle(t('dashboard'))
                 setSubtitle(t('welcome_back_name', { name: user?.name || '' }))
@@ -152,7 +172,11 @@ function StudentPortal() {
                 { path: '/student/global-tests', label: t('global_complete_tests'), icon: <Layers size={20} /> },
                 { path: '/student/skill-tests', label: 'Skill Tests', icon: <Target size={20} /> },
                 { path: '/student/company-roadmap', label: 'Company Roadmap', icon: <Map size={20} /> },
-                { path: '/student/company-prep', label: 'Company Prep', icon: <Building2 size={20} /> }
+                { path: '/student/company-prep', label: 'Company Prep', icon: <Building2 size={20} /> },
+                { path: '/student/company-round-tests', label: 'Round Tests', icon: <Target size={20} /> },
+                { path: '/student/youtube', label: 'YouTube Resources', icon: <BookOpen size={20} /> },
+                { path: '/student/resource-links', label: 'Resource Links', icon: <Link2 size={20} /> },
+                { path: '/student/mcq', label: 'MCQ Tests', icon: <Brain size={20} /> }
             ]
         },
         {
@@ -215,6 +239,10 @@ function StudentPortal() {
                 <Route path="/features" element={<FeaturesShowcase />} />
                 <Route path="/company-roadmap" element={<CompanyRoadmap user={user} />} />
                 <Route path="/company-prep" element={<CompanyPrep user={user} />} />
+                <Route path="/company-round-tests" element={<CompanyRoundInterface user={user} />} />
+                <Route path="/youtube" element={<YouTubeRecommendations user={user} />} />
+                <Route path="/resource-links" element={<StudentResourceLinks user={user} />} />
+                <Route path="/mcq" element={<StudentMCQ user={user} />} />
             </Routes>
         </DashboardLayout>
     )

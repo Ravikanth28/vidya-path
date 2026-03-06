@@ -405,6 +405,194 @@ pool.getConnection()
                 console.warn('⚠️ Could not add deadline to problems:', e.message);
             }
         }
+
+        // ─── Auto-create Alumni tables ───────────────────────────────────────
+        const alumniTables = [
+            `CREATE TABLE IF NOT EXISTS alumni_profiles (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                user_id INT NOT NULL UNIQUE,
+                company VARCHAR(255) DEFAULT '',
+                job_title VARCHAR(255) DEFAULT '',
+                location VARCHAR(255) DEFAULT '',
+                batch_year INT DEFAULT 0,
+                skills_json TEXT,
+                bio TEXT,
+                avatar_url TEXT,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+            )`,
+            `CREATE TABLE IF NOT EXISTS alumni_connections (
+                id VARCHAR(36) PRIMARY KEY,
+                requester_id INT NOT NULL,
+                target_id INT NOT NULL,
+                status ENUM('pending','accepted') DEFAULT 'pending',
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                INDEX idx_requester (requester_id),
+                INDEX idx_target (target_id)
+            )`,
+            `CREATE TABLE IF NOT EXISTS alumni_posts (
+                id VARCHAR(36) PRIMARY KEY,
+                author_id INT NOT NULL,
+                content TEXT NOT NULL,
+                type VARCHAR(50) DEFAULT 'update',
+                tags_json TEXT,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                INDEX idx_author (author_id),
+                INDEX idx_created (created_at)
+            )`,
+            `CREATE TABLE IF NOT EXISTS alumni_post_likes (
+                id VARCHAR(36) PRIMARY KEY,
+                post_id VARCHAR(36) NOT NULL,
+                user_id INT NOT NULL,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE KEY uq_like (post_id, user_id)
+            )`,
+            `CREATE TABLE IF NOT EXISTS alumni_post_comments (
+                id VARCHAR(36) PRIMARY KEY,
+                post_id VARCHAR(36) NOT NULL,
+                user_id INT NOT NULL,
+                text TEXT NOT NULL,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                INDEX idx_post (post_id)
+            )`,
+            `CREATE TABLE IF NOT EXISTS alumni_messages (
+                id VARCHAR(36) PRIMARY KEY,
+                sender_id INT NOT NULL,
+                receiver_id INT NOT NULL,
+                text TEXT NOT NULL,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                INDEX idx_sender (sender_id),
+                INDEX idx_receiver (receiver_id)
+            )`
+        ];
+        for (const sql of alumniTables) {
+            try { await pool.query(sql); } catch (e) { console.warn('⚠️ Alumni table init:', e.message); }
+        }
+        console.log('✅ Alumni tables ready');
+
+        // ─── Auto-create Company tables ──────────────────────────────────────
+        const companyTables = [
+            `CREATE TABLE IF NOT EXISTS company_roadmaps (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                company_name VARCHAR(255) NOT NULL UNIQUE,
+                roadmap_json MEDIUMTEXT,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+            )`,
+            `CREATE TABLE IF NOT EXISTS company_interviews (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                company_name VARCHAR(255) NOT NULL,
+                title VARCHAR(255) NOT NULL,
+                description TEXT,
+                duration_minutes INT DEFAULT 60,
+                difficulty ENUM('easy','medium','hard') DEFAULT 'medium',
+                skills_covered TEXT,
+                max_attempts INT DEFAULT 0,
+                assigned_students TEXT,
+                is_active BOOLEAN DEFAULT TRUE,
+                created_by INT,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            )`,
+            `CREATE TABLE IF NOT EXISTS company_interview_attempts (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                test_id INT NOT NULL,
+                student_id INT NOT NULL,
+                student_name VARCHAR(255) DEFAULT '',
+                chat_history MEDIUMTEXT DEFAULT '[]',
+                current_stage VARCHAR(50) DEFAULT 'intro',
+                interview_progress INT DEFAULT 0,
+                overall_score FLOAT DEFAULT 0,
+                evaluation_report MEDIUMTEXT,
+                status ENUM('in_progress','completed') DEFAULT 'in_progress',
+                started_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                completed_at DATETIME,
+                INDEX idx_test (test_id),
+                INDEX idx_student (student_id)
+            )`
+        ];
+        for (const sql of companyTables) {
+            try { await pool.query(sql); } catch (e) { console.warn('⚠️ Company table init:', e.message); }
+        }
+        console.log('✅ Company tables ready');
+
+        // ─── Auto-create Company Round Test (CRT) tables ─────────────────────
+        const crtTables = [
+            `CREATE TABLE IF NOT EXISTS crt_tests (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                company_name VARCHAR(255) NOT NULL,
+                title VARCHAR(255) NOT NULL,
+                description TEXT,
+                sections TEXT NOT NULL,
+                difficulty ENUM('easy','medium','hard') DEFAULT 'medium',
+                duration_minutes INT DEFAULT 60,
+                max_attempts INT DEFAULT 1,
+                pass_percentage INT DEFAULT 60,
+                assigned_students TEXT,
+                is_active BOOLEAN DEFAULT FALSE,
+                proctoring_config TEXT,
+                section_time_limits TEXT,
+                created_by INT,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+            )`,
+            `CREATE TABLE IF NOT EXISTS crt_questions (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                test_id INT NOT NULL,
+                section VARCHAR(50) NOT NULL,
+                question_type ENUM('mcq','code','sql') DEFAULT 'mcq',
+                question TEXT NOT NULL,
+                options TEXT,
+                correct_answer VARCHAR(10),
+                explanation TEXT,
+                code_snippet TEXT,
+                starter_code TEXT,
+                test_cases TEXT,
+                language VARCHAR(50) DEFAULT 'Python',
+                sql_schema TEXT,
+                expected_output TEXT,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                INDEX idx_test_id (test_id),
+                INDEX idx_section (section)
+            )`,
+            `CREATE TABLE IF NOT EXISTS crt_attempts (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                test_id INT NOT NULL,
+                student_id INT NOT NULL,
+                student_name VARCHAR(255),
+                status ENUM('in_progress','completed','expired') DEFAULT 'in_progress',
+                overall_score FLOAT DEFAULT 0,
+                section_scores TEXT,
+                proctoring_violations TEXT,
+                started_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                completed_at DATETIME,
+                INDEX idx_test_id (test_id),
+                INDEX idx_student_id (student_id)
+            )`,
+            `CREATE TABLE IF NOT EXISTS crt_answers (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                attempt_id INT NOT NULL,
+                question_id INT NOT NULL,
+                section VARCHAR(50),
+                student_answer TEXT,
+                is_correct BOOLEAN DEFAULT FALSE,
+                score FLOAT DEFAULT 0,
+                execution_result TEXT,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                INDEX idx_attempt_id (attempt_id),
+                INDEX idx_question_id (question_id)
+            )`
+        ];
+        for (const sql of crtTables) {
+            try { await pool.query(sql); } catch (e) { console.warn('⚠️ CRT table init:', e.message); }
+        }
+        // Migrate: add section_time_limits column if missing (safe, idempotent)
+        try {
+            await pool.query(`ALTER TABLE crt_tests ADD COLUMN section_time_limits TEXT AFTER proctoring_config`);
+            console.log('✅ Added section_time_limits column');
+        } catch (e) {
+            if (!e.message.includes('Duplicate column')) console.warn('⚠️ section_time_limits migration:', e.message);
+        }
+        console.log('✅ Company Round Test (CRT) tables ready');
     })
     .catch(err => {
         console.error('❌ Database Connection Failed:', err.message);
@@ -485,6 +673,9 @@ skillTestRoutes(app, pool);
 
 const companyRoutes = require('./company_routes');
 companyRoutes(app, pool);
+
+const companyRoundRoutes = require('./company_round_routes');
+companyRoundRoutes(app, pool);
 
 // ==================== AUTH ROUTES ====================
 
@@ -595,7 +786,7 @@ app.put('/api/users/:id/preferences', authenticate, async (req, res) => {
 
         // Validate inputs
         const validThemes = ['light', 'dark', 'system'];
-        const validIDEThemes = ['vs', 'vs-dark', 'hc-black', 'dracula', 'monokai'];
+        const validIDEThemes = ['vs', 'vs-dark', 'vs-light', 'hc-black', 'dracula', 'monokai', 'solarized-light', 'solarized-dark', 'nord', 'atom-one', 'github-light', 'tomorrow-night'];
 
         if (themePreference && !validThemes.includes(themePreference)) {
             return res.status(400).json({ error: 'Invalid theme preference' });
@@ -1648,31 +1839,6 @@ app.post('/api/problems/:id/difficulty-feedback', authenticate, async (req, res)
     }
 });
 
-// Get submission count for a student and problem/task
-app.get('/api/submissions/count', async (req, res) => {
-    try {
-        const { studentId, problemId, taskId } = req.query;
-        let count = 0;
-        if (problemId) {
-            const [[{ count: pCount }]] = await pool.query(
-                'SELECT COUNT(*) as count FROM submissions WHERE student_id = ? AND problem_id = ?',
-                [studentId, problemId]
-            );
-            count = pCount;
-        } else if (taskId) {
-            const [[{ count: tCount }]] = await pool.query(
-                'SELECT COUNT(*) as count FROM submissions WHERE student_id = ? AND task_id = ?',
-                [studentId, taskId]
-            );
-            count = tCount;
-        }
-        res.json({ attemptCount: count });
-    } catch (error) {
-        console.error('Count error:', error);
-        res.status(500).json({ error: error.message });
-    }
-});
-
 // ==================== SUBMISSION ROUTES ====================
 
 // Get all submissions
@@ -2259,20 +2425,47 @@ Scoring Guide:
 - 50-69: Partially correct or has significant issues
 - 0-49: Incorrect or major problems`;
 
-            try {
-                const evaluation = await cerebrasChat([
-                    { role: 'system', content: 'You are an expert code evaluator. Be fair but thorough.' },
-                    { role: 'user', content: evaluationPrompt }
-                ], {
-                    model: 'gpt-oss-120b',
-                    temperature: 0.2,
-                    max_tokens: 800,
-                    response_format: { type: 'json_object' }
-                });
+            let evalAttempts = 0;
+            while (evalAttempts < 2) {
+                try {
+                    const evaluation = await cerebrasChat([
+                        { role: 'system', content: 'You are an expert code evaluator. Be fair but thorough.' },
+                        { role: 'user', content: evaluationPrompt }
+                    ], {
+                        model: 'gpt-oss-120b',
+                        temperature: 0.2,
+                        max_tokens: 800,
+                        response_format: { type: 'json_object' }
+                    });
 
-                evaluationResult = JSON.parse(evaluation.choices[0]?.message?.content || '{}');
-            } catch (e) {
-                console.error('AI Evaluation error:', e.message);
+                    const parsed = JSON.parse(evaluation.choices[0]?.message?.content || '{}');
+                    if (parsed.score !== undefined) {
+                        evaluationResult = parsed;
+                        break; // success
+                    }
+                    throw new Error('AI returned incomplete evaluation');
+                } catch (e) {
+                    evalAttempts++;
+                    console.error(`AI Evaluation attempt ${evalAttempts} failed:`, e.message);
+                    if (evalAttempts >= 2) {
+                        // After 2 failed attempts, set a clear fallback — do NOT leave "Evaluation pending..."
+                        evaluationResult = {
+                            score: 50,
+                            status: 'partial',
+                            feedback: 'Your code was submitted successfully. AI evaluation is temporarily unavailable — a score of 50 has been assigned. Your mentor will review this submission.',
+                            aiExplanation: `Automatic evaluation failed after 2 attempts: ${e.message}`,
+                            analysis: {
+                                correctness: 'Not evaluated',
+                                efficiency: 'Not evaluated',
+                                codeStyle: 'Not evaluated',
+                                bestPractices: 'Not evaluated'
+                            }
+                        };
+                    } else {
+                        // Wait 1.5s before retry
+                        await new Promise(r => setTimeout(r, 1500));
+                    }
+                }
             }
         }
 
@@ -3347,6 +3540,116 @@ app.post('/api/ai/chat', aiLimiter, async (req, res) => {
     } catch (error) {
         console.error('AI Chat Error:', error);
         res.status(500).json({ error: error.message, details: 'Failed to process chat request' });
+    }
+});
+
+// YouTube Learning Recommendations via AI
+app.post('/api/ai/youtube-recommendations', aiLimiter, async (req, res) => {
+    try {
+        const { topic } = req.body;
+        if (!topic || typeof topic !== 'string' || topic.trim().length === 0) {
+            return res.status(400).json({ error: 'Topic is required' });
+        }
+        const sanitizedTopic = topic.trim().slice(0, 200);
+
+        const systemPrompt = `You are an expert educational resource curator. Return ONLY a valid compact JSON object — no markdown, no code blocks, no trailing commas, no extra text. Keep all string values short and concise.`;
+
+        const userPrompt = `Topic: "${sanitizedTopic}"
+
+Return this JSON (keep ALL string values short — max 15 words each):
+{
+  "topic": "${sanitizedTopic}",
+  "summary": "one sentence",
+  "learningTip": "one practical tip",
+  "topicNotes": {
+    "whatIsIt": "1-2 sentence beginner explanation",
+    "whyLearnIt": "one sentence reason",
+    "keyConcepts": [
+      { "concept": "name", "explanation": "brief one-line" }
+    ],
+    "quickTips": ["tip1", "tip2", "tip3"],
+    "commonMistakes": ["mistake1", "mistake2"],
+    "prerequisites": ["prereq1", "prereq2"]
+  },
+  "videos": [
+    {
+      "title": "real video title",
+      "channel": "real channel name",
+      "description": "one sentence description",
+      "level": "beginner|intermediate|advanced",
+      "duration": "e.g. 45 min",
+      "views": "e.g. 2M+",
+      "why": "one sentence reason",
+      "tags": ["tag1", "tag2"],
+      "videoId": "REAL_11_CHAR_VIDEO_ID"
+    }
+  ]
+}
+
+Rules:
+- keyConcepts: exactly 4 items
+- quickTips: exactly 3 items
+- commonMistakes: exactly 2 items
+- videos: exactly 5 items, beginner to advanced
+- Use channels like freeCodeCamp, Traversy Media, CS50, Fireship, NetworkChuck, Corey Schafer
+- CRITICAL: For each video, provide the REAL YouTube video ID (11-character alphanumeric string, e.g. "rfscVS0vtbw" for freeCodeCamp Python). These are widely known videos — provide the actual ID so users can watch directly. If genuinely unknown, use empty string "".
+- Return ONLY the JSON object, no extra text`;
+
+        const chatCompletion = await cerebrasChat([
+            { role: 'system', content: systemPrompt },
+            { role: 'user', content: userPrompt }
+        ], {
+            model: 'gpt-oss-120b',
+            max_tokens: 4000,
+            response_format: { type: 'json_object' }
+        });
+
+        const rawContent = chatCompletion.choices[0]?.message?.content || '{}';
+        let parsed;
+        try {
+            parsed = JSON.parse(rawContent);
+        } catch (parseErr) {
+            // Attempt to extract JSON object from the response in case of minor truncation
+            const match = rawContent.match(/\{[\s\S]*/);
+            if (match) {
+                // Try to close any open JSON by finding the last complete top-level field
+                const jsonStr = match[0];
+                // Find position of last complete closing brace
+                let depth = 0;
+                let lastCompletePos = 0;
+                for (let i = 0; i < jsonStr.length; i++) {
+                    if (jsonStr[i] === '{' || jsonStr[i] === '[') depth++;
+                    else if (jsonStr[i] === '}' || jsonStr[i] === ']') {
+                        depth--;
+                        if (depth === 0) lastCompletePos = i + 1;
+                    }
+                }
+                if (lastCompletePos > 0) {
+                    try {
+                        parsed = JSON.parse(jsonStr.slice(0, lastCompletePos));
+                    } catch {
+                        throw new Error(`AI returned invalid JSON: ${parseErr.message}`);
+                    }
+                } else {
+                    throw new Error(`AI returned invalid JSON: ${parseErr.message}`);
+                }
+            } else {
+                throw new Error(`AI returned invalid JSON: ${parseErr.message}`);
+            }
+        }
+
+        // Validate structure
+        if (!parsed.videos || !Array.isArray(parsed.videos)) {
+            throw new Error('Invalid AI response structure');
+        }
+
+        // Ensure max 5 videos
+        parsed.videos = parsed.videos.slice(0, 5);
+
+        res.json({ success: true, ...parsed });
+    } catch (error) {
+        console.error('YouTube Recommendations Error:', error);
+        res.status(500).json({ error: 'Failed to generate recommendations', details: error.message });
     }
 });
 
@@ -6959,7 +7262,7 @@ app.get('/api/admin/audit-logs/stats', async (req, res) => {
 // ============ AUDIT LOG DASHBOARD ENHANCEMENTS (Feature #4) ============
 
 // 🔍 GET /api/admin/audit-logs/search - Advanced search with full-text
-app.get('/api/admin/audit-logs/search', authenticate, authorize(['admin']), async (req, res) => {
+app.get('/api/admin/audit-logs/search', authenticate, authorize('admin'), async (req, res) => {
     try {
         const { query, filters = '{}', page = 1, limit = 50 } = req.query;
         const offset = (Number(page) - 1) * Number(limit);
@@ -7034,7 +7337,7 @@ app.get('/api/admin/audit-logs/search', authenticate, authorize(['admin']), asyn
 });
 
 // 📊 GET /api/admin/audit-logs/export - Export logs as CSV
-app.get('/api/admin/audit-logs/export', authenticate, authorize(['admin']), async (req, res) => {
+app.get('/api/admin/audit-logs/export', authenticate, authorize('admin'), async (req, res) => {
     try {
         const { format = 'csv', startDate, endDate, action, userId } = req.query;
         let sqlQuery = 'SELECT id, user_id, user_name, user_role, action, resource_type, resource_id, details, ip_address, timestamp FROM audit_logs WHERE 1=1';
@@ -7098,7 +7401,7 @@ app.get('/api/admin/audit-logs/export', authenticate, authorize(['admin']), asyn
 });
 
 // ⚠️ GET /api/admin/audit-logs/alerts - Get critical alerts from audit logs
-app.get('/api/admin/audit-logs/alerts', authenticate, authorize(['admin']), async (req, res) => {
+app.get('/api/admin/audit-logs/alerts', authenticate, authorize('admin'), async (req, res) => {
     try {
         const criticalActions = ['delete', 'ban', 'reset', 'bulk_delete', 'permission_change', 'tier_change', 'plagiarism_detected'];
         const placeholders = criticalActions.map(() => '?').join(',');
@@ -7128,7 +7431,7 @@ app.get('/api/admin/audit-logs/alerts', authenticate, authorize(['admin']), asyn
 });
 
 // 📈 GET /api/admin/audit-logs/analytics - Advanced analytics
-app.get('/api/admin/audit-logs/analytics', authenticate, authorize(['admin']), async (req, res) => {
+app.get('/api/admin/audit-logs/analytics', authenticate, authorize('admin'), async (req, res) => {
     try {
         const { period = '7' } = req.query; // days
         const days = parseInt(period);
@@ -7187,7 +7490,7 @@ app.get('/api/admin/audit-logs/analytics', authenticate, authorize(['admin']), a
 });
 
 // 🔔 GET /api/admin/audit-logs/real-time-summary - Current activity summary
-app.get('/api/admin/audit-logs/real-time-summary', authenticate, authorize(['admin']), async (req, res) => {
+app.get('/api/admin/audit-logs/real-time-summary', authenticate, authorize('admin'), async (req, res) => {
     try {
         // Last hour activity
         const [[{ lastHourCount }]] = await pool.query(
@@ -10461,7 +10764,7 @@ app.patch('/api/notification-preferences', authenticate, async (req, res) => {
 });
 
 // 📧 GET /api/notifications/digest/send - Admin trigger digest email (scheduled task)
-app.get('/api/notifications/digest/send', authenticate, authorize(['admin']), async (req, res) => {
+app.get('/api/notifications/digest/send', authenticate, authorize('admin'), async (req, res) => {
     try {
         const { userId } = req.query;
 
@@ -12157,9 +12460,593 @@ app.get('/api/webhooks/:webhookId/deliveries', authenticate, authorize('admin'),
     }
 });
 
+// ================== RESOURCE LINKS ENDPOINTS ==================
+
+// Initialize resource_links and related tables
+async function ensureResourceLinksTable() {
+    try {
+        await pool.query(`
+            CREATE TABLE IF NOT EXISTS resource_links (
+                id VARCHAR(50) PRIMARY KEY,
+                title VARCHAR(255) NOT NULL,
+                url TEXT NOT NULL,
+                description TEXT,
+                category VARCHAR(100) DEFAULT 'General',
+                created_by VARCHAR(50),
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+        `);
+        await pool.query(`
+            CREATE TABLE IF NOT EXISTS link_assignments (
+                id VARCHAR(50) PRIMARY KEY,
+                link_id VARCHAR(50) NOT NULL,
+                student_id VARCHAR(50) NOT NULL,
+                assigned_by VARCHAR(50),
+                assigned_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE KEY unique_link_assignment (link_id, student_id)
+            )
+        `);
+        console.log('✅ resource_links tables ready');
+    } catch (e) { console.warn('⚠️ resource_links table init:', e.message); }
+}
+
+// GET /api/resource-links — admin: get all links
+app.get('/api/resource-links', authenticate, authorize('admin'), async (req, res) => {
+    try {
+        const [links] = await pool.query('SELECT * FROM resource_links ORDER BY created_at DESC');
+        // Attach assigned student count
+        for (const link of links) {
+            const [cnt] = await pool.query('SELECT COUNT(*) as c FROM link_assignments WHERE link_id = ?', [link.id]);
+            link.assignedCount = cnt[0]?.c || 0;
+        }
+        res.json({ links });
+    } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// POST /api/resource-links — admin: create one or bulk links
+app.post('/api/resource-links', authenticate, authorize('admin'), async (req, res) => {
+    try {
+        const { links: bulkLinks, title, url, description, category } = req.body;
+        const createdBy = req.user.id;
+        const created = [];
+
+        const toCreate = bulkLinks && Array.isArray(bulkLinks)
+            ? bulkLinks
+            : [{ title, url, description, category }];
+
+        for (const item of toCreate) {
+            if (!item.url) continue;
+            const id = uuidv4();
+            await pool.query(
+                'INSERT INTO resource_links (id, title, url, description, category, created_by) VALUES (?, ?, ?, ?, ?, ?)',
+                [id, item.title || 'Untitled', item.url, item.description || '', item.category || 'General', createdBy]
+            );
+            created.push(id);
+        }
+        res.status(201).json({ success: true, created: created.length });
+    } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// DELETE /api/resource-links/:id — admin: delete a link
+app.delete('/api/resource-links/:id', authenticate, authorize('admin'), async (req, res) => {
+    try {
+        await pool.query('DELETE FROM link_assignments WHERE link_id = ?', [req.params.id]);
+        await pool.query('DELETE FROM resource_links WHERE id = ?', [req.params.id]);
+        res.json({ success: true });
+    } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// POST /api/resource-links/:id/assign — admin: assign link to students
+app.post('/api/resource-links/:id/assign', authenticate, authorize('admin'), async (req, res) => {
+    try {
+        const linkId = req.params.id;
+        const { studentIds = [], assignAll = false } = req.body;
+        const assignedBy = req.user.id;
+
+        let targets = studentIds;
+        if (assignAll) {
+            const [rows] = await pool.query("SELECT id FROM users WHERE role = 'student'");
+            targets = rows.map(r => r.id);
+        }
+
+        if (!targets.length) return res.json({ success: true, assigned: 0 });
+
+        // Batch insert all students in a single query (much faster than per-row loop)
+        const values = targets.map(sid => [uuidv4(), linkId, sid, assignedBy]);
+        const placeholders = values.map(() => '(?, ?, ?, ?)').join(', ');
+        const flat = values.flat();
+        await pool.query(
+            `INSERT IGNORE INTO link_assignments (id, link_id, student_id, assigned_by) VALUES ${placeholders}`,
+            flat
+        );
+        res.json({ success: true, assigned: targets.length });
+    } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// GET /api/resource-links/student — student: get their assigned links
+app.get('/api/resource-links/student', authenticate, async (req, res) => {
+    try {
+        const studentId = req.user.id;
+        const [rows] = await pool.query(
+            `SELECT rl.*, la.assigned_at FROM resource_links rl
+             JOIN link_assignments la ON la.link_id = rl.id
+             WHERE la.student_id = ?
+             ORDER BY la.assigned_at DESC`,
+            [studentId]
+        );
+        res.json({ links: rows });
+    } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// GET /api/resource-links/:id/students — admin: get assigned students for a link
+app.get('/api/resource-links/:id/students', authenticate, authorize('admin'), async (req, res) => {
+    try {
+        const [rows] = await pool.query(
+            `SELECT u.id, u.name, u.email, la.assigned_at
+             FROM link_assignments la JOIN users u ON u.id = la.student_id
+             WHERE la.link_id = ?`,
+            [req.params.id]
+        );
+        res.json({ students: rows });
+    } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// ================== MCQ ENDPOINTS ==================
+
+async function ensureMCQTables() {
+    try {
+        await pool.query(`
+            CREATE TABLE IF NOT EXISTS mcq_tests (
+                id VARCHAR(50) PRIMARY KEY,
+                title VARCHAR(255) NOT NULL,
+                description TEXT,
+                category VARCHAR(50) DEFAULT 'technical',
+                difficulty VARCHAR(20) DEFAULT 'medium',
+                questions LONGTEXT NOT NULL,
+                time_limit INT DEFAULT 30,
+                is_active TINYINT(1) DEFAULT 1,
+                created_by VARCHAR(50),
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                deadline DATETIME DEFAULT NULL
+            )
+        `);
+        await pool.query(`
+            CREATE TABLE IF NOT EXISTS mcq_assignments (
+                id VARCHAR(50) PRIMARY KEY,
+                mcq_id VARCHAR(50) NOT NULL,
+                student_id VARCHAR(50) NOT NULL,
+                assigned_by VARCHAR(50),
+                assigned_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE KEY unique_mcq_assignment (mcq_id, student_id)
+            )
+        `);
+        await pool.query(`
+            CREATE TABLE IF NOT EXISTS mcq_submissions (
+                id VARCHAR(50) PRIMARY KEY,
+                mcq_id VARCHAR(50) NOT NULL,
+                mcq_title VARCHAR(255),
+                student_id VARCHAR(50) NOT NULL,
+                student_name VARCHAR(255),
+                student_email VARCHAR(255),
+                answers LONGTEXT,
+                score DECIMAL(5,2) DEFAULT 0,
+                total_questions INT DEFAULT 0,
+                correct_answers INT DEFAULT 0,
+                ai_report LONGTEXT,
+                time_taken INT DEFAULT 0,
+                status VARCHAR(50) DEFAULT 'submitted',
+                submitted_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+        `);
+        // Add proctoring_config column if not exists (safe migration)
+        await pool.query(`ALTER TABLE mcq_tests ADD COLUMN IF NOT EXISTS proctoring_config LONGTEXT DEFAULT NULL`).catch(() => {});
+        // categories column for multi-category support
+        await pool.query(`ALTER TABLE mcq_tests ADD COLUMN IF NOT EXISTS categories LONGTEXT DEFAULT NULL`).catch(() => {});
+        await pool.query(`ALTER TABLE mcq_tests ADD COLUMN IF NOT EXISTS pass_mark INT DEFAULT 70`).catch(() => {});
+        await pool.query(`ALTER TABLE mcq_tests ADD COLUMN IF NOT EXISTS max_attempts INT DEFAULT 1`).catch(() => {});
+        console.log('✅ MCQ tables ready');
+    } catch (e) { console.warn('⚠️ MCQ table init:', e.message); }
+}
+
+// POST /api/mcq/generate-questions — AI question generation (must be BEFORE /:id routes)
+app.post('/api/mcq/generate-questions', authenticate, authorize('admin'), async (req, res) => {
+    try {
+        const { topic, categories, category, difficulty, count = 5 } = req.body;
+        if (!topic || !topic.trim()) return res.status(400).json({ error: 'Topic is required' });
+
+        // Support both categories array and single category
+        const selectedCats = Array.isArray(categories) && categories.length ? categories : [category || 'technical'];
+        const catLabels = { technical: 'Technical Programming MCQ', debug: 'Debug/Bug-Finding MCQ', pseudocode: 'Pseudocode/Trace MCQ' };
+        const catDesc = selectedCats.map(c => catLabels[c] || c).join(' and ');
+
+        const prompt = `Generate ${count} MCQ questions (type: ${catDesc}) about: ${topic}
+Difficulty: ${difficulty || 'medium'}
+
+Return ONLY a valid JSON array (no markdown, no explanation):
+[
+  {
+    "question": "Question text here",
+    "code": "code snippet if needed, empty string otherwise",
+    "options": ["Option A text", "Option B text", "Option C text", "Option D text"],
+    "correct_answer": "A",
+    "explanation": "Why this answer is correct"
+  }
+]
+
+Rules:
+- correct_answer must be exactly "A", "B", "C", or "D"
+- For debug/pseudocode questions, always include real code in "code" field
+- Make options plausible — wrong options should be realistic
+- Vary the correct answer (not always A)
+- Mix question styles across selected categories if multiple are selected`;
+
+        const completion = await cerebrasChat(
+            [{ role: 'user', content: prompt }],
+            { model: 'gpt-oss-120b', temperature: 0.7, max_tokens: 3000 }
+        );
+
+        const content = completion.choices[0]?.message?.content || '';
+        const match = content.match(/\[[\s\S]*\]/);
+        if (!match) return res.status(500).json({ error: 'AI did not return valid JSON' });
+
+        const questions = JSON.parse(match[0]);
+        res.json({ questions });
+    } catch (err) {
+        console.error('MCQ generate error:', err.message);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// GET /api/mcq — admin: get all MCQ tests
+app.get('/api/mcq', authenticate, authorize('admin'), async (req, res) => {
+    try {
+        const [tests] = await pool.query('SELECT * FROM mcq_tests ORDER BY created_at DESC');
+        for (const t of tests) {
+            t.questions = JSON.parse(t.questions || '[]');
+            t.proctoring_config = t.proctoring_config ? JSON.parse(t.proctoring_config) : null;
+            t.categories = t.categories ? JSON.parse(t.categories) : (t.category ? [t.category] : ['technical']);
+            const [cnt] = await pool.query('SELECT COUNT(*) as c FROM mcq_submissions WHERE mcq_id = ?', [t.id]);
+            t.submissionCount = cnt[0]?.c || 0;
+        }
+        res.json({ tests });
+    } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// POST /api/mcq — admin: create MCQ test
+app.post('/api/mcq', authenticate, authorize('admin'), async (req, res) => {
+    try {
+        const { title, description, categories, category, difficulty, questions, time_limit, deadline, proctoring_config, pass_mark, max_attempts } = req.body;
+        if (!title || !questions || !questions.length) {
+            return res.status(400).json({ error: 'title and questions are required' });
+        }
+        const cats = Array.isArray(categories) && categories.length ? categories : [category || 'technical'];
+        const id = uuidv4();
+        await pool.query(
+            'INSERT INTO mcq_tests (id, title, description, category, categories, difficulty, questions, time_limit, created_by, deadline, proctoring_config, pass_mark, max_attempts) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+            [id, title, description || '', cats[0], JSON.stringify(cats), difficulty || 'medium',
+             JSON.stringify(questions), time_limit || 30, req.user.id, deadline || null,
+             proctoring_config ? JSON.stringify(proctoring_config) : null,
+             pass_mark || 70, max_attempts || 1]
+        );
+        res.status(201).json({ success: true, id });
+    } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// DELETE /api/mcq/:id — admin: delete MCQ test  
+app.delete('/api/mcq/:id', authenticate, authorize('admin'), async (req, res) => {
+    try {
+        await pool.query('DELETE FROM mcq_assignments WHERE mcq_id = ?', [req.params.id]);
+        await pool.query('DELETE FROM mcq_submissions WHERE mcq_id = ?', [req.params.id]);
+        await pool.query('DELETE FROM mcq_tests WHERE id = ?', [req.params.id]);
+        res.json({ success: true });
+    } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// PATCH /api/mcq/:id/active — admin: toggle live/end
+app.patch('/api/mcq/:id/active', authenticate, authorize('admin'), async (req, res) => {
+    try {
+        const { is_active } = req.body;
+        await pool.query('UPDATE mcq_tests SET is_active = ? WHERE id = ?', [is_active ? 1 : 0, req.params.id]);
+        res.json({ success: true, is_active: !!is_active });
+    } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// PUT /api/mcq/:id — admin: update MCQ test
+app.put('/api/mcq/:id', authenticate, authorize('admin'), async (req, res) => {
+    try {
+        const { title, description, category, difficulty, questions, time_limit, is_active, deadline } = req.body;
+        await pool.query(
+            'UPDATE mcq_tests SET title=?, description=?, category=?, difficulty=?, questions=?, time_limit=?, is_active=?, deadline=? WHERE id=?',
+            [title, description, category, difficulty, JSON.stringify(questions), time_limit, is_active ? 1 : 0, deadline || null, req.params.id]
+        );
+        res.json({ success: true });
+    } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// POST /api/mcq/:id/assign — admin: assign MCQ to students
+app.post('/api/mcq/:id/assign', authenticate, authorize('admin'), async (req, res) => {
+    try {
+        const mcqId = req.params.id;
+        const { studentIds = [], assignAll = false } = req.body;
+        const assignedBy = req.user.id;
+
+        let targets = studentIds;
+        if (assignAll) {
+            const [rows] = await pool.query("SELECT id FROM users WHERE role = 'student'");
+            targets = rows.map(r => r.id);
+        }
+
+        if (!targets.length) return res.json({ success: true, assigned: 0 });
+
+        // Batch insert all students in a single query (much faster than per-row loop)
+        const values = targets.map(sid => [uuidv4(), mcqId, sid, assignedBy]);
+        const placeholders = values.map(() => '(?, ?, ?, ?)').join(', ');
+        const flat = values.flat();
+        await pool.query(
+            `INSERT IGNORE INTO mcq_assignments (id, mcq_id, student_id, assigned_by) VALUES ${placeholders}`,
+            flat
+        );
+        res.json({ success: true, assigned: targets.length });
+    } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// GET /api/mcq/student — student: get assigned or active MCQ tests
+app.get('/api/mcq/student', authenticate, async (req, res) => {
+    try {
+        const studentId = req.user.id;
+        const [assigned] = await pool.query(
+            `SELECT mt.*, ma.assigned_at FROM mcq_tests mt
+             JOIN mcq_assignments ma ON ma.mcq_id = mt.id
+             WHERE ma.student_id = ? AND mt.is_active = 1
+             ORDER BY ma.assigned_at DESC`,
+            [studentId]
+        );
+        // Also get globally published tests (no assignment needed)
+        const [global] = await pool.query(
+            `SELECT mt.* FROM mcq_tests mt
+             WHERE mt.is_active = 1 AND mt.id NOT IN (
+                 SELECT mcq_id FROM mcq_assignments
+             )
+             ORDER BY mt.created_at DESC`
+        );
+        const all = [...assigned, ...global];
+        // Parse questions and check if student already submitted
+        const result = [];
+        for (const t of all) {
+            const questions = JSON.parse(t.questions || '[]');
+            const [sub] = await pool.query(
+                'SELECT id, score, status, submitted_at FROM mcq_submissions WHERE mcq_id = ? AND student_id = ? ORDER BY submitted_at DESC LIMIT 1',
+                [t.id, studentId]
+            );
+            const [attRows] = await pool.query(
+                'SELECT COUNT(*) as cnt FROM mcq_submissions WHERE mcq_id = ? AND student_id = ?',
+                [t.id, studentId]
+            );
+            result.push({
+                ...t,
+                questions: questions.map(q => ({ ...q, correct_answer: undefined })), // hide correct answers
+                questionCount: questions.length,
+                submission: sub[0] || null,
+                attempts_used: attRows[0]?.cnt || 0,
+                pass_mark: t.pass_mark || 70,
+                max_attempts: t.max_attempts || 1
+            });
+        }
+        res.json({ tests: result });
+    } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// GET /api/mcq/:id — get single MCQ (with questions, no answers hidden for admin)
+app.get('/api/mcq/:id', authenticate, async (req, res) => {
+    try {
+        const [[test]] = await pool.query('SELECT * FROM mcq_tests WHERE id = ?', [req.params.id]);
+        if (!test) return res.status(404).json({ error: 'MCQ not found' });
+        test.questions = JSON.parse(test.questions || '[]');
+        test.proctoring_config = test.proctoring_config ? JSON.parse(test.proctoring_config) : null;
+        test.categories = test.categories ? JSON.parse(test.categories) : (test.category ? [test.category] : ['technical']);
+        // Hide correct answers for students
+        if (req.user.role !== 'admin') {
+            test.questions = test.questions.map(q => ({ ...q, correct_answer: undefined, explanation: undefined }));
+        }
+        res.json({ test });
+    } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// POST /api/mcq/:id/submit — student submits MCQ answers + AI evaluation
+app.post('/api/mcq/:id/submit', authenticate, async (req, res) => {
+    try {
+        const mcqId = req.params.id;
+        const studentId = req.user.id;
+        const { answers, time_taken } = req.body; // answers: { questionId: selectedAnswer }
+
+        const [[test]] = await pool.query('SELECT * FROM mcq_tests WHERE id = ?', [mcqId]);
+        if (!test) return res.status(404).json({ error: 'MCQ not found' });
+
+        // Deadline check
+        if (test.deadline && new Date(test.deadline) < new Date()) {
+            return res.status(400).json({ error: 'This test has passed its deadline and is no longer accepting submissions.' });
+        }
+
+        // Max attempts check
+        const [existing] = await pool.query(
+            'SELECT id FROM mcq_submissions WHERE mcq_id = ? AND student_id = ?',
+            [mcqId, studentId]
+        );
+        const maxAttempts = test.max_attempts || 1;
+        if (existing.length >= maxAttempts) {
+            return res.status(400).json({ error: `You have used all ${maxAttempts} attempt(s) for this test.` });
+        }
+
+        const questions = JSON.parse(test.questions || '[]');
+        const [[student]] = await pool.query('SELECT name, email FROM users WHERE id = ?', [studentId]);
+
+        // Evaluate answers
+        let correct = 0;
+        const evaluation = questions.map(q => {
+            const studentAnswer = answers[q.id] || answers[String(q.id)] || '';
+            const isCorrect = studentAnswer === q.correct_answer;
+            if (isCorrect) correct++;
+            return {
+                questionId: q.id,
+                question: q.question,
+                type: q.type,
+                studentAnswer,
+                correctAnswer: q.correct_answer,
+                isCorrect,
+                explanation: q.explanation || '',
+                code: q.code || ''
+            };
+        });
+
+        const score = questions.length > 0 ? Math.round((correct / questions.length) * 100 * 100) / 100 : 0;
+
+        // Generate AI report using Cerebras
+        let aiReport = null;
+        try {
+            const wrongAnswers = evaluation.filter(e => !e.isCorrect);
+            const categoryBreakdown = {};
+            evaluation.forEach(e => {
+                const t = e.type || 'general';
+                if (!categoryBreakdown[t]) categoryBreakdown[t] = { correct: 0, total: 0 };
+                categoryBreakdown[t].total++;
+                if (e.isCorrect) categoryBreakdown[t].correct++;
+            });
+
+            const prompt = `You are an expert MCQ evaluator. A student just completed an MCQ test titled "${test.title}" (Category: ${test.category}, Difficulty: ${test.difficulty}).
+
+Score: ${score}% (${correct}/${questions.length} correct)
+
+Wrong answers summary:
+${wrongAnswers.slice(0, 5).map(w => `Q: ${w.question}\nStudent answered: ${w.studentAnswer}, Correct: ${w.correctAnswer}\n${w.code ? `Code:\n${w.code}` : ''}`).join('\n---\n')}
+
+Provide a JSON response with the following structure:
+{
+  "overallFeedback": "Brief encouraging overall feedback (2-3 sentences)",
+  "strengths": ["strength1", "strength2"],
+  "weaknesses": ["weakness1", "weakness2"],
+  "topicsToImprove": ["topic1", "topic2"],
+  "recommendations": ["recommendation1", "recommendation2"],
+  "performanceLevel": "excellent|good|average|needs_improvement",
+  "estimatedSkillLevel": "beginner|intermediate|advanced"
+}
+
+Be specific, constructive, and helpful.`;
+
+            const completion = await cerebrasChat([
+                { role: 'user', content: prompt }
+            ], { model: 'gpt-oss-120b', temperature: 0.3 });
+
+            const content = completion.choices[0]?.message?.content || '';
+            const jsonMatch = content.match(/\{[\s\S]*\}/);
+            if (jsonMatch) {
+                aiReport = JSON.parse(jsonMatch[0]);
+            }
+        } catch (aiErr) {
+            console.warn('AI evaluation failed:', aiErr.message);
+            aiReport = {
+                overallFeedback: `You scored ${score}% on this MCQ test.`,
+                strengths: correct > 0 ? ['Attempted all questions'] : [],
+                weaknesses: correct < questions.length ? ['Some areas need improvement'] : [],
+                topicsToImprove: [],
+                recommendations: ['Review incorrect answers and study the explanations'],
+                performanceLevel: score >= 80 ? 'excellent' : score >= 60 ? 'good' : score >= 40 ? 'average' : 'needs_improvement',
+                estimatedSkillLevel: score >= 80 ? 'advanced' : score >= 50 ? 'intermediate' : 'beginner'
+            };
+        }
+
+        const submissionId = uuidv4();
+        const passMark = test.pass_mark || 70;
+        const status = score >= passMark ? 'passed' : 'failed';
+
+        await pool.query(
+            `INSERT INTO mcq_submissions (id, mcq_id, mcq_title, student_id, student_name, student_email, answers, score, total_questions, correct_answers, ai_report, time_taken, status)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            [submissionId, mcqId, test.title, studentId, student?.name || '', student?.email || '',
+             JSON.stringify(evaluation), score, questions.length, correct, JSON.stringify(aiReport), time_taken || 0, status]
+        );
+
+        res.json({
+            success: true,
+            submissionId,
+            score,
+            totalQuestions: questions.length,
+            correctAnswers: correct,
+            status,
+            aiReport,
+            evaluation
+        });
+    } catch (err) {
+        console.error('MCQ submit error:', err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// GET /api/mcq-submissions — admin: all MCQ submissions
+app.get('/api/mcq-submissions', authenticate, authorize('admin'), async (req, res) => {
+    try {
+        const [subs] = await pool.query(
+            'SELECT * FROM mcq_submissions ORDER BY submitted_at DESC'
+        );
+        const parsed = subs.map(s => ({
+            ...s,
+            answers: JSON.parse(s.answers || '[]'),
+            ai_report: JSON.parse(s.ai_report || 'null')
+        }));
+        res.json({ submissions: parsed });
+    } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// GET /api/mcq-submissions/student — student: their MCQ submissions
+app.get('/api/mcq-submissions/student', authenticate, async (req, res) => {
+    try {
+        const studentId = req.user.id;
+        const [subs] = await pool.query(
+            'SELECT * FROM mcq_submissions WHERE student_id = ? ORDER BY submitted_at DESC',
+            [studentId]
+        );
+        const parsed = subs.map(s => ({
+            ...s,
+            answers: JSON.parse(s.answers || '[]'),
+            ai_report: JSON.parse(s.ai_report || 'null')
+        }));
+        res.json({ submissions: parsed });
+    } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// GET /api/mcq/:id/submissions — admin: submissions for specific MCQ
+app.get('/api/mcq/:id/submissions', authenticate, authorize('admin'), async (req, res) => {
+    try {
+        const [subs] = await pool.query(
+            'SELECT * FROM mcq_submissions WHERE mcq_id = ? ORDER BY submitted_at DESC',
+            [req.params.id]
+        );
+        const parsed = subs.map(s => ({
+            ...s,
+            answers: JSON.parse(s.answers || '[]'),
+            ai_report: JSON.parse(s.ai_report || 'null')
+        }));
+        res.json({ submissions: parsed });
+    } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// GET /api/mcq-submissions/:id — get single submission (for AI report view)
+app.get('/api/mcq-submissions/:id', authenticate, async (req, res) => {
+    try {
+        const [[sub]] = await pool.query('SELECT * FROM mcq_submissions WHERE id = ?', [req.params.id]);
+        if (!sub) return res.status(404).json({ error: 'Submission not found' });
+        sub.answers = JSON.parse(sub.answers || '[]');
+        sub.ai_report = JSON.parse(sub.ai_report || 'null');
+        res.json({ submission: sub });
+    } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// ================== END RESOURCE LINKS & MCQ ==================
+
 // Start server
 (async () => {
     await ensureTestAllocationsTable();
+    await ensureResourceLinksTable();
+    await ensureMCQTables();
 
     // Register Advanced Features Routes
     const advancedFeaturesRouter = require('./routes/advanced_features');

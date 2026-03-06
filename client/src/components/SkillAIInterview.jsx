@@ -28,6 +28,7 @@ export default function SkillAIInterview({ attemptId, attemptData, onComplete, o
     const recognitionRef = useRef(null);
     const synthRef = useRef(null);
     const timerRef = useRef(null);
+    const answerRef = useRef(''); // Track current answer for auto-submit on timeout
 
     useEffect(() => {
         if (timeLeft === null) return;
@@ -48,9 +49,23 @@ export default function SkillAIInterview({ attemptId, attemptData, onComplete, o
         return () => clearInterval(timerRef.current);
     }, [timeLeft]);
 
-    const handleTimeUp = () => {
-        alert('Time is up! Submitting your test automatically.');
-        onFailed(); // Force fail if time runs out
+    const handleTimeUp = async () => {
+        clearInterval(timerRef.current);
+        if (synthRef.current) synthRef.current.cancel();
+        stopListening();
+        const currentAnswer = answerRef.current;
+        // Auto-submit current answer if the student has typed/spoken something
+        if (currentAnswer && currentAnswer.trim() && !submitting) {
+            try {
+                await axios.post(`${API}/api/skill-tests/interview/answer`, {
+                    attemptId,
+                    answer: currentAnswer.trim() + ' [Time limit reached]'
+                });
+            } catch (e) {
+                // Ignore submission error on timeout
+            }
+        }
+        onFailed();
     };
 
     const formatTime = (seconds) => {
@@ -123,6 +138,7 @@ export default function SkillAIInterview({ attemptId, attemptData, onComplete, o
                 }
             }
             setAnswer(finalTranscript + interim);
+                answerRef.current = finalTranscript + interim;
         };
 
         recognition.onend = () => {
@@ -195,6 +211,7 @@ export default function SkillAIInterview({ attemptId, attemptData, onComplete, o
                     setDifficulty(data.next_difficulty || 'medium');
                     setQuestionNumber(data.question_number);
                     setAnswer('');
+                    answerRef.current = '';
                     setFeedback(null);
                     setAvatarState('idle');
                     if (ttsEnabled) speakText(data.next_question);
@@ -410,7 +427,7 @@ export default function SkillAIInterview({ attemptId, attemptData, onComplete, o
                         }}>
                             <textarea
                                 value={answer}
-                                onChange={e => setAnswer(e.target.value)}
+                                onChange={e => { setAnswer(e.target.value); answerRef.current = e.target.value; }}
                                 placeholder="Type your response here..."
                                 rows={2}
                                 style={{
