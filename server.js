@@ -2831,6 +2831,14 @@ Provide a detailed evaluation JSON. Scale metrics 0-100 (numeric only).
                                 ? JSON.parse(aiEval.choices[0].message.content)
                                 : aiEval.choices[0].message.content;
 
+                            // Clamp AI-returned score and analysis values to valid 0-100 range
+                            if (parsedEval.score !== undefined) parsedEval.score = Math.min(100, Math.max(0, Math.round(Number(parsedEval.score) || 0)));
+                            if (parsedEval.analysis) {
+                                for (const key of Object.keys(parsedEval.analysis)) {
+                                    parsedEval.analysis[key] = Math.min(100, Math.max(0, Math.round(Number(parsedEval.analysis[key]) || 0)));
+                                }
+                            }
+
                             evaluationResult = { ...evaluationResult, ...parsedEval };
                             console.log(`Proctored SQL AI Evaluation - Score: ${evaluationResult.score}, Status: ${evaluationResult.status}`);
                         } catch (aiErr) {
@@ -2901,7 +2909,15 @@ Respond in this exact JSON format:
                 const responseText = aiResponse.choices[0]?.message?.content || '';
                 const jsonMatch = responseText.match(/\{[\s\S]*\}/);
                 if (jsonMatch) {
-                    evaluationResult = JSON.parse(jsonMatch[0]);
+                    const parsed = JSON.parse(jsonMatch[0]);
+                    // Clamp AI-returned score and analysis values to valid 0-100 range
+                    if (parsed.score !== undefined) parsed.score = Math.min(100, Math.max(0, Math.round(Number(parsed.score) || 0)));
+                    if (parsed.analysis) {
+                        for (const key of Object.keys(parsed.analysis)) {
+                            parsed.analysis[key] = Math.min(100, Math.max(0, Math.round(Number(parsed.analysis[key]) || 0)));
+                        }
+                    }
+                    evaluationResult = parsed;
                 }
             } catch (e) {
                 console.error('AI Evaluation error:', e.message);
@@ -2909,7 +2925,7 @@ Respond in this exact JSON format:
         }
 
         // Apply penalties for proctoring violations
-        let finalScore = evaluationResult.score || 0;
+        let finalScore = Math.min(100, Math.max(0, Math.round(Number(evaluationResult.score) || 0)));
         let integrityViolation = false;
         const tabSwitchCount = parseInt(tabSwitches) || 0;
         const copyPasteCount = parseInt(copyPasteAttempts) || 0;
@@ -2980,6 +2996,9 @@ Respond in this exact JSON format:
                 evaluationResult.feedback = (evaluationResult.feedback || '') + `\n\n⚠️ Penalty: -${faceLookawayPenalty} points for looking away from screen (${faceLookawayCnt} times).`;
             }
         }
+
+        // Final safety: ensure score is always a clean integer in 0-100 range
+        finalScore = Math.min(100, Math.max(0, Math.round(finalScore)));
 
         // Determine final status
         let finalStatus = evaluationResult.status || 'rejected';
@@ -12639,11 +12658,11 @@ async function ensureMCQTables() {
             )
         `);
         // Add proctoring_config column if not exists (safe migration)
-        await pool.query(`ALTER TABLE mcq_tests ADD COLUMN IF NOT EXISTS proctoring_config LONGTEXT DEFAULT NULL`).catch(() => {});
+        await pool.query(`ALTER TABLE mcq_tests ADD COLUMN IF NOT EXISTS proctoring_config LONGTEXT DEFAULT NULL`).catch(() => { });
         // categories column for multi-category support
-        await pool.query(`ALTER TABLE mcq_tests ADD COLUMN IF NOT EXISTS categories LONGTEXT DEFAULT NULL`).catch(() => {});
-        await pool.query(`ALTER TABLE mcq_tests ADD COLUMN IF NOT EXISTS pass_mark INT DEFAULT 70`).catch(() => {});
-        await pool.query(`ALTER TABLE mcq_tests ADD COLUMN IF NOT EXISTS max_attempts INT DEFAULT 1`).catch(() => {});
+        await pool.query(`ALTER TABLE mcq_tests ADD COLUMN IF NOT EXISTS categories LONGTEXT DEFAULT NULL`).catch(() => { });
+        await pool.query(`ALTER TABLE mcq_tests ADD COLUMN IF NOT EXISTS pass_mark INT DEFAULT 70`).catch(() => { });
+        await pool.query(`ALTER TABLE mcq_tests ADD COLUMN IF NOT EXISTS max_attempts INT DEFAULT 1`).catch(() => { });
         console.log('✅ MCQ tables ready');
     } catch (e) { console.warn('⚠️ MCQ table init:', e.message); }
 }
@@ -12724,9 +12743,9 @@ app.post('/api/mcq', authenticate, authorize('admin'), async (req, res) => {
         await pool.query(
             'INSERT INTO mcq_tests (id, title, description, category, categories, difficulty, questions, time_limit, created_by, deadline, proctoring_config, pass_mark, max_attempts) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
             [id, title, description || '', cats[0], JSON.stringify(cats), difficulty || 'medium',
-             JSON.stringify(questions), time_limit || 30, req.user.id, deadline || null,
-             proctoring_config ? JSON.stringify(proctoring_config) : null,
-             pass_mark || 70, max_attempts || 1]
+                JSON.stringify(questions), time_limit || 30, req.user.id, deadline || null,
+                proctoring_config ? JSON.stringify(proctoring_config) : null,
+                pass_mark || 70, max_attempts || 1]
         );
         res.status(201).json({ success: true, id });
     } catch (err) { res.status(500).json({ error: err.message }); }
@@ -12962,7 +12981,7 @@ Be specific, constructive, and helpful.`;
             `INSERT INTO mcq_submissions (id, mcq_id, mcq_title, student_id, student_name, student_email, answers, score, total_questions, correct_answers, ai_report, time_taken, status)
              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
             [submissionId, mcqId, test.title, studentId, student?.name || '', student?.email || '',
-             JSON.stringify(evaluation), score, questions.length, correct, JSON.stringify(aiReport), time_taken || 0, status]
+                JSON.stringify(evaluation), score, questions.length, correct, JSON.stringify(aiReport), time_taken || 0, status]
         );
 
         res.json({
