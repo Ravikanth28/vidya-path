@@ -3,7 +3,7 @@
  * - Student at-risk identification
  * - Learning curve analysis
  * - Concept mastery tracking
- * - Personalized recommendations
+ * - Personalized recommendation
  */
 
 const { v4: uuidv4 } = require('uuid');
