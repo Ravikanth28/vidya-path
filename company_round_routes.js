@@ -125,12 +125,16 @@ JSON array:`
 
 Return ONLY a JSON array. Each object:
 - "question": clear problem statement. Include an Example section with the EXACT stdin lines shown (e.g. Input:\\n7\\n1 2 3 4 5\\nOutput:\\n2). Each example must match the test cases exactly.
-- "starter_code": Python function/main template that reads from stdin using input()
+- "starter_code": A COMPLETE, RUNNABLE Python starter template. Must include:
+  1. All necessary imports (sys, etc.)
+  2. The solution function stub with correct parameters and a 'pass' or placeholder return
+  3. A main block that reads ALL input from stdin correctly using sys.stdin / input(), calls the function, and prints the result
+  4. Must be valid Python that runs without errors even before the student fills in the solution
+  Example starter_code for a two-sum problem:
+  "import sys\\n\\ndef two_sum(nums, target):\\n    # Write your solution here\\n    pass\\n\\nif __name__ == '__main__':\\n    n = int(input())\\n    nums = list(map(int, input().split()))\\n    target = int(input())\\n    print(two_sum(nums, target))"
 - "language": "Python"
 - "test_cases": array of {input, expected_output} — at least 3 test cases. CRITICAL: "input" must be raw stdin string exactly as a program reads it from standard input — multiple lines separated by \\n, NOT comma-separated. Example: if program reads n on line 1 and n numbers on line 2, input must be "5\\n1 2 3 4 5" (NOT "5, 1, 2, 3, 4, 5"). The problem's Example Input shown in "question" must EXACTLY match the first test case's "input" field.
 - "explanation": approach, time complexity, and example trace
-
-JSON array:
 
 JSON array:`;
 
@@ -716,6 +720,7 @@ function registerCompanyRoundRoutes(app, pool) {
 
             let totalScore = 0;
             let totalQuestions = questions.length;
+            const sectionScoreSum = {}; // accumulate qScore per section for accurate section %
 
             for (const q of questions) {
                 const ans = (answers || {})[q.id] || {};
@@ -770,6 +775,7 @@ function registerCompanyRoundRoutes(app, pool) {
                 }
 
                 if (isCorrect) sectionStats[sec].correct++;
+                sectionScoreSum[sec] = (sectionScoreSum[sec] || 0) + qScore;
                 totalScore += qScore;
 
                 // Save answer record
@@ -785,10 +791,10 @@ function registerCompanyRoundRoutes(app, pool) {
                 } catch (ansErr) { console.warn('Answer insert err:', ansErr.message); }
             }
 
-            // Compute per-section scores
+            // Compute per-section scores (use average qScore for partial credit on code/sql)
             for (const sec of Object.keys(sectionStats)) {
                 const s = sectionStats[sec];
-                s.score = s.total > 0 ? Math.round((s.correct / s.total) * 100) : 0;
+                s.score = s.total > 0 ? Math.round((sectionScoreSum[sec] || 0) / s.total) : 0;
                 s.time_spent = section_time_spent[sec] || 0;
             }
 

@@ -2118,13 +2118,12 @@ function AdminCRTReportModal({ submission, reportData, loading, onClose }) {
                             )}
 
                             {/* Section Time Analysis */}
-                            {(() => {
+                            {sections.length > 0 && (() => {
                                 const timeSpentAdmin = {}
                                 sections.forEach(sec => { timeSpentAdmin[sec] = sectionScores[sec]?.time_spent || 0 })
                                 const totalTimeSecsAdmin = sections.reduce((s, sec) => s + (timeSpentAdmin[sec] || 0), 0)
                                 const maxTimeAdmin = Math.max(...sections.map(sec => timeSpentAdmin[sec] || 0), 1)
                                 const fmtDur = secs => { if (!secs || secs <= 0) return '—'; const m = Math.floor(secs / 60); const s = secs % 60; return m > 0 ? `${m}m ${s}s` : `${s}s` }
-                                if (totalTimeSecsAdmin <= 0) return null
                                 return (
                                     <>
                                         <h3 style={{ margin: '0 0 0.75rem', fontSize: '1rem', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '8px' }}>
