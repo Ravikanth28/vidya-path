@@ -188,10 +188,36 @@ function QuestionForm({ section, onSave, onCancel, initialData }) {
                             <button onClick={addTC} style={{ background: '#3b82f620', border: '1px solid #3b82f640', color: '#60a5fa', borderRadius: '6px', padding: '3px 10px', fontSize: '11px', cursor: 'pointer', fontWeight: 600 }}>+ Add Case</button>
                         </div>
                         {(form.test_cases || []).map((tc, i) => (
-                            <div key={i} style={{ display: 'grid', gridTemplateColumns: '1fr 1fr auto', gap: '8px', marginBottom: '6px' }}>
-                                <input value={tc.input || ''} onChange={e => setTC(i, 'input', e.target.value)} placeholder="Input" style={{ ...inputStyle, padding: '7px 10px' }} />
-                                <input value={tc.expected_output || ''} onChange={e => setTC(i, 'expected_output', e.target.value)} placeholder="Expected Output" style={{ ...inputStyle, padding: '7px 10px' }} />
-                                <button onClick={() => removeTC(i)} style={{ background: '#ef444420', border: 'none', color: '#f87171', borderRadius: '6px', cursor: 'pointer', padding: '0 10px' }}><X size={13} /></button>
+                            <div key={i} style={{ marginBottom: '10px', padding: '10px 12px', background: '#0a0f1a', borderRadius: '8px', border: '1px solid #334155' }}>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                                    <span style={{ fontSize: '11px', fontWeight: 700, color: '#475569' }}>Test Case {i + 1}</span>
+                                    <button onClick={() => removeTC(i)} style={{ background: '#ef444420', border: 'none', color: '#f87171', borderRadius: '6px', cursor: 'pointer', padding: '2px 8px', fontSize: '11px' }}><X size={11} style={{ verticalAlign: 'middle' }} /> Remove</button>
+                                </div>
+                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+                                    <div>
+                                        <label style={{ ...labelStyle, color: '#60a5fa' }}>Input (stdin) — one value per line</label>
+                                        <textarea
+                                            rows={3}
+                                            value={tc.input || ''}
+                                            onChange={e => setTC(i, 'input', e.target.value)}
+                                            placeholder={"e.g.:\n7\n1 2 3 4 5\n\n(each line = one stdin line)"}
+                                            style={{ ...inputStyle, fontFamily: 'ui-monospace,monospace', fontSize: '12px', resize: 'vertical' }}
+                                        />
+                                    </div>
+                                    <div>
+                                        <label style={{ ...labelStyle, color: '#4ade80' }}>Expected Output</label>
+                                        <textarea
+                                            rows={3}
+                                            value={tc.expected_output || ''}
+                                            onChange={e => setTC(i, 'expected_output', e.target.value)}
+                                            placeholder={"e.g.:\n2\n\n(exact program output)"}
+                                            style={{ ...inputStyle, fontFamily: 'ui-monospace,monospace', fontSize: '12px', resize: 'vertical' }}
+                                        />
+                                    </div>
+                                </div>
+                                <p style={{ margin: '5px 0 0', fontSize: '10px', color: '#475569' }}>
+                                    💡 Input must match exactly what the program reads from stdin — each value on its own line, just like the Example in the problem description.
+                                </p>
                             </div>
                         ))}
                     </div>

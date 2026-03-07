@@ -113,22 +113,24 @@ JSON array:`;
 Each problem: a short code snippet with a subtle bug that the candidate must fix.${topic ? `\nTopic: ${topic}` : ''}
 
 Return ONLY a JSON array. Each object:
-- "question": "Debug the following code to fix: [describe what it should do]"
+- "question": "Debug the following code to fix: [describe what it should do, include Example Input/Output matching test cases]"
 - "code_snippet": "the buggy code in Python (default language)"
 - "starter_code": same as code_snippet (candidate starts from buggy code)
 - "language": "Python"
-- "test_cases": array of {input, expected_output} — at least 2 test cases
+- "test_cases": array of {input, expected_output} — at least 2 test cases. CRITICAL: "input" must be raw stdin (newline-separated lines, NOT comma-separated). E.g. if program reads n then array: "3\\n1 2 3" not "3, 1, 2, 3".
 - "explanation": what the bug was and how to fix it
 
 JSON array:`
             : `Create ${count} ${difficulty} coding problems for ${companyName} first round.${topic ? `\nTopic: ${topic}` : ''}
 
 Return ONLY a JSON array. Each object:
-- "question": clear problem statement with examples
-- "starter_code": Python function template with TODOs
+- "question": clear problem statement. Include an Example section with the EXACT stdin lines shown (e.g. Input:\\n7\\n1 2 3 4 5\\nOutput:\\n2). Each example must match the test cases exactly.
+- "starter_code": Python function/main template that reads from stdin using input()
 - "language": "Python"
-- "test_cases": array of {input, expected_output} — at least 3 test cases
-- "explanation": approach and time complexity
+- "test_cases": array of {input, expected_output} — at least 3 test cases. CRITICAL: "input" must be raw stdin string exactly as a program reads it from standard input — multiple lines separated by \\n, NOT comma-separated. Example: if program reads n on line 1 and n numbers on line 2, input must be "5\\n1 2 3 4 5" (NOT "5, 1, 2, 3, 4, 5"). The problem's Example Input shown in "question" must EXACTLY match the first test case's "input" field.
+- "explanation": approach, time complexity, and example trace
+
+JSON array:
 
 JSON array:`;
 
@@ -692,7 +694,7 @@ function registerCompanyRoundRoutes(app, pool) {
     app.post('/api/crt/attempt/:aid/submit', async (req, res) => {
         try {
             const { aid } = req.params;
-            const { answers, proctoring_violations = [] } = req.body;
+            const { answers, proctoring_violations = [], section_time_spent = {} } = req.body;
             // answers format: { questionId: { student_answer, language?, code?, query? } }
 
             const [attempts] = await pool.query('SELECT * FROM crt_attempts WHERE id = ?', [aid]);
@@ -787,6 +789,7 @@ function registerCompanyRoundRoutes(app, pool) {
             for (const sec of Object.keys(sectionStats)) {
                 const s = sectionStats[sec];
                 s.score = s.total > 0 ? Math.round((s.correct / s.total) * 100) : 0;
+                s.time_spent = section_time_spent[sec] || 0;
             }
 
             // Compute overall score
@@ -804,7 +807,8 @@ function registerCompanyRoundRoutes(app, pool) {
                 overall_score: overallScore,
                 section_scores: sectionStats,
                 passed: overallScore >= passPercentage,
-                pass_percentage: passPercentage
+                pass_percentage: passPercentage,
+                section_time_spent
             });
         } catch (err) {
             console.error('Submit error:', err.message);
@@ -867,6 +871,25 @@ function registerCompanyRoundRoutes(app, pool) {
                 section_scores: safeParse(r.section_scores, {})
             })));
         } catch (err) { res.status(500).json({ error: err.message }); }
+    });
+
+    // Diagnostic: check which compilers are available on this server
+    app.get('/api/crt/diag/compilers', async (req, res) => {
+        const { execFile } = require('child_process');
+        const check = (cmd, args) => new Promise(resolve => {
+            execFile(cmd, args, { timeout: 5000 }, (err, stdout, stderr) => {
+                resolve({ available: !err || (!err.code && err.code !== 'ENOENT'), version: (stdout || stderr || err?.message || '').trim().split('\n')[0] });
+            });
+        });
+        const results = await Promise.all([
+            check('javac', ['-version']).then(r => ({ name: 'Java (javac)', ...r })),
+            check('python3', ['--version']).then(r => ({ name: 'Python3', ...r })),
+            check('python', ['--version']).then(r => ({ name: 'Python', ...r })),
+            check('node', ['--version']).then(r => ({ name: 'Node.js', ...r })),
+            check('gcc', ['--version']).then(r => ({ name: 'C (gcc)', ...r })),
+            check('g++', ['--version']).then(r => ({ name: 'C++ (g++)', ...r })),
+        ]);
+        res.json({ platform: process.platform, results });
     });
 
     console.log('✅ Company Round Test routes registered');
