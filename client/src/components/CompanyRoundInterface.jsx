@@ -1,5 +1,5 @@
 ﻿/**
- * CompanyRoundInterface.jsx â€” Student view for Company Round Tests
+ * CompanyRoundInterface.jsx — Student view for Company Round Tests
  * Supports: MCQ, Coding, Debugging, SQL sections with proctoring
  */
 import { useState, useEffect, useCallback, useRef } from 'react';
@@ -35,7 +35,7 @@ function authHeader() {
     return t ? { Authorization: `Bearer ${t}` } : {};
 }
 
-// â”€â”€â”€ Countdown Timer â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Countdown Timer ──────────────────────────────────────────────────────────
 function Timer({ totalSeconds, onExpire }) {
     const [remaining, setRemaining] = useState(totalSeconds);
     useEffect(() => {
@@ -60,7 +60,7 @@ function Timer({ totalSeconds, onExpire }) {
     );
 }
 
-// â”€â”€â”€ MCQ Question Component â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── MCQ Question Component ───────────────────────────────────────────────────
 function MCQQuestion({ question, index, answer, onChange }) {
     const letters = ['A', 'B', 'C', 'D'];
     return (
@@ -103,10 +103,22 @@ function MCQQuestion({ question, index, answer, onChange }) {
     );
 }
 
-// â”€â”€â”€ Coding/Debug Question Component â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Coding/Debug Question Component ──────────────────────────────────────────
+// ─── Per-language starter templates ─────────────────────────────────────────
+const LANG_TEMPLATES = {
+    'Python':     '# Write your Python code here\n\n',
+    'JavaScript': '// Write your JavaScript code here\n\n',
+    'Java':       '// Write your Java code here\npublic class Solution {\n    public static void main(String[] args) {\n        // Your code here\n    }\n}',
+    'C':          '// Write your C code here\n#include <stdio.h>\n\nint main() {\n    // Your code here\n    return 0;\n}',
+    'C++':        '// Write your C++ code here\n#include <iostream>\nusing namespace std;\n\nint main() {\n    // Your code here\n    return 0;\n}',
+};
+
 function CodingQuestion({ question, index, answer, onChange, attemptId, isDebug }) {
-    const [code, setCode] = useState(answer?.code || question.starter_code || '');
-    const [language, setLanguage] = useState(answer?.language || question.language || 'Python');
+    const initLang = answer?.language || question.language || 'Python';
+    const initCode = answer?.code || question.starter_code || LANG_TEMPLATES[initLang] || '';
+    const [code, setCode] = useState(initCode);
+    const [language, setLanguage] = useState(initLang);
+    const codeByLang = useRef({ [initLang]: initCode });
     const [isRunning, setIsRunning] = useState(false);
     const [outputSegments, setOutputSegments] = useState([]); // { text, type }
     const [customInput, setCustomInput] = useState(question.sample_input || '');
@@ -143,32 +155,43 @@ function CodingQuestion({ question, index, answer, onChange, attemptId, isDebug 
 
         let accOutput = '';
         let stdinPiped = false; // send customInput only once, after process actually starts
+        let earlyTimer = null;   // fires if no output at all (Python silent input())
+        let postRunTimer = null; // fires after compilation ends but program blocks on scanf/cin
 
         const pipeCustomInput = () => {
             if (stdinPiped || !customInput.trim()) return;
             stdinPiped = true;
-            // Send each line separately with small gap — handles multi-input programs
             const lines = customInput.replace(/\r\n/g, '\n').replace(/\r/g, '\n').split('\n');
             lines.forEach((line, idx) => {
                 setTimeout(() => socket.emit('run-stdin', line), idx * 40);
             });
         };
 
-        // Fallback for programs that immediately block on input() without printing anything first
-        // (e.g. Python: i = int(input())). Event-based approach won't trigger because there's no output.
-        // stdinPiped flag ensures this is a no-op if the event-based path already ran.
-        const fallbackTimer = setTimeout(pipeCustomInput, 1500);
+        // Initial 700ms fallback: handles Python input() with no print before it.
+        // Will be CANCELLED if 'info' events arrive (meaning C/C++/Java is compiling).
+        earlyTimer = setTimeout(pipeCustomInput, 700);
 
         const onOutput = ({ text, type }) => {
             if (type !== 'stdin') accOutput += text;
             setOutputSegments(prev => [...prev, { text, type: type || 'stdout' }]);
             scrollTerminal();
-            // After first REAL output (not "Compiling..." info), pipe customInput
-            // This handles C/C++/Java which compile first before running
-            if (type !== 'info') pipeCustomInput();
+            if (type === 'info') {
+                // Compilation in progress — cancel early timer (don't pipe during compile)
+                // and reset a post-compile timer (fires 1.5s after last 'info' message)
+                clearTimeout(earlyTimer);
+                earlyTimer = null;
+                clearTimeout(postRunTimer);
+                postRunTimer = setTimeout(pipeCustomInput, 1500);
+            } else {
+                // Real program output — program is running, pipe stdin immediately
+                clearTimeout(earlyTimer);
+                clearTimeout(postRunTimer);
+                pipeCustomInput();
+            }
         };
         const onExit = ({ allOutput: progOutput } = {}) => {
-            clearTimeout(fallbackTimer);
+            clearTimeout(earlyTimer);
+            clearTimeout(postRunTimer);
             socket.off('run-output', onOutput);
             socket.off('run-exit', onExit);
             setIsRunning(false);
@@ -244,12 +267,19 @@ function CodingQuestion({ question, index, answer, onChange, attemptId, isDebug 
                 </div>
             )}
 
-            {/* Toolbar â€” like ProctoredCodeEditor */}
+            {/* Toolbar — like ProctoredCodeEditor */}
             <div style={{ padding: '0.75rem 1rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #334155', background: '#1e293b' }}>
                 <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center' }}>
                     <label style={{ color: '#94a3b8', fontSize: '0.85rem' }}>Language:</label>
                     <select value={language}
-                        onChange={e => { const l = e.target.value; setLanguage(l); onChange({ code, language: l, student_answer: code }); }}
+                        onChange={e => {
+                            const l = e.target.value;
+                            codeByLang.current[language] = code;
+                            const newCode = codeByLang.current[l] ?? LANG_TEMPLATES[l] ?? '';
+                            setLanguage(l);
+                            setCode(newCode);
+                            onChange({ code: newCode, language: l, student_answer: newCode });
+                        }}
                         style={{ background: '#0f172a', color: '#f8fafc', border: '1px solid #334155', borderRadius: '6px', padding: '0.4rem 0.75rem', fontSize: '0.85rem', cursor: 'pointer', outline: 'none' }}>
                         {['Python', 'JavaScript', 'Java', 'C', 'C++'].map(l => <option key={l}>{l}</option>)}
                     </select>
@@ -279,7 +309,7 @@ function CodingQuestion({ question, index, answer, onChange, attemptId, isDebug 
                 options={{ minimap: { enabled: false }, fontSize: 14, lineNumbers: 'on', scrollBeyondLastLine: false, wordWrap: 'on', automaticLayout: true, padding: { top: 10, bottom: 10 }, fontFamily: 'ui-monospace,JetBrains Mono,monospace', renderLineHighlight: 'all', smoothScrolling: true }}
             />
 
-            {/* Output / Tab panel â€” exactly like ProctoredCodeEditor */}
+            {/* Output / Tab panel — exactly like ProctoredCodeEditor */}
             <div style={{
                 flex: terminalSize === 'maximized' ? '0 0 420px' : terminalSize === 'minimized' ? '0 0 36px' : '0 0 320px',
                 background: '#020617', borderTop: '1px solid #334155', display: 'flex', flexDirection: 'column', minHeight: 0,
@@ -311,7 +341,7 @@ function CodingQuestion({ question, index, answer, onChange, attemptId, isDebug 
                         </button>
                     ))}
                     <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '4px', paddingRight: '8px' }}>
-                        <button onClick={() => setTerminalSize(s => s === 'minimized' ? 'normal' : 'minimized')} title="Minimize" style={{ padding: '2px 8px', background: 'transparent', border: '1px solid #334155', borderRadius: '4px', color: '#475569', fontSize: '0.8rem', cursor: 'pointer', lineHeight: 1 }}>â”€</button>
+                        <button onClick={() => setTerminalSize(s => s === 'minimized' ? 'normal' : 'minimized')} title="Minimize" style={{ padding: '2px 8px', background: 'transparent', border: '1px solid #334155', borderRadius: '4px', color: '#475569', fontSize: '0.8rem', cursor: 'pointer', lineHeight: 1 }}>─</button>
                         <button onClick={() => setTerminalSize(s => s === 'maximized' ? 'normal' : 'maximized')} title="Maximize" style={{ padding: '2px 6px', background: 'transparent', border: '1px solid #334155', borderRadius: '4px', color: '#475569', fontSize: '0.7rem', cursor: 'pointer', lineHeight: 1 }}>{terminalSize === 'maximized' ? '⊡' : '⊞'}</button>
                     </div>
                 </div>
@@ -329,7 +359,7 @@ function CodingQuestion({ question, index, answer, onChange, attemptId, isDebug 
                     </div>
                 )}
 
-                {/* Output Tab â€” exact ProctoredCodeEditor terminal */}
+                {/* Output Tab — exact ProctoredCodeEditor terminal */}
                 {activeOutputTab === 'output' && (
                     <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0, background: '#090d18', borderTop: '1px solid #1e3a5f' }}>
                         {/* Terminal header bar */}
@@ -354,13 +384,13 @@ function CodingQuestion({ question, index, answer, onChange, attemptId, isDebug 
                                 )}
                                 {!isRunning && outputSegments.length > 0 && (
                                     <span style={{ fontSize: '0.68rem', fontWeight: 600, color: runResult ? (runResult.passed ? '#4ade80' : '#f87171') : '#64748b' }}>
-                                        {runResult ? (runResult.passed ? '✅ Accepted' : '❌ Wrong Answer') : 'â— Finished'}
+                                        {runResult ? (runResult.passed ? '✅ Accepted' : '❌ Wrong Answer') : '● Finished'}
                                     </span>
                                 )}
                                 {isRunning && (
-                                    <button onClick={stopRun} style={{ padding: '2px 8px', background: 'rgba(239,68,68,0.12)', border: '1px solid rgba(239,68,68,0.3)', borderRadius: '4px', color: '#f87171', fontSize: '0.68rem', fontWeight: 600, cursor: 'pointer' }}>â–  Stop</button>
+                                    <button onClick={stopRun} style={{ padding: '2px 8px', background: 'rgba(239,68,68,0.12)', border: '1px solid rgba(239,68,68,0.3)', borderRadius: '4px', color: '#f87171', fontSize: '0.68rem', fontWeight: 600, cursor: 'pointer' }}>■ Stop</button>
                                 )}
-                                <button onClick={() => setTerminalSize(s => s === 'minimized' ? 'normal' : 'minimized')} style={{ padding: '2px 7px', background: 'rgba(71,85,105,0.2)', border: '1px solid #334155', borderRadius: '4px', color: '#94a3b8', fontSize: '0.75rem', cursor: 'pointer', lineHeight: 1 }}>â”€</button>
+                                <button onClick={() => setTerminalSize(s => s === 'minimized' ? 'normal' : 'minimized')} style={{ padding: '2px 7px', background: 'rgba(71,85,105,0.2)', border: '1px solid #334155', borderRadius: '4px', color: '#94a3b8', fontSize: '0.75rem', cursor: 'pointer', lineHeight: 1 }}>─</button>
                                 <button onClick={() => setTerminalSize(s => s === 'maximized' ? 'normal' : 'maximized')} style={{ padding: '2px 6px', background: 'rgba(71,85,105,0.2)', border: '1px solid #334155', borderRadius: '4px', color: '#94a3b8', fontSize: '0.65rem', cursor: 'pointer', lineHeight: 1 }}>{terminalSize === 'maximized' ? '⊡' : '⊞'}</button>
                             </div>
                         </div>
@@ -372,7 +402,7 @@ function CodingQuestion({ question, index, answer, onChange, attemptId, isDebug 
                                     ? outputSegments.map((seg, i) => (
                                         <span key={i} style={{ color: seg.type === 'stdin' ? '#4ade80' : seg.type === 'stderr' ? '#fca5a5' : seg.type === 'info' ? '#475569' : '#e2e8f0' }}>{seg.text}</span>
                                     ))
-                                    : <span style={{ color: '#334155', fontStyle: 'italic' }}>â–¶ Click "Run Code" to execute your programâ€¦</span>
+                                    : <span style={{ color: '#334155', fontStyle: 'italic' }}>▶ Click "Run Code" to execute your program…</span>
                                 }
                                 {isRunning && <span style={{ display: 'inline-block', width: '8px', height: '1em', background: '#4ade80', marginLeft: '1px', verticalAlign: 'text-bottom', animation: 'blink 1s step-end infinite' }} />}
                             </div>
@@ -381,7 +411,7 @@ function CodingQuestion({ question, index, answer, onChange, attemptId, isDebug 
                         {/* Legend + verdict */}
                         {!isRunning && outputSegments.length > 0 && terminalSize !== 'minimized' && (
                             <div style={{ flexShrink: 0, padding: '3px 16px 5px', fontSize: '0.7rem', color: '#334155' }}>
-                                <span style={{ color: '#4ade80' }}>â–ˆ</span> = stdin &nbsp; <span style={{ color: '#fca5a5' }}>â–ˆ</span> = stderr &nbsp; <span style={{ color: '#475569' }}>â–ˆ</span> = compiler
+                                <span style={{ color: '#4ade80' }}>█</span> = stdin &nbsp; <span style={{ color: '#fca5a5' }}>█</span> = stderr &nbsp; <span style={{ color: '#475569' }}>█</span> = compiler
                             </div>
                         )}
                         {!isRunning && runResult && terminalSize !== 'minimized' && (
@@ -389,7 +419,7 @@ function CodingQuestion({ question, index, answer, onChange, attemptId, isDebug 
                                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: runResult.passed ? 0 : '8px' }}>
                                     <span style={{ fontSize: '1rem' }}>{runResult.passed ? '✅' : '❌'}</span>
                                     <span style={{ fontWeight: 700, fontSize: '0.88rem', color: runResult.passed ? '#4ade80' : '#f87171' }}>
-                                        {runResult.passed ? 'Accepted â€” Output matches expected!' : 'Wrong Answer â€” Output does not match'}
+                                        {runResult.passed ? 'Accepted — Output matches expected!' : 'Wrong Answer — Output does not match'}
                                     </span>
                                 </div>
                                 {!runResult.passed && (
@@ -401,7 +431,7 @@ function CodingQuestion({ question, index, answer, onChange, attemptId, isDebug 
                             </div>
                         )}
 
-                        {/* Interactive stdin bar â€” active when running */}
+                        {/* Interactive stdin bar — active when running */}
                         <div style={{ flexShrink: 0, borderTop: `2px solid ${isRunning ? '#16a34a' : '#1e293b'}`, background: isRunning ? '#051210' : '#0a0f1a', transition: 'border-color 0.2s, background 0.2s' }}>
                             {isRunning ? (
                                 <div style={{ display: 'flex', alignItems: 'center', padding: '0 12px', height: '42px', gap: '8px' }}>
@@ -440,7 +470,7 @@ function CodingQuestion({ question, index, answer, onChange, attemptId, isDebug 
                         )}
                         {runningTests && (
                             <div style={{ padding: '24px', textAlign: 'center', color: '#06b6d4', fontSize: '13px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
-                                <Loader2 size={15} className="spin" /> Running test casesâ€¦
+                                <Loader2 size={15} className="spin" /> Running test cases…
                             </div>
                         )}
                         {testResults.length > 0 && (
@@ -456,7 +486,7 @@ function CodingQuestion({ question, index, answer, onChange, attemptId, isDebug 
                                             <span style={{ fontWeight: 700, fontSize: '12px', color: res.passed ? '#4ade80' : '#f87171' }}>Test Case {i + 1}</span>
                                         </div>
                                         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', background: '#060a10' }}>
-                                            {[['Input', String(res.input ?? 'â€”'), '#94a3b8'], ['Expected', res.expected || 'â€”', '#4ade80'], ['Actual', res.actual || '(no output)', res.passed ? '#4ade80' : '#f87171']].map(([label, val, col]) => (
+                                            {[['Input', String(res.input ?? '—'), '#94a3b8'], ['Expected', res.expected || '—', '#4ade80'], ['Actual', res.actual || '(no output)', res.passed ? '#4ade80' : '#f87171']].map(([label, val, col]) => (
                                                 <div key={label} style={{ padding: '8px 11px', borderRight: '1px solid #1e293b' }}>
                                                     <div style={{ fontSize: '10px', color: '#475569', fontWeight: 700, textTransform: 'uppercase', marginBottom: '4px' }}>{label}</div>
                                                     <code style={{ fontSize: '11.5px', color: col, fontFamily: 'ui-monospace,monospace', whiteSpace: 'pre-wrap' }}>{val}</code>
@@ -474,7 +504,7 @@ function CodingQuestion({ question, index, answer, onChange, attemptId, isDebug 
     );
 }
 
-// â”€â”€â”€ SQL Question Component â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── SQL Question Component ───────────────────────────────────────────────────
 function SQLQuestion({ question, index, answer, onChange, attemptId }) {
     const [query, setQuery] = useState(answer?.query || '-- Write your SQL query here\nSELECT * FROM table_name;\n');
     const [sqlTool, setSqlTool] = useState('validator'); // 'validator' | 'visualizer' | 'debugger'
@@ -570,7 +600,7 @@ function SQLQuestion({ question, index, answer, onChange, attemptId }) {
     );
 }
 
-// â”€â”€â”€ Report view â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Report view ─────────────────────────────────────────────────────────────
 function ReportView({ result, test, onClose }) {
     const { overall_score, section_scores, passed, pass_percentage, proctoring_violations } = result;
     const sections = test?.sections || [];
@@ -596,7 +626,7 @@ function ReportView({ result, test, onClose }) {
                     </div>
                     <h2 style={{ margin: '0 0 0.25rem', color: 'white', fontSize: '1.5rem', fontWeight: 800 }}>{passed ? '🎉 Congratulations!' : 'Test Completed'}</h2>
                     <p style={{ margin: '0 0 0.5rem', color: 'rgba(255,255,255,0.6)', fontSize: '0.9rem' }}>
-                        {test?.company_name} â€” {test?.title}
+                        {test?.company_name} — {test?.title}
                     </p>
                     <p style={{ margin: 0, color: 'rgba(255,255,255,0.5)', fontSize: '0.82rem' }}>
                         {passed ? 'You have successfully passed the assessment!' : `Keep practicing! Pass mark is ${pass_percentage}%`}
@@ -672,7 +702,7 @@ function ReportView({ result, test, onClose }) {
                 {/* Footer */}
                 <div style={{ padding: '1rem 2rem', borderTop: '1px solid rgba(139,92,246,0.15)', display: 'flex', justifyContent: 'center', background: 'rgba(15,23,42,0.5)' }}>
                     <button onClick={onClose} style={{ padding: '0.85rem 2.5rem', background: 'linear-gradient(135deg, #6366f1, #8b5cf6)', border: 'none', borderRadius: '12px', color: 'white', fontWeight: 700, fontSize: '1rem', cursor: 'pointer', boxShadow: '0 4px 14px rgba(99,102,241,0.4)' }}>
-                        â† Back to Tests
+                        ← Back to Tests
                     </button>
                 </div>
             </div>
@@ -680,9 +710,9 @@ function ReportView({ result, test, onClose }) {
     );
 }
 
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+// ═══════════════════════════════════════════════════════════════════════════════
 //  MAIN STUDENT COMPONENT
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+// ═══════════════════════════════════════════════════════════════════════════════
 export default function CompanyRoundInterface({ user }) {
     const [view, setView] = useState('list'); // 'list' | 'test' | 'report'
     const [tests, setTests] = useState([]);
@@ -768,7 +798,7 @@ export default function CompanyRoundInterface({ user }) {
         return () => clearInterval(tid);
     }, [activeSection, testData, sectionTimeLeft[activeSection]]);
 
-    // â”€â”€ Proctoring setup â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ── Proctoring setup ─────────────────────────────────────────────────────
     const setupProctoring = useCallback((config) => {
         if (!config?.enabled) return;
         const addViolation = (msg) => {
@@ -797,7 +827,7 @@ export default function CompanyRoundInterface({ user }) {
             document.addEventListener('cut', handlers.cut);
         }
 
-        // Fullscreen â€” always force, regardless of config flag
+        // Fullscreen — always force, regardless of config flag
         if (document.documentElement.requestFullscreen) {
             document.documentElement.requestFullscreen().catch(() => {});
         }
@@ -875,7 +905,7 @@ export default function CompanyRoundInterface({ user }) {
         setSubmitting(false);
     };
 
-    // â”€â”€ Render: Test list â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ── Render: Test list ─────────────────────────────────────────────────────
     if (view === 'list') {
         return (
             <div style={{ padding: '24px', maxWidth: '900px', margin: '0 auto' }}>
@@ -893,7 +923,7 @@ export default function CompanyRoundInterface({ user }) {
                 {loading ? (
                     <div style={{ textAlign: 'center', padding: '60px' }}>
                         <div style={{ width: '36px', height: '36px', border: '3px solid #334155', borderTopColor: '#3b82f6', borderRadius: '50%', animation: 'spin 0.8s linear infinite', margin: '0 auto 10px' }} />
-                        <p style={{ color: '#64748b' }}>Loading testsâ€¦</p>
+                        <p style={{ color: '#64748b' }}>Loading tests…</p>
                     </div>
                 ) : tests.length === 0 ? (
                     <div style={{ textAlign: 'center', padding: '72px 40px', background: '#1e293b', borderRadius: '18px', border: '2px dashed #334155' }}>
@@ -928,7 +958,7 @@ export default function CompanyRoundInterface({ user }) {
                                                 <span style={{ color: '#64748b', display: 'flex', gap: '4px', alignItems: 'center' }}><FileText size={12} /> {test.total_questions || 0} questions</span>
                                                 <span style={{ color: '#64748b', display: 'flex', gap: '4px', alignItems: 'center' }}><Target size={12} /> Pass {test.pass_percentage}%</span>
                                                 <span style={{ color: '#64748b', display: 'flex', gap: '4px', alignItems: 'center' }}><Shield size={12} /> {test.proctoring_config?.enabled ? 'Proctored' : 'No proctoring'}</span>
-                                                <span style={{ color: '#64748b' }}>Attempts: {test.my_attempts}/{test.max_attempts === 0 ? 'âˆž' : test.max_attempts}</span>
+                                                <span style={{ color: '#64748b' }}>Attempts: {test.my_attempts}/{test.max_attempts === 0 ? '∞' : test.max_attempts}</span>
                                             </div>
                                         </div>
 
@@ -947,7 +977,7 @@ export default function CompanyRoundInterface({ user }) {
         );
     }
 
-    // â”€â”€ Render: Report â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ── Render: Report ────────────────────────────────────────────────────────
     if (view === 'report') {
         return (
             <>
@@ -957,7 +987,7 @@ export default function CompanyRoundInterface({ user }) {
         );
     }
 
-    // â”€â”€ Render: Active Test â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ── Render: Active Test ───────────────────────────────────────────────────
     if (view === 'test' && testData) {
         const { test, questionsBySection, attemptId } = testData;
         const sectionDef = SECTIONS[activeSection];
@@ -1006,12 +1036,12 @@ export default function CompanyRoundInterface({ user }) {
                             <Building2 size={18} color="white" />
                         </div>
                         <div>
-                            <h3 style={{ margin: 0, fontSize: '15px', fontWeight: 800, color: '#f1f5f9' }}>{test.company_name} â€” {test.title}</h3>
+                            <h3 style={{ margin: 0, fontSize: '15px', fontWeight: 800, color: '#f1f5f9' }}>{test.company_name} — {test.title}</h3>
                             <p style={{ margin: 0, fontSize: '11px', color: '#64748b' }}>{totalAnswered}/{totalQ} questions answered</p>
                         </div>
                     </div>
                     <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
-                        <Timer totalSeconds={test.duration_minutes * 60} onExpire={() => { showToast('⏰ Time up! Auto-submittingâ€¦'); setTimeout(() => submitTest(true), 1000); }} />
+                        <Timer totalSeconds={test.duration_minutes * 60} onExpire={() => { showToast('⏰ Time up! Auto-submitting…'); setTimeout(() => submitTest(true), 1000); }} />
                         {violations.length > 0 && (
                             <span style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '12px', fontWeight: 700, color: '#f59e0b', padding: '4px 10px', background: '#f59e0b15', borderRadius: '8px', border: '1px solid #f59e0b30' }}>
                                 <AlertTriangle size={13} /> {violations.length} violation{violations.length !== 1 ? 's' : ''}
@@ -1037,7 +1067,7 @@ export default function CompanyRoundInterface({ user }) {
                         <button onClick={() => submitTest(false)} disabled={submitting}
                             style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '8px 20px', background: submitting ? '#475569' : 'linear-gradient(135deg, #22c55e, #16a34a)', border: 'none', borderRadius: '10px', color: '#fff', fontWeight: 700, fontSize: '13px', cursor: submitting ? 'not-allowed' : 'pointer', boxShadow: '0 2px 8px rgba(34,197,94,0.25)' }}>
                             {submitting ? <Loader2 size={14} className="spin" /> : <Check size={14} />}
-                            {submitting ? 'Submittingâ€¦' : 'Submit Test'}
+                            {submitting ? 'Submitting…' : 'Submit Test'}
                         </button>
                     </div>
                 </div>
@@ -1156,7 +1186,7 @@ export default function CompanyRoundInterface({ user }) {
                                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: '18px', gap: '10px' }}>
                                         <button onClick={() => setCurrentQIdx(i => Math.max(0, i - 1))} disabled={isFirst}
                                             style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '9px 20px', background: isFirst ? '#1e293b' : 'rgba(99,102,241,0.15)', border: `1px solid ${isFirst ? '#334155' : '#6366f1'}`, borderRadius: '10px', color: isFirst ? '#475569' : '#a5b4fc', fontWeight: 700, fontSize: '13px', cursor: isFirst ? 'not-allowed' : 'pointer', transition: 'all 0.15s' }}>
-                                            â† Previous
+                                            ← Previous
                                         </button>
 
                                         <span style={{ fontSize: '12px', color: '#64748b', fontWeight: 600 }}>
@@ -1166,7 +1196,7 @@ export default function CompanyRoundInterface({ user }) {
                                         {!isLast ? (
                                             <button onClick={() => setCurrentQIdx(i => Math.min(currentQs.length - 1, i + 1))}
                                                 style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '9px 20px', background: 'rgba(99,102,241,0.15)', border: '1px solid #6366f1', borderRadius: '10px', color: '#a5b4fc', fontWeight: 700, fontSize: '13px', cursor: 'pointer', transition: 'all 0.15s' }}>
-                                                Next â†’
+                                                Next →
                                             </button>
                                         ) : !isLastSection ? (
                                             <button onClick={() => {
@@ -1175,12 +1205,12 @@ export default function CompanyRoundInterface({ user }) {
                                                 else showToast('Complete this section first');
                                             }}
                                                 style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '9px 20px', background: 'rgba(34,197,94,0.15)', border: '1px solid #22c55e', borderRadius: '10px', color: '#4ade80', fontWeight: 700, fontSize: '13px', cursor: 'pointer', transition: 'all 0.15s' }}>
-                                                Next Section â†’
+                                                Next Section →
                                             </button>
                                         ) : (
                                             <button onClick={() => submitTest(false)} disabled={submitting}
                                                 style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '9px 20px', background: submitting ? '#475569' : 'linear-gradient(135deg,#22c55e,#16a34a)', border: 'none', borderRadius: '10px', color: '#fff', fontWeight: 700, fontSize: '13px', cursor: submitting ? 'not-allowed' : 'pointer' }}>
-                                                {submitting ? <><Loader2 size={13} className="spin" /> Submittingâ€¦</> : <><Check size={13} /> Submit Test</>}
+                                                {submitting ? <><Loader2 size={13} className="spin" /> Submitting…</> : <><Check size={13} /> Submit Test</>}
                                             </button>
                                         )}
                                     </div>
@@ -1193,7 +1223,7 @@ export default function CompanyRoundInterface({ user }) {
                             <span style={{ fontSize: '12px', color: '#94a3b8' }}>{totalAnswered}/{totalQ} answered across all sections</span>
                             <button onClick={() => submitTest(false)} disabled={submitting}
                                 style={{ padding: '9px 24px', background: submitting ? '#475569' : 'linear-gradient(135deg, #22c55e, #16a34a)', border: 'none', borderRadius: '10px', color: '#fff', fontWeight: 700, fontSize: '13px', cursor: submitting ? 'not-allowed' : 'pointer', display: 'inline-flex', alignItems: 'center', gap: '7px' }}>
-                                {submitting ? <><Loader2 size={14} className="spin" /> Submittingâ€¦</> : <><Check size={14} /> Submit Test</>}
+                                {submitting ? <><Loader2 size={14} className="spin" /> Submitting…</> : <><Check size={14} /> Submit Test</>}
                             </button>
                         </div>
                     </div>
