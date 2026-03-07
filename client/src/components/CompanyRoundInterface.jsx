@@ -60,45 +60,138 @@ function Timer({ totalSeconds, onExpire }) {
     );
 }
 
+// ─── Description Renderer ─────────────────────────────────────────────────────
+// Renders markdown-like problem descriptions: **bold**, `inline code`,
+// ```code blocks```, and labels like Input: / Output: / Example: / Constraints:
+function DescriptionRenderer({ text = '' }) {
+    if (!text) return null;
+
+    const renderInline = (raw) => {
+        // Replace **bold** and `code` with HTML
+        return raw
+            .replace(/\*\*(.+?)\*\*/g, '<strong style="color:#f1f5f9;font-weight:700">$1</strong>')
+            .replace(/\*(.+?)\*/g, '<em style="color:#cbd5e1">$1</em>')
+            .replace(/`([^`]+)`/g, '<code style="background:#1e293b;padding:2px 6px;border-radius:4px;color:#67e8f9;font-family:ui-monospace,monospace;font-size:12.5px">$1</code>');
+    };
+
+    // Split on fenced code blocks ```...```
+    const parts = text.split(/(```[\s\S]*?```)/g);
+
+    return (
+        <div style={{ fontSize: '14px', lineHeight: '1.8', color: '#94a3b8' }}>
+            {parts.map((part, pi) => {
+                if (part.startsWith('```')) {
+                    const body = part.replace(/^```\w*\n?/, '').replace(/```$/, '');
+                    return (
+                        <pre key={pi} style={{ margin: '10px 0', padding: '12px 16px', background: '#0d1117', border: '1px solid #1e3a5f', borderRadius: '8px', fontFamily: 'ui-monospace,JetBrains Mono,monospace', fontSize: '13px', color: '#a5f3fc', overflowX: 'auto', lineHeight: 1.7, whiteSpace: 'pre' }}>{body}</pre>
+                    );
+                }
+                return part.split('\n').map((line, li) => {
+                    const trimmed = line.trim();
+                    const isLabel = /^(Input|Output|Explanation|Note|Constraints|Example\s*\d*|Sample Input|Sample Output):?/i.test(trimmed);
+                    const isEmpty = trimmed === '';
+                    return (
+                        <div key={`${pi}-${li}`}
+                            style={{
+                                marginBottom: isEmpty ? '0.5rem' : '2px',
+                                color: isLabel ? '#38bdf8' : undefined,
+                                fontWeight: isLabel ? 700 : undefined,
+                                borderLeft: isLabel ? '3px solid #38bdf840' : undefined,
+                                paddingLeft: isLabel ? '10px' : undefined,
+                                marginTop: isLabel ? '10px' : undefined,
+                            }}
+                            dangerouslySetInnerHTML={{ __html: isEmpty ? '&nbsp;' : renderInline(line) }}
+                        />
+                    );
+                });
+            })}
+        </div>
+    );
+}
+
 // ─── MCQ Question Component ───────────────────────────────────────────────────
 function MCQQuestion({ question, index, answer, onChange }) {
-    const letters = ['A', 'B', 'C', 'D'];
+    const letters = ['A', 'B', 'C', 'D', 'E'];
+    const [hovered, setHovered] = useState(null);
     return (
-        <div style={{ background: '#0a0f1a', borderRadius: '14px', border: '1px solid #1e293b', overflow: 'hidden' }}>
+        <div style={{ background: 'linear-gradient(180deg,#0d1424 0%,#0a0f1a 100%)', borderRadius: '16px', border: '1px solid #1e293b', overflow: 'hidden', boxShadow: '0 4px 24px rgba(0,0,0,0.35)' }}>
             {/* Question header */}
-            <div style={{ padding: '14px 18px', background: 'linear-gradient(135deg,rgba(30,41,59,0.9),rgba(15,23,42,0.95))', borderBottom: '1px solid #1e293b', display: 'flex', gap: '10px', alignItems: 'flex-start' }}>
-                <span style={{ background: 'linear-gradient(135deg,#3b82f6,#2563eb)', color: '#fff', borderRadius: '7px', padding: '3px 9px', fontSize: '11px', fontWeight: 800, flexShrink: 0 }}>Q{index + 1}</span>
-                <p style={{ margin: 0, color: '#e2e8f0', fontSize: '14px', lineHeight: '1.65', whiteSpace: 'pre-wrap', flex: 1 }}>{question.question}</p>
+            <div style={{ padding: '16px 20px 14px', background: 'linear-gradient(135deg,rgba(30,41,59,0.95),rgba(15,23,42,0.98))', borderBottom: '1px solid #1e293b' }}>
+                <div style={{ display: 'flex', gap: '12px', alignItems: 'flex-start' }}>
+                    <div style={{ background: 'linear-gradient(135deg,#3b82f6,#6366f1)', color: '#fff', borderRadius: '8px', padding: '4px 11px', fontSize: '11px', fontWeight: 800, flexShrink: 0, letterSpacing: '0.03em', boxShadow: '0 2px 8px rgba(99,102,241,0.4)' }}>Q{index + 1}</div>
+                    <div style={{ flex: 1 }}>
+                        <DescriptionRenderer text={question.question} />
+                    </div>
+                </div>
             </div>
+
             {/* Code snippet */}
             {question.code_snippet && (
-                <div style={{ padding: '12px 16px', background: '#060a10', borderBottom: '1px solid #1e293b' }}>
-                    <pre style={{ margin: 0, padding: '12px 14px', background: '#0d1117', border: '1px solid #1e293b', borderRadius: '8px', fontFamily: 'ui-monospace,monospace', fontSize: '13px', color: '#a5f3fc', whiteSpace: 'pre-wrap', overflowX: 'auto', lineHeight: 1.65 }}>{question.code_snippet}</pre>
+                <div style={{ padding: '14px 20px', background: '#060d18', borderBottom: '1px solid #1e293b' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '8px' }}>
+                        <Code size={12} color="#475569" />
+                        <span style={{ fontSize: '10px', fontWeight: 700, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.08em' }}>Code Snippet</span>
+                    </div>
+                    <pre style={{ margin: 0, padding: '12px 16px', background: '#0d1117', border: '1px solid #1e3a5f', borderRadius: '10px', fontFamily: 'ui-monospace,JetBrains Mono,monospace', fontSize: '13px', color: '#a5f3fc', whiteSpace: 'pre-wrap', overflowX: 'auto', lineHeight: 1.7 }}>{question.code_snippet}</pre>
                 </div>
             )}
+
             {/* Options */}
-            <div style={{ padding: '16px 18px', display: 'flex', flexDirection: 'column', gap: '9px' }}>
+            <div style={{ padding: '16px 20px 18px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
                 {(question.options || []).map((opt, oi) => {
                     const letter = letters[oi];
                     const selected = answer === letter;
+                    const isHov = hovered === letter && !selected;
                     return (
-                        <label key={oi} onClick={() => onChange(letter)}
-                            style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '11px 16px', borderRadius: '10px', cursor: 'pointer', background: selected ? 'rgba(99,102,241,0.12)' : 'rgba(15,23,42,0.6)', border: `2px solid ${selected ? '#6366f1' : '#1e293b'}`, transition: 'all 0.15s', outline: 'none' }}>
-                            <div style={{ width: 22, height: 22, borderRadius: '50%', border: `2px solid ${selected ? '#6366f1' : '#334155'}`, background: selected ? '#6366f1' : 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, transition: 'all 0.15s' }}>
-                                {selected && <Check size={12} color="white" />}
+                        <label key={oi}
+                            onClick={() => onChange(letter)}
+                            onMouseEnter={() => setHovered(letter)}
+                            onMouseLeave={() => setHovered(null)}
+                            style={{
+                                display: 'flex', alignItems: 'center', gap: '14px',
+                                padding: '12px 17px', borderRadius: '12px', cursor: 'pointer',
+                                background: selected
+                                    ? 'linear-gradient(135deg,rgba(99,102,241,0.18),rgba(59,130,246,0.12))'
+                                    : isHov ? 'rgba(99,102,241,0.07)' : 'rgba(15,23,42,0.5)',
+                                border: `2px solid ${selected ? '#6366f1' : isHov ? '#334155' : '#1e293b'}`,
+                                transition: 'all 0.15s', outline: 'none',
+                                boxShadow: selected ? '0 0 0 1px rgba(99,102,241,0.25) inset' : 'none',
+                            }}>
+                            {/* Letter badge */}
+                            <div style={{
+                                width: 30, height: 30, borderRadius: '8px', flexShrink: 0,
+                                background: selected ? 'linear-gradient(135deg,#6366f1,#4f46e5)' : isHov ? 'rgba(99,102,241,0.15)' : '#0f172a',
+                                border: `2px solid ${selected ? '#6366f1' : '#334155'}`,
+                                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                transition: 'all 0.15s',
+                                boxShadow: selected ? '0 2px 8px rgba(99,102,241,0.4)' : 'none',
+                            }}>
+                                {selected
+                                    ? <Check size={14} color="white" />
+                                    : <span style={{ fontSize: '12px', fontWeight: 800, color: isHov ? '#a5b4fc' : '#475569', fontFamily: 'monospace' }}>{letter}</span>
+                                }
                             </div>
-                            <span style={{ fontSize: '13px', fontWeight: 700, color: '#475569', fontFamily: 'monospace', flexShrink: 0, width: '18px' }}>{letter}</span>
-                            <span style={{ fontWeight: selected ? 600 : 400, color: selected ? '#c7d2fe' : '#94a3b8', fontSize: '14px', flex: 1 }}>{opt}</span>
+                            <span style={{
+                                fontWeight: selected ? 600 : 400,
+                                color: selected ? '#e0e7ff' : isHov ? '#c7d2fe' : '#94a3b8',
+                                fontSize: '14px', flex: 1, lineHeight: 1.55,
+                                transition: 'color 0.12s',
+                            }}>{opt}</span>
+                            {selected && (
+                                <span style={{ fontSize: '10px', fontWeight: 700, color: '#818cf8', padding: '2px 8px', background: 'rgba(99,102,241,0.2)', borderRadius: '6px', flexShrink: 0 }}>Selected</span>
+                            )}
                         </label>
                     );
                 })}
             </div>
-            {!answer && (
-                <div style={{ padding: '8px 18px 14px', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                    <AlertTriangle size={12} color="#f59e0b" />
-                    <span style={{ fontSize: '11px', color: '#78716c', fontWeight: 600 }}>Not answered yet</span>
-                </div>
-            )}
+
+            {/* Status bar */}
+            <div style={{ padding: '8px 20px 12px', display: 'flex', alignItems: 'center', gap: '6px', borderTop: '1px solid #0f172a' }}>
+                {answer
+                    ? <><CheckCircle2 size={12} color="#22c55e" /><span style={{ fontSize: '11px', color: '#4ade80', fontWeight: 600 }}>Answered — Option {answer}</span></>
+                    : <><AlertTriangle size={12} color="#f59e0b" /><span style={{ fontSize: '11px', color: '#78716c', fontWeight: 600 }}>Not answered yet — select an option above</span></>
+                }
+            </div>
         </div>
     );
 }
@@ -128,6 +221,7 @@ function CodingQuestion({ question, index, answer, onChange, attemptId, isDebug 
     const [activeOutputTab, setActiveOutputTab] = useState('output'); // 'input' | 'output' | 'tests'
     const [terminalSize, setTerminalSize] = useState('normal'); // 'normal' | 'minimized' | 'maximized'
     const [runResult, setRunResult] = useState(null); // { actual, expected, passed }
+    const [descOpen, setDescOpen] = useState(true); // collapsible description panel
     const terminalRef = useRef(null);
 
     const LANG_MAP = { Python: 'python', JavaScript: 'javascript', Java: 'java', C: 'c', 'C++': 'cpp' };
@@ -253,10 +347,41 @@ function CodingQuestion({ question, index, answer, onChange, attemptId, isDebug 
 
     return (
         <div style={{ display: 'flex', flexDirection: 'column', background: '#0a0f1a', borderRadius: '14px', border: '1px solid #1e293b', overflow: 'hidden' }}>
-            {/* Question header */}
-            <div style={{ padding: '14px 18px', background: 'linear-gradient(135deg,rgba(30,41,59,0.9),rgba(15,23,42,0.95))', borderBottom: '1px solid #1e293b', display: 'flex', gap: '10px', alignItems: 'flex-start' }}>
-                <span style={{ background: 'linear-gradient(135deg,#6366f1,#4f46e5)', color: '#fff', borderRadius: '7px', padding: '3px 9px', fontSize: '11px', fontWeight: 800, flexShrink: 0 }}>{isDebug ? '🐛' : '💻'} Q{index + 1}</span>
-                <p style={{ margin: 0, color: '#e2e8f0', fontSize: '14px', lineHeight: '1.65', whiteSpace: 'pre-wrap', flex: 1 }}>{question.question}</p>
+            {/* ── Description Panel ──────────────────────────────────────────── */}
+            <div style={{ background: 'linear-gradient(135deg,rgba(30,41,59,0.95),rgba(15,23,42,0.98))', borderBottom: descOpen ? '1px solid #1e293b' : '1px solid transparent' }}>
+                {/* Header bar — always visible */}
+                <div
+                    onClick={() => setDescOpen(o => !o)}
+                    style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '12px 18px', cursor: 'pointer', userSelect: 'none' }}>
+                    <span style={{ background: `linear-gradient(135deg,${isDebug ? '#ef4444' : '#6366f1'},${isDebug ? '#dc2626' : '#4f46e5'})`, color: '#fff', borderRadius: '8px', padding: '4px 11px', fontSize: '11px', fontWeight: 800, flexShrink: 0, boxShadow: `0 2px 8px ${isDebug ? 'rgba(239,68,68,0.4)' : 'rgba(99,102,241,0.4)'}` }}>{isDebug ? '🐛' : '💻'} Q{index + 1}</span>
+                    <span style={{ flex: 1, fontSize: '13px', fontWeight: 600, color: '#cbd5e1', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: descOpen ? 'normal' : 'nowrap' }}>
+                        {descOpen ? 'Problem Description' : (question.question || '').split('\n')[0].slice(0, 120)}
+                    </span>
+                    <button title={descOpen ? 'Collapse description' : 'Expand description'}
+                        style={{ background: 'rgba(99,102,241,0.12)', border: '1px solid rgba(99,102,241,0.25)', borderRadius: '6px', color: '#818cf8', padding: '3px 10px', fontSize: '12px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px', fontWeight: 600 }}>
+                        {descOpen ? <><ChevronUp size={13} /> Hide</> : <><ChevronDown size={13} /> Show</>}
+                    </button>
+                </div>
+                {/* Collapsible description body */}
+                {descOpen && (
+                    <div style={{ padding: '0 18px 16px', maxHeight: '340px', overflowY: 'auto' }}>
+                        <DescriptionRenderer text={question.question} />
+                        {/* Test case examples inline */}
+                        {(question.test_cases || []).filter((_, i) => i < 2).map((tc, i) => (
+                            <div key={i} style={{ marginTop: '12px', borderRadius: '10px', overflow: 'hidden', border: '1px solid #1e3a5f' }}>
+                                <div style={{ padding: '5px 12px', background: 'rgba(99,102,241,0.1)', fontSize: '11px', fontWeight: 700, color: '#818cf8', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Example {i + 1}</div>
+                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', background: '#060d18' }}>
+                                    {[['Input', String(tc.input ?? '')], ['Expected Output', String(tc.expected_output ?? '')]].map(([label, val]) => (
+                                        <div key={label} style={{ padding: '10px 14px', borderRight: label === 'Input' ? '1px solid #1e293b' : 'none' }}>
+                                            <div style={{ fontSize: '10px', color: '#475569', fontWeight: 700, textTransform: 'uppercase', marginBottom: '5px' }}>{label}</div>
+                                            <code style={{ fontSize: '12.5px', color: label === 'Input' ? '#94a3b8' : '#4ade80', fontFamily: 'ui-monospace,monospace', whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>{val || '—'}</code>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                )}
             </div>
 
             {/* Buggy code for debug mode */}
@@ -509,16 +634,34 @@ function SQLQuestion({ question, index, answer, onChange, attemptId }) {
     const [query, setQuery] = useState(answer?.query || '-- Write your SQL query here\nSELECT * FROM table_name;\n');
     const [sqlTool, setSqlTool] = useState('validator'); // 'validator' | 'visualizer' | 'debugger'
     const [schemaOpen, setSchemaOpen] = useState(false);
+    const [descOpen, setDescOpen] = useState(true); // collapsible description panel
 
     const handleChange = v => { setQuery(v); onChange({ query: v, student_answer: v }); };
     const schema = question.sql_schema || question.sqlSchema || '';
 
     return (
         <div style={{ display: 'flex', flexDirection: 'column', background: '#0a0f1a', borderRadius: '14px', border: '1px solid #1e293b', overflow: 'hidden' }}>
-            {/* Question header */}
-            <div style={{ padding: '14px 18px', background: 'linear-gradient(135deg,rgba(30,41,59,0.9),rgba(15,23,42,0.95))', borderBottom: '1px solid #1e293b', display: 'flex', gap: '10px', alignItems: 'flex-start' }}>
-                <span style={{ background: 'linear-gradient(135deg,#14b8a6,#0d9488)', color: '#fff', borderRadius: '7px', padding: '3px 9px', fontSize: '11px', fontWeight: 800, flexShrink: 0 }}>🗄 Q{index + 1}</span>
-                <p style={{ margin: 0, color: '#e2e8f0', fontSize: '14px', lineHeight: '1.65', flex: 1 }}>{question.question}</p>
+            {/* ── Description Panel ──────────────────────────────────────────── */}
+            <div style={{ background: 'linear-gradient(135deg,rgba(30,41,59,0.95),rgba(15,23,42,0.98))', borderBottom: descOpen ? '1px solid #1e293b' : '1px solid transparent' }}>
+                {/* Header bar — always visible */}
+                <div
+                    onClick={() => setDescOpen(o => !o)}
+                    style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '12px 18px', cursor: 'pointer', userSelect: 'none' }}>
+                    <span style={{ background: 'linear-gradient(135deg,#14b8a6,#0d9488)', color: '#fff', borderRadius: '8px', padding: '4px 11px', fontSize: '11px', fontWeight: 800, flexShrink: 0, boxShadow: '0 2px 8px rgba(20,184,166,0.4)' }}>🗄 Q{index + 1}</span>
+                    <span style={{ flex: 1, fontSize: '13px', fontWeight: 600, color: '#cbd5e1', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: descOpen ? 'normal' : 'nowrap' }}>
+                        {descOpen ? 'Problem Description' : (question.question || '').split('\n')[0].slice(0, 120)}
+                    </span>
+                    <button title={descOpen ? 'Collapse description' : 'Expand description'}
+                        style={{ background: 'rgba(20,184,166,0.12)', border: '1px solid rgba(20,184,166,0.25)', borderRadius: '6px', color: '#2dd4bf', padding: '3px 10px', fontSize: '12px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px', fontWeight: 600 }}>
+                        {descOpen ? <><ChevronUp size={13} /> Hide</> : <><ChevronDown size={13} /> Show</>}
+                    </button>
+                </div>
+                {/* Collapsible description body */}
+                {descOpen && (
+                    <div style={{ padding: '0 18px 16px', maxHeight: '300px', overflowY: 'auto' }}>
+                        <DescriptionRenderer text={question.question} />
+                    </div>
+                )}
             </div>
 
             {/* Schema — button always visible, popup on click */}
@@ -601,14 +744,27 @@ function SQLQuestion({ question, index, answer, onChange, attemptId }) {
 }
 
 // ─── Report view ─────────────────────────────────────────────────────────────
+// Format seconds → "Xm Ys" display
+function fmtDuration(secs) {
+    if (!secs || secs <= 0) return '—';
+    const m = Math.floor(secs / 60);
+    const s = secs % 60;
+    return m > 0 ? `${m}m ${s}s` : `${s}s`;
+}
+
 function ReportView({ result, test, onClose }) {
-    const { overall_score, section_scores, passed, pass_percentage, proctoring_violations } = result;
+    const { overall_score, section_scores, passed, pass_percentage, proctoring_violations, section_time_spent } = result;
     const sections = test?.sections || [];
     const violations = (() => { try { return JSON.parse(proctoring_violations || '[]'); } catch { return []; } })();
 
     // Tally correct/total across all sections
     const totalCorrect = sections.reduce((s, sec) => s + (section_scores?.[sec]?.correct || 0), 0);
     const totalQs = sections.reduce((s, sec) => s + (section_scores?.[sec]?.total || 0), 0);
+
+    // Time spent analysis
+    const timeSpent = section_time_spent || {};
+    const totalTimeSecs = sections.reduce((s, sec) => s + (timeSpent[sec] || 0), 0);
+    const maxTime = Math.max(...sections.map(sec => timeSpent[sec] || 0), 1);
 
     return (
         <div style={{ position: 'fixed', inset: 0, background: 'linear-gradient(135deg, #0f172a 0%, #1e293b 100%)', zIndex: 99999, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '2rem', overflow: 'auto' }}>
@@ -682,6 +838,40 @@ function ReportView({ result, test, onClose }) {
                         </>
                     )}
 
+                    {/* Section Time Spent Analysis */}
+                    {totalTimeSecs > 0 && (
+                        <>
+                            <h3 style={{ margin: '0 0 0.75rem', color: 'white', fontSize: '1rem', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                <Clock size={17} color="#06b6d4" /> Section Time Analysis
+                                <span style={{ marginLeft: 'auto', fontSize: '0.78rem', fontWeight: 500, color: '#64748b' }}>Total: {fmtDuration(totalTimeSecs)}</span>
+                            </h3>
+                            <div style={{ background: 'rgba(15,23,42,0.7)', borderRadius: 12, border: '1px solid rgba(255,255,255,0.08)', padding: '1rem 1.25rem', marginBottom: '1.25rem' }}>
+                                {sections.map(sec => {
+                                    const def = SECTIONS[sec];
+                                    const secSecs = timeSpent[sec] || 0;
+                                    const barPct = maxTime > 0 ? Math.round((secSecs / maxTime) * 100) : 0;
+                                    const score = Math.round(section_scores?.[sec]?.score || 0);
+                                    const scoreColor = score >= 70 ? '#10b981' : score >= 50 ? '#f59e0b' : '#ef4444';
+                                    return (
+                                        <div key={sec} style={{ marginBottom: '10px', display: 'flex', alignItems: 'center', gap: '10px' }}>
+                                            <span style={{ width: 22, fontSize: '14px', flexShrink: 0, textAlign: 'center' }}>{def?.icon}</span>
+                                            <span style={{ width: 98, fontSize: '11.5px', color: '#94a3b8', fontWeight: 600, flexShrink: 0 }}>{def?.label || sec}</span>
+                                            <div style={{ flex: 1, height: 10, background: 'rgba(255,255,255,0.06)', borderRadius: 5, overflow: 'hidden' }}>
+                                                <div style={{ height: '100%', width: `${barPct}%`, background: 'linear-gradient(90deg,#06b6d4,#3b82f6)', borderRadius: 5, transition: 'width 0.9s ease' }} />
+                                            </div>
+                                            <span style={{ width: 52, fontSize: '12px', color: '#60a5fa', fontWeight: 700, textAlign: 'right', flexShrink: 0 }}>{fmtDuration(secSecs)}</span>
+                                            <span style={{ width: 40, fontSize: '11px', color: scoreColor, fontWeight: 700, textAlign: 'right', flexShrink: 0 }}>{score}%</span>
+                                        </div>
+                                    );
+                                })}
+                                <div style={{ marginTop: '10px', paddingTop: '8px', borderTop: '1px solid rgba(255,255,255,0.07)', fontSize: '11px', color: '#475569', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                    <span style={{ width: 10, height: 6, borderRadius: 2, background: 'linear-gradient(90deg,#06b6d4,#3b82f6)', display: 'inline-block' }} />
+                                    Bar = relative time spent &nbsp;·&nbsp; Right % = section score
+                                </div>
+                            </div>
+                        </>
+                    )}
+
                     {/* Violations summary */}
                     {violations.length > 0 && (
                         <div style={{ padding: '1rem', background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.25)', borderRadius: 12, marginBottom: '1rem' }}>
@@ -731,6 +921,10 @@ export default function CompanyRoundInterface({ user }) {
     const [visitedQuestions, setVisitedQuestions] = useState(new Set());
     const [sectionTimeLeft, setSectionTimeLeft] = useState({});
     const [expiredSections, setExpiredSections] = useState(new Set());
+    // section time-spent tracking
+    const sectionTimeSpentRef = useRef({}); // { section: seconds }
+    const sectionEnteredAtRef = useRef(null); // Date.now() when current section started
+    const activeSectionRef = useRef('');
 
     const sid = user?.id || user?.userId;
 
@@ -749,6 +943,18 @@ export default function CompanyRoundInterface({ user }) {
 
     // Reset question index when switching sections
     useEffect(() => { setCurrentQIdx(0); }, [activeSection]);
+
+    // Flush time spent when leaving a section, start clock for new one
+    useEffect(() => {
+        const prev = activeSectionRef.current;
+        const now = Date.now();
+        if (prev && sectionEnteredAtRef.current) {
+            const elapsed = Math.floor((now - sectionEnteredAtRef.current) / 1000);
+            sectionTimeSpentRef.current[prev] = (sectionTimeSpentRef.current[prev] || 0) + elapsed;
+        }
+        activeSectionRef.current = activeSection;
+        sectionEnteredAtRef.current = activeSection ? now : null;
+    }, [activeSection]);
 
     // Mark ONLY the currently viewed question as visited, not the whole section
     useEffect(() => {
@@ -892,14 +1098,22 @@ export default function CompanyRoundInterface({ user }) {
     const submitTest = async (forced = false) => {
         if (!forced && !confirm('Submit this test? You cannot change answers afterwards.')) return;
         setSubmitting(true);
+        // Flush time for the currently active section before submitting
+        if (activeSectionRef.current && sectionEnteredAtRef.current) {
+            const elapsed = Math.floor((Date.now() - sectionEnteredAtRef.current) / 1000);
+            sectionTimeSpentRef.current[activeSectionRef.current] =
+                (sectionTimeSpentRef.current[activeSectionRef.current] || 0) + elapsed;
+            sectionEnteredAtRef.current = Date.now(); // reset so re-submit doesn't double-count
+        }
+        const section_time_spent = { ...sectionTimeSpentRef.current };
         try {
             const { data } = await axios.post(
                 `${API}/api/crt/attempt/${testData.attemptId}/submit`,
-                { answers, proctoring_violations: violations },
+                { answers, proctoring_violations: violations, section_time_spent },
                 { headers: authHeader() }
             );
             teardownProctoring();
-            setResult({ ...data, test: testData.test });
+            setResult({ ...data, test: testData.test, section_time_spent });
             setView('report');
         } catch (e) { showToast(e.response?.data?.error || e.message); }
         setSubmitting(false);

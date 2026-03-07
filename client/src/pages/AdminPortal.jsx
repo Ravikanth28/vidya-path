@@ -2117,6 +2117,48 @@ function AdminCRTReportModal({ submission, reportData, loading, onClose }) {
                                 </>
                             )}
 
+                            {/* Section Time Analysis */}
+                            {(() => {
+                                const timeSpentAdmin = {}
+                                sections.forEach(sec => { timeSpentAdmin[sec] = sectionScores[sec]?.time_spent || 0 })
+                                const totalTimeSecsAdmin = sections.reduce((s, sec) => s + (timeSpentAdmin[sec] || 0), 0)
+                                const maxTimeAdmin = Math.max(...sections.map(sec => timeSpentAdmin[sec] || 0), 1)
+                                const fmtDur = secs => { if (!secs || secs <= 0) return '—'; const m = Math.floor(secs / 60); const s = secs % 60; return m > 0 ? `${m}m ${s}s` : `${s}s` }
+                                if (totalTimeSecsAdmin <= 0) return null
+                                return (
+                                    <>
+                                        <h3 style={{ margin: '0 0 0.75rem', fontSize: '1rem', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                            <Clock size={17} color="#06b6d4" /> Section Time Analysis
+                                            <span style={{ marginLeft: 'auto', fontSize: '0.78rem', fontWeight: 500, color: 'var(--text-muted)' }}>Total: {fmtDur(totalTimeSecsAdmin)}</span>
+                                        </h3>
+                                        <div style={{ background: 'var(--bg-tertiary)', borderRadius: 12, border: '1px solid var(--border-color)', padding: '1rem 1.25rem', marginBottom: '1.5rem' }}>
+                                            {sections.map(sec => {
+                                                const def = SECTION_DEFS[sec]
+                                                const secSecs = timeSpentAdmin[sec] || 0
+                                                const barPct = maxTimeAdmin > 0 ? Math.round((secSecs / maxTimeAdmin) * 100) : 0
+                                                const score = Math.round(sectionScores[sec]?.score || 0)
+                                                const scoreColor = score >= 70 ? '#10b981' : score >= 50 ? '#f59e0b' : '#ef4444'
+                                                return (
+                                                    <div key={sec} style={{ marginBottom: '10px', display: 'flex', alignItems: 'center', gap: '10px' }}>
+                                                        <span style={{ width: 22, fontSize: '14px', flexShrink: 0, textAlign: 'center' }}>{def?.icon || '📊'}</span>
+                                                        <span style={{ width: 100, fontSize: '11.5px', color: 'var(--text-muted)', fontWeight: 600, flexShrink: 0 }}>{def?.label || sec}</span>
+                                                        <div style={{ flex: 1, height: 10, background: 'rgba(255,255,255,0.06)', borderRadius: 5, overflow: 'hidden' }}>
+                                                            <div style={{ height: '100%', width: `${barPct}%`, background: 'linear-gradient(90deg,#06b6d4,#3b82f6)', borderRadius: 5, transition: 'width 0.8s ease' }} />
+                                                        </div>
+                                                        <span style={{ width: 52, fontSize: '12px', color: '#60a5fa', fontWeight: 700, textAlign: 'right', flexShrink: 0 }}>{fmtDur(secSecs)}</span>
+                                                        <span style={{ width: 40, fontSize: '11px', color: scoreColor, fontWeight: 700, textAlign: 'right', flexShrink: 0 }}>{score}%</span>
+                                                    </div>
+                                                )
+                                            })}
+                                            <div style={{ marginTop: '10px', paddingTop: '8px', borderTop: '1px solid var(--border-color)', fontSize: '11px', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                                <span style={{ width: 10, height: 6, borderRadius: 2, background: 'linear-gradient(90deg,#06b6d4,#3b82f6)', display: 'inline-block' }} />
+                                                Bar = relative time spent &nbsp;·&nbsp; Right % = section score
+                                            </div>
+                                        </div>
+                                    </>
+                                )
+                            })()}
+
                             {/* Detailed Answers */}
                             {sections.map(sec => {
                                 const secAnswers = answersBySection[sec] || []
