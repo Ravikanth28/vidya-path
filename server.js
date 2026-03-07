@@ -9647,7 +9647,14 @@ io.on('connection', (socket) => {
             let allOutput = '';
 
             const stdinHandler = (line) => {
-                try { if (proc.stdin.writable) proc.stdin.write(line + '\n'); } catch (e) {}
+                try {
+                    if (proc.stdin.writable) {
+                        proc.stdin.write(line + '\n');
+                        // Echo stdin into allOutput so comparison matches real terminal recording
+                        // (expected outputs are typically recorded in a TTY that echoes stdin)
+                        allOutput += line + '\n';
+                    }
+                } catch (e) {}
             };
             socket.on('run-stdin', stdinHandler);
 
@@ -13294,6 +13301,53 @@ app.get('/api/mcq-submissions/:id', authenticate, async (req, res) => {
 });
 
 // ================== END RESOURCE LINKS & MCQ ==================
+
+// ── GET /api/crt-submissions — Admin: all Company Round Test attempts
+app.get('/api/crt-submissions', authenticate, authorize('admin'), async (req, res) => {
+    try {
+        const [rows] = await pool.query(`
+            SELECT
+                ca.id,
+                ca.test_id,
+                ca.student_id,
+                ca.student_name,
+                ca.status,
+                ca.overall_score,
+                ca.section_scores,
+                ca.proctoring_violations,
+                ca.started_at,
+                ca.completed_at,
+                ct.title          AS test_title,
+                ct.company_name,
+                ct.pass_percentage,
+                COALESCE(u.email, '') AS student_email
+            FROM crt_attempts ca
+            LEFT JOIN crt_tests ct ON ca.test_id = ct.id
+            LEFT JOIN users u ON ca.student_id = u.id
+            WHERE ca.status = 'completed'
+            ORDER BY ca.completed_at DESC
+            LIMIT 2000
+        `);
+        const subs = rows.map(r => ({
+            ...r,
+            section_scores: (() => { try { return JSON.parse(r.section_scores || '{}'); } catch { return {}; } })(),
+            proctoring_violations: (() => { try { return JSON.parse(r.proctoring_violations || '[]'); } catch { return []; } })(),
+            // Normalise to shared schema used by AllSubmissions
+            subType: 'crt',
+            studentName: r.student_name || r.student_id,
+            studentEmail: r.student_email,
+            itemTitle: r.test_title || 'Round Test',
+            language: 'Round Test',
+            score: Math.round(r.overall_score || 0),
+            status: r.overall_score >= (r.pass_percentage || 60) ? 'Passed' : 'Failed',
+            submittedAt: r.completed_at
+        }));
+        res.json({ submissions: subs });
+    } catch (err) {
+        console.error('CRT submissions error:', err);
+        res.status(500).json({ error: err.message });
+    }
+});
 
 // Start server
 (async () => {

@@ -268,50 +268,109 @@ function SQLQuestion({ question, index, answer, onChange, attemptId }) {
 
 // ─── Report view ─────────────────────────────────────────────────────────────
 function ReportView({ result, test, onClose }) {
-    const { overall_score, section_scores, passed, pass_percentage } = result;
+    const { overall_score, section_scores, passed, pass_percentage, proctoring_violations } = result;
     const sections = test?.sections || [];
+    const violations = (() => { try { return JSON.parse(proctoring_violations || '[]'); } catch { return []; } })();
+
+    // Tally correct/total across all sections
+    const totalCorrect = sections.reduce((s, sec) => s + (section_scores?.[sec]?.correct || 0), 0);
+    const totalQs = sections.reduce((s, sec) => s + (section_scores?.[sec]?.total || 0), 0);
 
     return (
-        <div style={{ padding: '32px', maxWidth: '800px', margin: '0 auto' }}>
-            {/* Hero */}
-            <div style={{ textAlign: 'center', padding: '40px 32px', background: passed ? 'linear-gradient(135deg, rgba(34,197,94,0.1), rgba(16,185,129,0.06))' : 'linear-gradient(135deg, rgba(239,68,68,0.1), rgba(220,38,38,0.06))', borderRadius: '20px', border: `1px solid ${passed ? '#22c55e30' : '#ef444430'}`, marginBottom: '28px' }}>
-                <div style={{ fontSize: '64px', marginBottom: '12px' }}>{passed ? '🎉' : '📊'}</div>
-                <h2 style={{ margin: '0 0 8px', fontSize: '26px', fontWeight: 900, color: '#f1f5f9' }}>{test?.company_name} — {test?.title}</h2>
-                <div style={{ fontSize: '52px', fontWeight: 900, color: passed ? '#4ade80' : '#f87171', marginBottom: '8px' }}>{Math.round(overall_score)}%</div>
-                <p style={{ margin: 0, fontSize: '16px', fontWeight: 700, color: passed ? '#86efac' : '#fca5a5' }}>{passed ? '✅ PASSED' : '❌ Did not pass'} <span style={{ color: '#64748b', fontWeight: 400 }}>· Pass mark: {pass_percentage}%</span></p>
-            </div>
+        <div style={{ position: 'fixed', inset: 0, background: 'linear-gradient(135deg, #0f172a 0%, #1e293b 100%)', zIndex: 99999, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '2rem', overflow: 'auto' }}>
+            <style>{`
+                @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+                @keyframes scaleIn { from { transform: scale(0.9); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+                @keyframes pulseAward { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.08); } }
+            `}</style>
+            <div style={{ background: 'rgba(30,41,59,0.98)', borderRadius: '24px', border: `2px solid ${passed ? 'rgba(16,185,129,0.4)' : 'rgba(239,68,68,0.4)'}`, maxWidth: 820, width: '100%', maxHeight: '90vh', overflow: 'hidden', display: 'flex', flexDirection: 'column', boxShadow: `0 25px 50px -12px ${passed ? 'rgba(16,185,129,0.25)' : 'rgba(239,68,68,0.25)'}`, animation: 'scaleIn 0.4s ease-out' }}>
 
-            {/* Section breakdown */}
-            {sections.length > 0 && (
-                <div style={{ background: '#1e293b', borderRadius: '16px', padding: '24px', border: '1px solid #334155', marginBottom: '20px' }}>
-                    <h3 style={{ margin: '0 0 18px', fontSize: '16px', fontWeight: 800, color: '#f1f5f9', display: 'flex', alignItems: 'center', gap: '8px' }}><BarChart2 size={18} color="#3b82f6" /> Section Breakdown</h3>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                        {sections.map(sec => {
-                            const def = SECTIONS[sec];
-                            const ss = section_scores?.[sec] || {};
-                            const pct = ss.score || 0;
-                            return (
-                                <div key={sec}>
-                                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '5px' }}>
-                                        <span style={{ fontSize: '13px', fontWeight: 700, color: def?.color || '#f1f5f9' }}>{def?.icon} {def?.label || sec}</span>
-                                        <span style={{ fontSize: '13px', fontWeight: 700, color: pct >= 60 ? '#4ade80' : '#f87171' }}>
-                                            {ss.correct || 0}/{ss.total || 0} · {Math.round(pct)}%
-                                        </span>
-                                    </div>
-                                    <div style={{ height: '8px', background: '#0f172a', borderRadius: '4px', overflow: 'hidden' }}>
-                                        <div style={{ height: '100%', width: `${pct}%`, background: pct >= 60 ? 'linear-gradient(90deg, #22c55e, #4ade80)' : 'linear-gradient(90deg, #ef4444, #f87171)', borderRadius: '4px', transition: 'width 0.8s ease' }} />
-                                    </div>
-                                </div>
-                            );
-                        })}
+                {/* Header */}
+                <div style={{ padding: '2rem 2rem 1.5rem', background: passed ? 'linear-gradient(135deg, rgba(16,185,129,0.15), rgba(6,182,212,0.1))' : 'linear-gradient(135deg, rgba(239,68,68,0.15), rgba(251,146,60,0.1))', borderBottom: `1px solid ${passed ? 'rgba(16,185,129,0.2)' : 'rgba(239,68,68,0.2)'}`, textAlign: 'center' }}>
+                    <div style={{ width: 80, height: 80, borderRadius: '50%', background: passed ? 'linear-gradient(135deg, #10b981, #06b6d4)' : 'linear-gradient(135deg, #ef4444, #f97316)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 1rem', boxShadow: `0 8px 24px ${passed ? 'rgba(16,185,129,0.4)' : 'rgba(239,68,68,0.4)'}`, animation: passed ? 'pulseAward 2s ease-in-out infinite' : 'none' }}>
+                        {passed ? <Award size={40} color="white" /> : <XCircle size={40} color="white" />}
                     </div>
+                    <h2 style={{ margin: '0 0 0.25rem', color: 'white', fontSize: '1.5rem', fontWeight: 800 }}>{passed ? '🎉 Congratulations!' : 'Test Completed'}</h2>
+                    <p style={{ margin: '0 0 0.5rem', color: 'rgba(255,255,255,0.6)', fontSize: '0.9rem' }}>
+                        {test?.company_name} — {test?.title}
+                    </p>
+                    <p style={{ margin: 0, color: 'rgba(255,255,255,0.5)', fontSize: '0.82rem' }}>
+                        {passed ? 'You have successfully passed the assessment!' : `Keep practicing! Pass mark is ${pass_percentage}%`}
+                    </p>
                 </div>
-            )}
 
-            <div style={{ display: 'flex', gap: '12px', justifyContent: 'center' }}>
-                <button onClick={onClose} style={{ padding: '12px 32px', background: 'linear-gradient(135deg, #3b82f6, #2563eb)', border: 'none', borderRadius: '12px', color: '#fff', fontWeight: 700, fontSize: '14px', cursor: 'pointer' }}>
-                    ← Back to Tests
-                </button>
+                {/* Scrollable body */}
+                <div style={{ padding: '1.5rem 2rem', overflowY: 'auto', flex: 1 }}>
+
+                    {/* Score cards */}
+                    <div style={{ display: 'flex', gap: '1rem', marginBottom: '1.5rem', flexWrap: 'wrap', justifyContent: 'center' }}>
+                        <div style={{ padding: '1.25rem 2rem', background: passed ? 'rgba(16,185,129,0.12)' : 'rgba(239,68,68,0.12)', borderRadius: 16, border: `2px solid ${passed ? 'rgba(16,185,129,0.35)' : 'rgba(239,68,68,0.35)'}`, textAlign: 'center', minWidth: 150 }}>
+                            <div style={{ fontSize: '3rem', fontWeight: 900, color: passed ? '#10b981' : '#ef4444', lineHeight: 1 }}>{Math.round(overall_score)}%</div>
+                            <div style={{ fontSize: '0.75rem', color: 'rgba(255,255,255,0.5)', marginTop: 6, textTransform: 'uppercase', letterSpacing: '1.5px', fontWeight: 600 }}>Overall Score</div>
+                        </div>
+                        {totalQs > 0 && (
+                            <div style={{ padding: '1.25rem 2rem', background: 'rgba(139,92,246,0.1)', borderRadius: 16, border: '1px solid rgba(139,92,246,0.3)', textAlign: 'center', minWidth: 150 }}>
+                                <div style={{ fontSize: '2.25rem', fontWeight: 800, color: '#a78bfa', lineHeight: 1 }}>{totalCorrect}/{totalQs}</div>
+                                <div style={{ fontSize: '0.75rem', color: 'rgba(255,255,255,0.5)', marginTop: 6, textTransform: 'uppercase', letterSpacing: '1.5px', fontWeight: 600 }}>Correct Answers</div>
+                            </div>
+                        )}
+                        <div style={{ padding: '1.25rem 1.5rem', background: passed ? 'rgba(34,197,94,0.08)' : 'rgba(239,68,68,0.08)', borderRadius: 16, border: `1px solid ${passed ? 'rgba(34,197,94,0.25)' : 'rgba(239,68,68,0.25)'}`, textAlign: 'center', minWidth: 150 }}>
+                            <div style={{ fontSize: '1.5rem', fontWeight: 800, color: passed ? '#4ade80' : '#f87171', lineHeight: 1 }}>{passed ? '✅ PASSED' : '❌ FAILED'}</div>
+                            <div style={{ fontSize: '0.75rem', color: 'rgba(255,255,255,0.5)', marginTop: 6, textTransform: 'uppercase', letterSpacing: '1.5px', fontWeight: 600 }}>Pass mark: {pass_percentage}%</div>
+                        </div>
+                    </div>
+
+                    {/* Section-wise performance */}
+                    {sections.length > 0 && (
+                        <>
+                            <h3 style={{ margin: '0 0 0.75rem', color: 'white', fontSize: '1rem', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                <BarChart2 size={17} color="#8b5cf6" /> Section-wise Performance
+                            </h3>
+                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))', gap: '0.6rem', marginBottom: '1.25rem' }}>
+                                {sections.map(sec => {
+                                    const def = SECTIONS[sec];
+                                    const ss = section_scores?.[sec] || {};
+                                    const pct = Math.round(ss.score || 0);
+                                    const scoreColor = pct >= 70 ? '#10b981' : pct >= 50 ? '#f59e0b' : '#ef4444';
+                                    return (
+                                        <div key={sec} style={{ padding: '0.9rem 1rem', background: 'rgba(15,23,42,0.7)', borderRadius: 12, border: '1px solid rgba(255,255,255,0.08)', textAlign: 'center' }}>
+                                            <div style={{ fontSize: '1.5rem', marginBottom: 3 }}>{def?.icon}</div>
+                                            <div style={{ fontSize: '1.4rem', fontWeight: 800, color: scoreColor, lineHeight: 1 }}>{pct}%</div>
+                                            <div style={{ fontSize: '0.72rem', color: 'rgba(255,255,255,0.45)', marginTop: 3, textTransform: 'capitalize' }}>{def?.label || sec}</div>
+                                            <div style={{ fontSize: '0.7rem', color: 'rgba(255,255,255,0.3)', marginTop: 2 }}>{ss.correct || 0}/{ss.total || 0} correct</div>
+                                            <div style={{ marginTop: 6, height: 4, background: 'rgba(255,255,255,0.08)', borderRadius: 2, overflow: 'hidden' }}>
+                                                <div style={{ height: '100%', width: `${pct}%`, background: scoreColor, borderRadius: 2, transition: 'width 0.8s ease' }} />
+                                            </div>
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        </>
+                    )}
+
+                    {/* Violations summary */}
+                    {violations.length > 0 && (
+                        <div style={{ padding: '1rem', background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.25)', borderRadius: 12, marginBottom: '1rem' }}>
+                            <p style={{ margin: '0 0 6px', fontSize: '0.82rem', fontWeight: 700, color: '#fbbf24', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                <AlertTriangle size={13} /> {violations.length} Proctoring Violation{violations.length > 1 ? 's' : ''} Recorded
+                            </p>
+                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                                {violations.map((v, i) => (
+                                    <span key={i} style={{ fontSize: '0.75rem', color: '#fbbf24', background: 'rgba(245,158,11,0.12)', padding: '2px 8px', borderRadius: 6 }}>
+                                        {v.type || v}
+                                    </span>
+                                ))}
+                            </div>
+                        </div>
+                    )}
+                </div>
+
+                {/* Footer */}
+                <div style={{ padding: '1rem 2rem', borderTop: '1px solid rgba(139,92,246,0.15)', display: 'flex', justifyContent: 'center', background: 'rgba(15,23,42,0.5)' }}>
+                    <button onClick={onClose} style={{ padding: '0.85rem 2.5rem', background: 'linear-gradient(135deg, #6366f1, #8b5cf6)', border: 'none', borderRadius: '12px', color: 'white', fontWeight: 700, fontSize: '1rem', cursor: 'pointer', boxShadow: '0 4px 14px rgba(99,102,241,0.4)' }}>
+                        ← Back to Tests
+                    </button>
+                </div>
             </div>
         </div>
     );
@@ -332,6 +391,7 @@ export default function CompanyRoundInterface({ user }) {
     const [violations, setViolations] = useState([]);
     const [startingId, setStartingId] = useState(null);
     const [toast, setToast] = useState('');
+    const [currentQIdx, setCurrentQIdx] = useState(0);
     const proctoringRef = useRef({ removeListeners: null });
     // section tracking
     const [visitedQuestions, setVisitedQuestions] = useState(new Set());
@@ -353,15 +413,21 @@ export default function CompanyRoundInterface({ user }) {
 
     useEffect(() => { loadTests(); }, [loadTests]);
 
-    // Mark all questions in the active section as "visited" when section switches
+    // Reset question index when switching sections
+    useEffect(() => { setCurrentQIdx(0); }, [activeSection]);
+
+    // Mark ONLY the currently viewed question as visited, not the whole section
     useEffect(() => {
         if (!testData || !activeSection) return;
         const qs = testData.questionsBySection[activeSection] || [];
-        setVisitedQuestions(prev => {
-            const next = new Set(prev);
-            qs.forEach(q => next.add(String(q.id)));
-            return next;
-        });
+        const q = qs[currentQIdx];
+        if (q) {
+            setVisitedQuestions(prev => {
+                const next = new Set(prev);
+                next.add(String(q.id));
+                return next;
+            });
+        }
         // Init section timer on first visit
         const limits = testData.test.section_time_limits || {};
         const limitSec = (limits[activeSection] || 0) * 60;
@@ -371,7 +437,7 @@ export default function CompanyRoundInterface({ user }) {
                 [activeSection]: prev[activeSection] !== undefined ? prev[activeSection] : limitSec
             }));
         }
-    }, [activeSection, testData]);
+    }, [activeSection, currentQIdx, testData]);
 
     // Section countdown tick
     useEffect(() => {
@@ -623,17 +689,22 @@ export default function CompanyRoundInterface({ user }) {
         };
 
         return (
-            <div style={{ minHeight: '100vh', background: '#0f172a' }}>
+            <div style={{ position: 'fixed', inset: 0, background: 'linear-gradient(135deg, #0f172a 0%, #1e1b4b 50%, #0f172a 100%)', zIndex: 9999, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
                 <style>{`@keyframes spin{from{transform:rotate(0)}to{transform:rotate(360deg)}}.spin{animation:spin 0.8s linear infinite}`}</style>
 
                 {/* Toast */}
-                {toast && <div style={{ position: 'fixed', bottom: '20px', left: '50%', transform: 'translateX(-50%)', background: '#f59e0b', color: '#fff', padding: '10px 20px', borderRadius: '10px', fontWeight: 700, zIndex: 9999, fontSize: '13px', boxShadow: '0 4px 16px rgba(0,0,0,0.3)' }}>{toast}</div>}
+                {toast && <div style={{ position: 'fixed', bottom: '20px', left: '50%', transform: 'translateX(-50%)', background: '#f59e0b', color: '#fff', padding: '10px 20px', borderRadius: '10px', fontWeight: 700, zIndex: 10000, fontSize: '13px', boxShadow: '0 4px 16px rgba(0,0,0,0.3)' }}>{toast}</div>}
 
                 {/* Top bar */}
-                <div style={{ position: 'sticky', top: 0, zIndex: 100, background: '#0f172a', borderBottom: '1px solid #1e293b', padding: '10px 20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
-                    <div>
-                        <h3 style={{ margin: 0, fontSize: '15px', fontWeight: 800, color: '#f1f5f9' }}>{test.company_name} — {test.title}</h3>
-                        <p style={{ margin: 0, fontSize: '11px', color: '#64748b' }}>{totalAnswered}/{totalQ} answered</p>
+                <div style={{ zIndex: 100, background: 'linear-gradient(180deg, rgba(15,23,42,0.98) 0%, rgba(15,23,42,0.95) 100%)', borderBottom: '1px solid rgba(139,92,246,0.2)', padding: '10px 20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px', backdropFilter: 'blur(12px)', boxShadow: '0 4px 20px rgba(0,0,0,0.3)', flexShrink: 0 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                        <div style={{ width: 36, height: 36, borderRadius: '10px', background: 'linear-gradient(135deg, #6366f1, #8b5cf6)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                            <Building2 size={18} color="white" />
+                        </div>
+                        <div>
+                            <h3 style={{ margin: 0, fontSize: '15px', fontWeight: 800, color: '#f1f5f9' }}>{test.company_name} — {test.title}</h3>
+                            <p style={{ margin: 0, fontSize: '11px', color: '#64748b' }}>{totalAnswered}/{totalQ} questions answered</p>
+                        </div>
                     </div>
                     <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
                         <Timer totalSeconds={test.duration_minutes * 60} onExpire={() => { showToast('⏰ Time up! Auto-submitting…'); setTimeout(() => submitTest(true), 1000); }} />
@@ -642,6 +713,23 @@ export default function CompanyRoundInterface({ user }) {
                                 <AlertTriangle size={13} /> {violations.length} violation{violations.length !== 1 ? 's' : ''}
                             </span>
                         )}
+                        <button
+                            onClick={() => {
+                                if (confirm('Exit session? Your current answers will be lost and the attempt will not be submitted.')) {
+                                    teardownProctoring();
+                                    setView('list');
+                                    setTestData(null);
+                                    setAnswers({});
+                                    setViolations([]);
+                                    setVisitedQuestions(new Set());
+                                    setSectionTimeLeft({});
+                                    setExpiredSections(new Set());
+                                    loadTests();
+                                }
+                            }}
+                            style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '8px 16px', background: 'rgba(239,68,68,0.12)', border: '1px solid rgba(239,68,68,0.35)', borderRadius: '10px', color: '#f87171', fontWeight: 700, fontSize: '13px', cursor: 'pointer' }}>
+                            <X size={14} /> Exit Session
+                        </button>
                         <button onClick={() => submitTest(false)} disabled={submitting}
                             style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '8px 20px', background: submitting ? '#475569' : 'linear-gradient(135deg, #22c55e, #16a34a)', border: 'none', borderRadius: '10px', color: '#fff', fontWeight: 700, fontSize: '13px', cursor: submitting ? 'not-allowed' : 'pointer', boxShadow: '0 2px 8px rgba(34,197,94,0.25)' }}>
                             {submitting ? <Loader2 size={14} className="spin" /> : <Check size={14} />}
@@ -650,9 +738,9 @@ export default function CompanyRoundInterface({ user }) {
                     </div>
                 </div>
 
-                <div style={{ display: 'grid', gridTemplateColumns: '220px 1fr', minHeight: 'calc(100vh - 58px)' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: '240px 1fr', flex: 1, overflow: 'hidden' }}>
                     {/* Left: Section navigation */}
-                    <div style={{ background: '#0a0f1a', borderRight: '1px solid #1e293b', padding: '16px 0', position: 'sticky', top: '58px', height: 'calc(100vh - 58px)', overflowY: 'auto' }}>
+                    <div style={{ background: 'rgba(10,15,26,0.95)', borderRight: '1px solid rgba(139,92,246,0.15)', padding: '16px 0', overflowY: 'auto' }}>
                         <p style={{ fontSize: '10px', fontWeight: 700, color: '#475569', textTransform: 'uppercase', letterSpacing: '1px', paddingLeft: '16px', marginBottom: '10px' }}>Sections</p>
                         {test.sections.map(sec => {
                             const d = SECTIONS[sec];
@@ -684,7 +772,7 @@ export default function CompanyRoundInterface({ user }) {
                     </div>
 
                     {/* Right: Questions */}
-                    <div style={{ padding: '20px 24px', overflowY: 'auto' }}>
+                    <div style={{ padding: '20px 24px', overflowY: 'auto', height: '100%' }}>
                         {sectionDef && (
                             <div style={{ marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '10px' }}>
                                 <span style={{ fontSize: '24px' }}>{sectionDef.icon}</span>
@@ -704,20 +792,27 @@ export default function CompanyRoundInterface({ user }) {
                         )}
 
                         {/* Question status palette */}
-                        {currentQs.length > 0 && (
-                            <div style={{ background: '#0a0f1a', borderRadius: '12px', padding: '12px 14px', marginBottom: '18px', border: '1px solid #1e293b' }}>
-                                <div style={{ display: 'flex', gap: '14px', marginBottom: '10px', fontSize: '11px', fontWeight: 700 }}>
-                                    <span style={{ display: 'flex', alignItems: 'center', gap: '5px', color: '#22c55e' }}><span style={{ width: 12, height: 12, borderRadius: 3, background: '#22c55e', display: 'inline-block' }} /> Answered</span>
-                                    <span style={{ display: 'flex', alignItems: 'center', gap: '5px', color: '#f59e0b' }}><span style={{ width: 12, height: 12, borderRadius: 3, background: '#f59e0b', display: 'inline-block' }} /> Visited</span>
-                                    <span style={{ display: 'flex', alignItems: 'center', gap: '5px', color: '#64748b' }}><span style={{ width: 12, height: 12, borderRadius: 3, background: '#475569', display: 'inline-block' }} /> Not visited</span>
+        {currentQs.length > 0 && (
+                            <div style={{ background: '#0a0f1a', borderRadius: '12px', padding: '10px 14px', marginBottom: '14px', border: '1px solid #1e293b' }}>
+                                <div style={{ display: 'flex', gap: '14px', marginBottom: '8px', fontSize: '10px', fontWeight: 700 }}>
+                                    <span style={{ display: 'flex', alignItems: 'center', gap: '4px', color: '#22c55e' }}><span style={{ width: 10, height: 10, borderRadius: 2, background: '#22c55e', display: 'inline-block' }} /> Answered</span>
+                                    <span style={{ display: 'flex', alignItems: 'center', gap: '4px', color: '#f59e0b' }}><span style={{ width: 10, height: 10, borderRadius: 2, background: '#f59e0b', display: 'inline-block' }} /> Visited</span>
+                                    <span style={{ display: 'flex', alignItems: 'center', gap: '4px', color: '#64748b' }}><span style={{ width: 10, height: 10, borderRadius: 2, background: '#475569', display: 'inline-block' }} /> Not visited</span>
+                                    <span style={{ display: 'flex', alignItems: 'center', gap: '4px', color: '#a78bfa' }}><span style={{ width: 10, height: 10, borderRadius: 2, background: '#a78bfa', display: 'inline-block', outline: '2px solid #fff' }} /> Current</span>
                                 </div>
-                                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
-                                    {currentQs.map((q, i) => (
-                                        <div key={q.id} title={`Q${i+1}: ${qAnswered(q.id) ? 'Answered' : qVisited(q.id) ? 'Visited not answered' : 'Not visited'}`}
-                                            style={{ width: '32px', height: '32px', borderRadius: '6px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '11px', fontWeight: 800, background: qColor(q.id), color: '#fff', cursor: 'default', border: `2px solid ${qColor(q.id)}`, boxShadow: qAnswered(q.id) ? '0 0 6px #22c55e50' : 'none' }}>
-                                            {i + 1}
-                                        </div>
-                                    ))}
+                                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '5px' }}>
+                                    {currentQs.map((q, i) => {
+                                        const isCurrent = i === currentQIdx;
+                                        const bg = isCurrent ? '#6366f1' : qColor(q.id);
+                                        return (
+                                            <div key={q.id}
+                                                onClick={() => setCurrentQIdx(i)}
+                                                title={`Q${i+1}: ${qAnswered(q.id) ? 'Answered' : qVisited(q.id) ? 'Visited not answered' : 'Not visited'}`}
+                                                style={{ width: '30px', height: '30px', borderRadius: '6px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '11px', fontWeight: 800, background: bg, color: '#fff', cursor: 'pointer', border: isCurrent ? '2px solid #fff' : `2px solid ${bg}`, boxShadow: isCurrent ? '0 0 8px #6366f180' : qAnswered(q.id) ? '0 0 5px #22c55e40' : 'none', transition: 'all 0.12s' }}>
+                                                {i + 1}
+                                            </div>
+                                        );
+                                    })}
                                 </div>
                             </div>
                         )}
@@ -727,30 +822,74 @@ export default function CompanyRoundInterface({ user }) {
                                 <span style={{ fontSize: '40px' }}>{sectionDef?.icon}</span>
                                 <p style={{ color: '#64748b', marginTop: '10px', fontSize: '14px' }}>No questions added for this section yet.</p>
                             </div>
-                        ) : sectionDef?.kind === 'mcq' ? (
-                            currentQs.map((q, i) => (
-                                <MCQQuestion key={q.id} question={q} index={i} answer={answers[String(q.id)]?.student_answer || answers[String(q.id)]}
-                                    onChange={val => setAnswer(q.id, { student_answer: val })} />
-                            ))
-                        ) : sectionDef?.kind === 'code' ? (
-                            currentQs.map((q, i) => (
-                                <CodingQuestion key={q.id} question={q} index={i} answer={answers[String(q.id)]} attemptId={attemptId}
-                                    isDebug={activeSection === 'debug'}
-                                    onChange={val => setAnswer(q.id, val)} />
-                            ))
-                        ) : sectionDef?.kind === 'sql' ? (
-                            currentQs.map((q, i) => (
-                                <SQLQuestion key={q.id} question={q} index={i} answer={answers[String(q.id)]} attemptId={attemptId}
-                                    onChange={val => setAnswer(q.id, val)} />
-                            ))
-                        ) : null}
+                        ) : (() => {
+                            const safeIdx = Math.min(currentQIdx, currentQs.length - 1);
+                            const q = currentQs[safeIdx];
+                            const isFirst = safeIdx === 0;
+                            const isLast = safeIdx === currentQs.length - 1;
+                            const isLastSection = sectionOrder.indexOf(activeSection) === sectionOrder.length - 1;
+                            return (
+                                <>
+                                    {/* Single question view */}
+                                    {sectionDef?.kind === 'mcq' && (
+                                        <MCQQuestion key={q.id} question={q} index={safeIdx}
+                                            answer={answers[String(q.id)]?.student_answer || answers[String(q.id)]}
+                                            onChange={val => setAnswer(q.id, { student_answer: val })} />
+                                    )}
+                                    {sectionDef?.kind === 'code' && (
+                                        <CodingQuestion key={q.id} question={q} index={safeIdx}
+                                            answer={answers[String(q.id)]} attemptId={attemptId}
+                                            isDebug={activeSection === 'debug'}
+                                            onChange={val => setAnswer(q.id, val)} />
+                                    )}
+                                    {sectionDef?.kind === 'sql' && (
+                                        <SQLQuestion key={q.id} question={q} index={safeIdx}
+                                            answer={answers[String(q.id)]} attemptId={attemptId}
+                                            onChange={val => setAnswer(q.id, val)} />
+                                    )}
 
-                        {/* Bottom submit */}
-                        <div style={{ marginTop: '24px', textAlign: 'center', padding: '20px', background: '#1e293b', borderRadius: '12px', border: '1px solid #334155' }}>
-                            <p style={{ margin: '0 0 12px', fontSize: '13px', color: '#94a3b8' }}>{totalAnswered}/{totalQ} questions answered across all sections</p>
+                                    {/* Navigation row */}
+                                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: '18px', gap: '10px' }}>
+                                        <button onClick={() => setCurrentQIdx(i => Math.max(0, i - 1))} disabled={isFirst}
+                                            style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '9px 20px', background: isFirst ? '#1e293b' : 'rgba(99,102,241,0.15)', border: `1px solid ${isFirst ? '#334155' : '#6366f1'}`, borderRadius: '10px', color: isFirst ? '#475569' : '#a5b4fc', fontWeight: 700, fontSize: '13px', cursor: isFirst ? 'not-allowed' : 'pointer', transition: 'all 0.15s' }}>
+                                            ← Previous
+                                        </button>
+
+                                        <span style={{ fontSize: '12px', color: '#64748b', fontWeight: 600 }}>
+                                            Question {safeIdx + 1} of {currentQs.length}
+                                        </span>
+
+                                        {!isLast ? (
+                                            <button onClick={() => setCurrentQIdx(i => Math.min(currentQs.length - 1, i + 1))}
+                                                style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '9px 20px', background: 'rgba(99,102,241,0.15)', border: '1px solid #6366f1', borderRadius: '10px', color: '#a5b4fc', fontWeight: 700, fontSize: '13px', cursor: 'pointer', transition: 'all 0.15s' }}>
+                                                Next →
+                                            </button>
+                                        ) : !isLastSection ? (
+                                            <button onClick={() => {
+                                                const nextSec = sectionOrder[sectionOrder.indexOf(activeSection) + 1];
+                                                if (isSectionUnlocked(nextSec)) setActiveSection(nextSec);
+                                                else showToast('Complete this section first');
+                                            }}
+                                                style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '9px 20px', background: 'rgba(34,197,94,0.15)', border: '1px solid #22c55e', borderRadius: '10px', color: '#4ade80', fontWeight: 700, fontSize: '13px', cursor: 'pointer', transition: 'all 0.15s' }}>
+                                                Next Section →
+                                            </button>
+                                        ) : (
+                                            <button onClick={() => submitTest(false)} disabled={submitting}
+                                                style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '9px 20px', background: submitting ? '#475569' : 'linear-gradient(135deg,#22c55e,#16a34a)', border: 'none', borderRadius: '10px', color: '#fff', fontWeight: 700, fontSize: '13px', cursor: submitting ? 'not-allowed' : 'pointer' }}>
+                                                {submitting ? <><Loader2 size={13} className="spin" /> Submitting…</> : <><Check size={13} /> Submit Test</>}
+                                            </button>
+                                        )}
+                                    </div>
+                                </>
+                            );
+                        })()}
+
+                        {/* Bottom submit bar */}
+                        <div style={{ marginTop: '20px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 18px', background: '#1e293b', borderRadius: '12px', border: '1px solid #334155' }}>
+                            <span style={{ fontSize: '12px', color: '#94a3b8' }}>{totalAnswered}/{totalQ} answered across all sections</span>
                             <button onClick={() => submitTest(false)} disabled={submitting}
-                                style={{ padding: '12px 36px', background: submitting ? '#475569' : 'linear-gradient(135deg, #22c55e, #16a34a)', border: 'none', borderRadius: '12px', color: '#fff', fontWeight: 800, fontSize: '15px', cursor: submitting ? 'not-allowed' : 'pointer', boxShadow: '0 4px 16px rgba(34,197,94,0.25)', display: 'inline-flex', alignItems: 'center', gap: '8px' }}>
-                                {submitting ? <><Loader2 size={16} className="spin" /> Submitting…</> : <><Check size={16} /> Submit Test</>}
+                                style={{ padding: '9px 24px', background: submitting ? '#475569' : 'linear-gradient(135deg, #22c55e, #16a34a)', border: 'none', borderRadius: '10px', color: '#fff', fontWeight: 700, fontSize: '13px', cursor: submitting ? 'not-allowed' : 'pointer', display: 'inline-flex', alignItems: 'center', gap: '7px' }}>
+                                {submitting ? <><Loader2 size={14} className="spin" /> Submitting…</> : <><Check size={14} /> Submit Test</>}
                             </button>
                         </div>
                     </div>
