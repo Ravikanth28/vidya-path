@@ -1,16 +1,20 @@
-/**
- * CompanyRoundInterface.jsx — Student view for Company Round Tests
+﻿/**
+ * CompanyRoundInterface.jsx â€” Student view for Company Round Tests
  * Supports: MCQ, Coding, Debugging, SQL sections with proctoring
  */
 import { useState, useEffect, useCallback, useRef } from 'react';
 import axios from 'axios';
 import Editor from '@monaco-editor/react';
+import socketService from '../services/socketService';
 import {
     Building2, Clock, Play, Check, ChevronRight, ChevronDown, ChevronUp,
     AlertTriangle, Shield, Eye, EyeOff, Database, Code, Brain, RefreshCw,
     CheckCircle2, XCircle, Award, BarChart2, ArrowRight, X, Loader2,
-    FileText, Target, Zap, Lock
+    FileText, Target, Zap, Lock, Layers, Send
 } from 'lucide-react';
+import SQLValidator from './SQLValidator';
+import SQLVisualizer from './SQLVisualizer';
+import SQLDebugger from './SQLDebugger';
 
 const API = import.meta.env.VITE_API_URL || 'http://localhost:3000';
 
@@ -31,7 +35,7 @@ function authHeader() {
     return t ? { Authorization: `Bearer ${t}` } : {};
 }
 
-// ─── Countdown Timer ──────────────────────────────────────────────────────────
+// â”€â”€â”€ Countdown Timer â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function Timer({ totalSeconds, onExpire }) {
     const [remaining, setRemaining] = useState(totalSeconds);
     useEffect(() => {
@@ -56,217 +60,517 @@ function Timer({ totalSeconds, onExpire }) {
     );
 }
 
-// ─── MCQ Question Component ───────────────────────────────────────────────────
+// â”€â”€â”€ MCQ Question Component â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function MCQQuestion({ question, index, answer, onChange }) {
     const letters = ['A', 'B', 'C', 'D'];
     return (
-        <div style={{ background: '#1e293b', borderRadius: '12px', padding: '18px', border: '1px solid #334155', marginBottom: '12px' }}>
-            <div style={{ display: 'flex', gap: '10px', marginBottom: '14px' }}>
-                <span style={{ background: '#334155', color: '#94a3b8', borderRadius: '6px', padding: '2px 8px', fontSize: '12px', fontWeight: 700, minWidth: '28px', textAlign: 'center' }}>Q{index + 1}</span>
-                <p style={{ margin: 0, color: '#f1f5f9', fontSize: '14px', lineHeight: '1.6', whiteSpace: 'pre-wrap' }}>{question.question}</p>
+        <div style={{ background: '#0a0f1a', borderRadius: '14px', border: '1px solid #1e293b', overflow: 'hidden' }}>
+            {/* Question header */}
+            <div style={{ padding: '14px 18px', background: 'linear-gradient(135deg,rgba(30,41,59,0.9),rgba(15,23,42,0.95))', borderBottom: '1px solid #1e293b', display: 'flex', gap: '10px', alignItems: 'flex-start' }}>
+                <span style={{ background: 'linear-gradient(135deg,#3b82f6,#2563eb)', color: '#fff', borderRadius: '7px', padding: '3px 9px', fontSize: '11px', fontWeight: 800, flexShrink: 0 }}>Q{index + 1}</span>
+                <p style={{ margin: 0, color: '#e2e8f0', fontSize: '14px', lineHeight: '1.65', whiteSpace: 'pre-wrap', flex: 1 }}>{question.question}</p>
             </div>
+            {/* Code snippet */}
             {question.code_snippet && (
-                <div style={{ background: '#0f172a', borderRadius: '8px', padding: '12px', marginBottom: '12px', fontFamily: 'monospace', fontSize: '13px', color: '#a5f3fc', overflow: 'auto', border: '1px solid #334155' }}>
-                    <pre style={{ margin: 0, whiteSpace: 'pre-wrap' }}>{question.code_snippet}</pre>
+                <div style={{ padding: '12px 16px', background: '#060a10', borderBottom: '1px solid #1e293b' }}>
+                    <pre style={{ margin: 0, padding: '12px 14px', background: '#0d1117', border: '1px solid #1e293b', borderRadius: '8px', fontFamily: 'ui-monospace,monospace', fontSize: '13px', color: '#a5f3fc', whiteSpace: 'pre-wrap', overflowX: 'auto', lineHeight: 1.65 }}>{question.code_snippet}</pre>
                 </div>
             )}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+            {/* Options */}
+            <div style={{ padding: '16px 18px', display: 'flex', flexDirection: 'column', gap: '9px' }}>
                 {(question.options || []).map((opt, oi) => {
                     const letter = letters[oi];
                     const selected = answer === letter;
                     return (
-                        <label key={oi} style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '10px 14px', borderRadius: '9px', cursor: 'pointer', background: selected ? 'rgba(59,130,246,0.15)' : 'rgba(30,41,59,0.5)', border: `2px solid ${selected ? '#3b82f6' : '#334155'}`, transition: 'all 0.15s' }}>
-                            <input type="radio" name={`q${question.id}`} value={letter} checked={selected} onChange={() => onChange(letter)} style={{ accentColor: '#3b82f6', width: '16px', height: '16px' }} />
-                            <span style={{ fontWeight: selected ? 700 : 400, color: selected ? '#93c5fd' : '#cbd5e1', fontSize: '14px' }}>{opt}</span>
+                        <label key={oi} onClick={() => onChange(letter)}
+                            style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '11px 16px', borderRadius: '10px', cursor: 'pointer', background: selected ? 'rgba(99,102,241,0.12)' : 'rgba(15,23,42,0.6)', border: `2px solid ${selected ? '#6366f1' : '#1e293b'}`, transition: 'all 0.15s', outline: 'none' }}>
+                            <div style={{ width: 22, height: 22, borderRadius: '50%', border: `2px solid ${selected ? '#6366f1' : '#334155'}`, background: selected ? '#6366f1' : 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, transition: 'all 0.15s' }}>
+                                {selected && <Check size={12} color="white" />}
+                            </div>
+                            <span style={{ fontSize: '13px', fontWeight: 700, color: '#475569', fontFamily: 'monospace', flexShrink: 0, width: '18px' }}>{letter}</span>
+                            <span style={{ fontWeight: selected ? 600 : 400, color: selected ? '#c7d2fe' : '#94a3b8', fontSize: '14px', flex: 1 }}>{opt}</span>
                         </label>
                     );
                 })}
             </div>
-            {!answer && <p style={{ margin: '10px 0 0', fontSize: '11px', color: '#64748b' }}>⚠ Not answered yet</p>}
+            {!answer && (
+                <div style={{ padding: '8px 18px 14px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <AlertTriangle size={12} color="#f59e0b" />
+                    <span style={{ fontSize: '11px', color: '#78716c', fontWeight: 600 }}>Not answered yet</span>
+                </div>
+            )}
         </div>
     );
 }
 
-// ─── Coding/Debug Question Component ──────────────────────────────────────────
+// â”€â”€â”€ Coding/Debug Question Component â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function CodingQuestion({ question, index, answer, onChange, attemptId, isDebug }) {
     const [code, setCode] = useState(answer?.code || question.starter_code || '');
     const [language, setLanguage] = useState(answer?.language || question.language || 'Python');
-    const [running, setRunning] = useState(false);
-    const [output, setOutput] = useState('');
-    const [testResults, setTestResults] = useState(null);
-    const [showSchema, setShowSchema] = useState(false);
+    const [isRunning, setIsRunning] = useState(false);
+    const [outputSegments, setOutputSegments] = useState([]); // { text, type }
+    const [customInput, setCustomInput] = useState(question.sample_input || '');
+    const [interactiveStdin, setInteractiveStdin] = useState('');
+    const [testResults, setTestResults] = useState([]);
+    const [runningTests, setRunningTests] = useState(false);
+    const [activeOutputTab, setActiveOutputTab] = useState('output'); // 'input' | 'output' | 'tests'
+    const [terminalSize, setTerminalSize] = useState('normal'); // 'normal' | 'minimized' | 'maximized'
+    const [runResult, setRunResult] = useState(null); // { actual, expected, passed }
+    const terminalRef = useRef(null);
 
-    const LANG_MAP = { Python: 'python', JavaScript: 'javascript', Java: 'java', 'C': 'c', 'C++': 'cpp' };
+    const LANG_MAP = { Python: 'python', JavaScript: 'javascript', Java: 'java', C: 'c', 'C++': 'cpp' };
 
-    const runCode = async (stdin = '') => {
-        setRunning(true); setOutput('Running…');
-        try {
-            const { data } = await axios.post(`${API}/api/crt/attempt/${attemptId}/run-code`, { code, language, stdin }, { headers: authHeader() });
-            setOutput(data.output || '(no output)');
-        } catch (e) { setOutput(`Error: ${e.message}`); }
-        setRunning(false);
+    const normalizeForCompare = s => {
+        if (!s) return '';
+        return s.replace(/\r\n/g, '\n').replace(/\r/g, '\n').replace(/\\n/g, '\n')
+            .split('\n').map(l => l.trim()).filter(l => l.length > 0).join('\n');
+    };
+    const wsCollapse = s => normalizeForCompare(s).replace(/\s+/g, ' ').trim();
+
+    const scrollTerminal = () => {
+        setTimeout(() => { if (terminalRef.current) terminalRef.current.scrollTop = terminalRef.current.scrollHeight; }, 0);
     };
 
-    const runAllTests = async () => {
-        setRunning(true);
+    const handleRun = () => {
+        setIsRunning(true);
+        setOutputSegments([]);
+        setRunResult(null);
+        setActiveOutputTab('output');
+        if (terminalSize === 'minimized') setTerminalSize('normal');
+
+        const socket = socketService.connect();
+        socket.emit('run-interactive', { code, language, problemId: question.id });
+
+        let accOutput = '';
+        let stdinPiped = false; // send customInput only once, after process actually starts
+
+        const pipeCustomInput = () => {
+            if (stdinPiped || !customInput.trim()) return;
+            stdinPiped = true;
+            // Send each line separately with small gap — handles multi-input programs
+            const lines = customInput.replace(/\r\n/g, '\n').replace(/\r/g, '\n').split('\n');
+            lines.forEach((line, idx) => {
+                setTimeout(() => socket.emit('run-stdin', line), idx * 40);
+            });
+        };
+
+        // Fallback for programs that immediately block on input() without printing anything first
+        // (e.g. Python: i = int(input())). Event-based approach won't trigger because there's no output.
+        // stdinPiped flag ensures this is a no-op if the event-based path already ran.
+        const fallbackTimer = setTimeout(pipeCustomInput, 1500);
+
+        const onOutput = ({ text, type }) => {
+            if (type !== 'stdin') accOutput += text;
+            setOutputSegments(prev => [...prev, { text, type: type || 'stdout' }]);
+            scrollTerminal();
+            // After first REAL output (not "Compiling..." info), pipe customInput
+            // This handles C/C++/Java which compile first before running
+            if (type !== 'info') pipeCustomInput();
+        };
+        const onExit = ({ allOutput: progOutput } = {}) => {
+            clearTimeout(fallbackTimer);
+            socket.off('run-output', onOutput);
+            socket.off('run-exit', onExit);
+            setIsRunning(false);
+            const progText = progOutput !== undefined ? progOutput : accOutput;
+            const expectedRaw = (question.expected_output || question.expectedOutput || '').trim();
+            if (expectedRaw) {
+                const normMatch = normalizeForCompare(progText) === normalizeForCompare(expectedRaw);
+                const wsMatch = wsCollapse(progText) === wsCollapse(expectedRaw);
+                const stripEcho = s => normalizeForCompare(s).split('\n').filter(l => !/^\d+$/.test(l)).join('\n');
+                const passed = normMatch || wsMatch || stripEcho(progText) === stripEcho(expectedRaw);
+                setRunResult({ actual: progText.trim(), expected: expectedRaw, passed });
+            }
+            scrollTerminal();
+        };
+        socket.on('run-output', onOutput);
+        socket.on('run-exit', onExit);
+    };
+
+    const sendInteractiveStdin = () => {
+        socketService.connect().emit('run-stdin', interactiveStdin);
+        setOutputSegments(prev => [...prev, { text: interactiveStdin + '\n', type: 'stdin' }]);
+        setInteractiveStdin('');
+        scrollTerminal();
+    };
+
+    const stopRun = () => { socketService.connect().emit('kill-run'); };
+
+    const handleRunAllTests = async () => {
         const tcs = question.test_cases || [];
+        if (!tcs.length) return;
+        setRunningTests(true);
+        setActiveOutputTab('tests');
+        if (terminalSize === 'minimized') setTerminalSize('normal');
         const results = [];
         for (const tc of tcs) {
             try {
-                const { data } = await axios.post(`${API}/api/crt/attempt/${attemptId}/run-code`, { code, language, stdin: String(tc.input || '') }, { headers: authHeader() });
+                const { data } = await axios.post(`${API}/api/crt/attempt/${attemptId}/run-code`,
+                    { code, language, stdin: String(tc.input || '') }, { headers: authHeader() });
                 const actual = (data.output || '').trim();
                 const expected = String(tc.expected_output || '').trim();
-                results.push({ input: tc.input, expected, actual, passed: actual === expected });
-            } catch (e) { results.push({ input: tc.input, expected: tc.expected_output, actual: `Error: ${e.message}`, passed: false }); }
+                const norm = s => s.replace(/\r\n/g, '\n').replace(/\r/g, '\n').split('\n').map(l => l.trim()).filter(Boolean).join('\n');
+                results.push({ input: tc.input, expected, actual, passed: norm(actual) === norm(expected) });
+            } catch (e) {
+                results.push({ input: tc.input, expected: tc.expected_output, actual: `Error: ${e.message}`, passed: false });
+            }
         }
         setTestResults(results);
-        const passed = results.filter(r => r.passed).length;
-        setOutput(`${passed}/${results.length} test cases passed`);
-        setRunning(false);
-
-        // Update answer with latest code
         onChange({ code, language, student_answer: code });
+        setRunningTests(false);
     };
 
-    const handleCodeChange = (v) => {
+    const handleCodeChange = v => {
         setCode(v);
         onChange({ code: v, language, student_answer: v });
     };
 
+    const tcs = question.test_cases || [];
+    const passedCount = testResults.filter(r => r.passed).length;
+
     return (
-        <div style={{ background: '#1e293b', borderRadius: '12px', border: '1px solid #334155', marginBottom: '16px', overflow: 'hidden' }}>
-            {/* Header */}
-            <div style={{ padding: '14px 18px', borderBottom: '1px solid #334155', display: 'flex', gap: '10px', alignItems: 'flex-start' }}>
-                <span style={{ background: '#334155', color: '#94a3b8', borderRadius: '6px', padding: '2px 8px', fontSize: '12px', fontWeight: 700 }}>Q{index + 1}</span>
-                <p style={{ margin: 0, color: '#f1f5f9', fontSize: '14px', lineHeight: '1.5', whiteSpace: 'pre-wrap', flex: 1 }}>{question.question}</p>
+        <div style={{ display: 'flex', flexDirection: 'column', background: '#0a0f1a', borderRadius: '14px', border: '1px solid #1e293b', overflow: 'hidden' }}>
+            {/* Question header */}
+            <div style={{ padding: '14px 18px', background: 'linear-gradient(135deg,rgba(30,41,59,0.9),rgba(15,23,42,0.95))', borderBottom: '1px solid #1e293b', display: 'flex', gap: '10px', alignItems: 'flex-start' }}>
+                <span style={{ background: 'linear-gradient(135deg,#6366f1,#4f46e5)', color: '#fff', borderRadius: '7px', padding: '3px 9px', fontSize: '11px', fontWeight: 800, flexShrink: 0 }}>{isDebug ? '🐛' : '💻'} Q{index + 1}</span>
+                <p style={{ margin: 0, color: '#e2e8f0', fontSize: '14px', lineHeight: '1.65', whiteSpace: 'pre-wrap', flex: 1 }}>{question.question}</p>
             </div>
 
-            {/* Buggy code for debug */}
+            {/* Buggy code for debug mode */}
             {isDebug && question.code_snippet && (
-                <div style={{ padding: '12px 18px', borderBottom: '1px solid #334155', background: '#0f172a' }}>
-                    <p style={{ margin: '0 0 6px', fontSize: '11px', fontWeight: 700, color: '#f87171' }}>🐛 Buggy Code to Fix:</p>
-                    <pre style={{ margin: 0, fontFamily: 'monospace', fontSize: '13px', color: '#fca5a5', whiteSpace: 'pre-wrap' }}>{question.code_snippet}</pre>
+                <div style={{ padding: '12px 18px', borderBottom: '1px solid #1e293b', background: 'rgba(239,68,68,0.05)' }}>
+                    <p style={{ margin: '0 0 8px', fontSize: '11px', fontWeight: 700, color: '#f87171', display: 'flex', alignItems: 'center', gap: '5px' }}>🐛 Buggy Code to Fix</p>
+                    <pre style={{ margin: 0, padding: '12px 14px', background: '#0f172a', border: '1px solid rgba(239,68,68,0.2)', borderRadius: '8px', fontFamily: 'ui-monospace,monospace', fontSize: '13px', color: '#fca5a5', whiteSpace: 'pre-wrap', overflowX: 'auto' }}>{question.code_snippet}</pre>
                 </div>
             )}
 
-            {/* Language selector + run buttons */}
-            <div style={{ padding: '10px 14px', borderBottom: '1px solid #334155', display: 'flex', gap: '8px', alignItems: 'center', background: '#0f172a', flexWrap: 'wrap' }}>
-                <select value={language} onChange={e => { setLanguage(e.target.value); onChange({ code, language: e.target.value, student_answer: code }); }}
-                    style={{ background: '#1e293b', border: '1px solid #475569', color: '#f1f5f9', borderRadius: '8px', padding: '5px 10px', fontSize: '12px', cursor: 'pointer', outline: 'none' }}>
-                    {['Python', 'JavaScript', 'Java', 'C', 'C++'].map(l => <option key={l} value={l}>{l}</option>)}
-                </select>
-                <button onClick={() => runCode()} disabled={running} style={{ display: 'flex', alignItems: 'center', gap: '5px', padding: '6px 14px', background: '#1e293b', border: '1px solid #475569', borderRadius: '8px', color: '#94a3b8', cursor: running ? 'not-allowed' : 'pointer', fontSize: '12px', fontWeight: 600 }}>
-                    {running ? <Loader2 size={13} className="spin" /> : <Play size={13} />} Run
-                </button>
-                {(question.test_cases || []).length > 0 && (
-                    <button onClick={runAllTests} disabled={running} style={{ display: 'flex', alignItems: 'center', gap: '5px', padding: '6px 14px', background: running ? '#475569' : 'linear-gradient(135deg, #6366f1, #4f46e5)', border: 'none', borderRadius: '8px', color: '#fff', cursor: running ? 'not-allowed' : 'pointer', fontSize: '12px', fontWeight: 700 }}>
-                        <Zap size={13} /> Run All Tests
+            {/* Toolbar â€” like ProctoredCodeEditor */}
+            <div style={{ padding: '0.75rem 1rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #334155', background: '#1e293b' }}>
+                <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center' }}>
+                    <label style={{ color: '#94a3b8', fontSize: '0.85rem' }}>Language:</label>
+                    <select value={language}
+                        onChange={e => { const l = e.target.value; setLanguage(l); onChange({ code, language: l, student_answer: code }); }}
+                        style={{ background: '#0f172a', color: '#f8fafc', border: '1px solid #334155', borderRadius: '6px', padding: '0.4rem 0.75rem', fontSize: '0.85rem', cursor: 'pointer', outline: 'none' }}>
+                        {['Python', 'JavaScript', 'Java', 'C', 'C++'].map(l => <option key={l}>{l}</option>)}
+                    </select>
+                    <button onClick={handleRun} disabled={isRunning}
+                        style={{ background: isRunning ? '#334155' : 'linear-gradient(135deg,#3b82f6,#2563eb)', border: 'none', color: isRunning ? '#64748b' : 'white', padding: '0.5rem 1.25rem', borderRadius: '6px', cursor: isRunning ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', gap: '0.5rem', fontWeight: 600, fontSize: '0.85rem' }}>
+                        <Play size={16} /> {isRunning ? 'Running...' : 'Run Code'}
                     </button>
-                )}
-                <span style={{ fontSize: '11px', color: '#475569', marginLeft: 'auto' }}>{(question.test_cases || []).length} test case{question.test_cases?.length !== 1 ? 's' : ''}</span>
-            </div>
-
-            {/* Monaco editor */}
-            <div style={{ borderBottom: '1px solid #334155' }}>
-                <Editor
-                    height="220px"
-                    language={LANG_MAP[language] || 'python'}
-                    theme="vs-dark"
-                    value={code}
-                    onChange={handleCodeChange}
-                    options={{ minimap: { enabled: false }, fontSize: 13, lineNumbers: 'on', scrollBeyondLastLine: false, wordWrap: 'on', automaticLayout: true }}
-                />
-            </div>
-
-            {/* Output */}
-            {output && (
-                <div style={{ padding: '10px 14px', background: '#0f172a', borderTop: '1px solid #1e293b' }}>
-                    <p style={{ margin: '0 0 4px', fontSize: '11px', fontWeight: 700, color: '#64748b' }}>OUTPUT:</p>
-                    <pre style={{ margin: 0, fontFamily: 'monospace', fontSize: '12px', color: '#a5f3fc', whiteSpace: 'pre-wrap' }}>{output}</pre>
                 </div>
-            )}
+                <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center' }}>
+                    {tcs.length > 0 && (
+                        <button onClick={handleRunAllTests} disabled={runningTests || isRunning}
+                            style={{ background: 'linear-gradient(135deg,#06b6d4,#0891b2)', border: 'none', color: '#fff', padding: '0.5rem 1.25rem', borderRadius: '6px', cursor: (runningTests || isRunning) ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', gap: '0.5rem', fontWeight: 600, fontSize: '0.85rem', opacity: (runningTests || isRunning) ? 0.5 : 1 }}>
+                            {runningTests ? <Loader2 size={15} className="spin" /> : <Zap size={15} />} Run All Tests
+                        </button>
+                    )}
+                    {tcs.length > 0 && <span style={{ fontSize: '0.78rem', color: '#475569', fontWeight: 600 }}>{tcs.length} test{tcs.length !== 1 ? 's' : ''}</span>}
+                </div>
+            </div>
 
-            {/* Test case results */}
-            {testResults && (
-                <div style={{ padding: '12px 14px', borderTop: '1px solid #334155' }}>
-                    <p style={{ margin: '0 0 8px', fontSize: '12px', fontWeight: 700, color: '#f1f5f9' }}>
-                        Test Results: <span style={{ color: testResults.filter(r => r.passed).length === testResults.length ? '#4ade80' : '#f87171' }}>{testResults.filter(r => r.passed).length}/{testResults.length} passed</span>
-                    </p>
-                    {testResults.map((res, i) => (
-                        <div key={i} style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr auto', gap: '6px', padding: '7px 10px', borderRadius: '8px', background: res.passed ? 'rgba(34,197,94,0.08)' : 'rgba(239,68,68,0.08)', border: `1px solid ${res.passed ? '#22c55e30' : '#ef444430'}`, marginBottom: '4px', fontSize: '11px' }}>
-                            <div><span style={{ color: '#64748b', display: 'block', marginBottom: '2px' }}>Input</span><code style={{ color: '#e2e8f0' }}>{String(res.input || '—')}</code></div>
-                            <div><span style={{ color: '#64748b', display: 'block', marginBottom: '2px' }}>Expected</span><code style={{ color: '#86efac' }}>{res.expected || '—'}</code></div>
-                            <div><span style={{ color: '#64748b', display: 'block', marginBottom: '2px' }}>Actual</span><code style={{ color: res.passed ? '#86efac' : '#fca5a5' }}>{res.actual || '—'}</code></div>
-                            <span style={{ color: res.passed ? '#4ade80' : '#f87171', fontSize: '16px', display: 'flex', alignItems: 'center' }}>{res.passed ? '✓' : '✗'}</span>
-                        </div>
+            {/* Monaco Editor */}
+            <Editor
+                height="320px"
+                language={LANG_MAP[language] || 'python'}
+                theme="vs-dark"
+                value={code}
+                onChange={handleCodeChange}
+                options={{ minimap: { enabled: false }, fontSize: 14, lineNumbers: 'on', scrollBeyondLastLine: false, wordWrap: 'on', automaticLayout: true, padding: { top: 10, bottom: 10 }, fontFamily: 'ui-monospace,JetBrains Mono,monospace', renderLineHighlight: 'all', smoothScrolling: true }}
+            />
+
+            {/* Output / Tab panel â€” exactly like ProctoredCodeEditor */}
+            <div style={{
+                flex: terminalSize === 'maximized' ? '0 0 420px' : terminalSize === 'minimized' ? '0 0 36px' : '0 0 320px',
+                background: '#020617', borderTop: '1px solid #334155', display: 'flex', flexDirection: 'column', minHeight: 0,
+                transition: 'flex-basis 0.25s cubic-bezier(0.4,0,0.2,1)'
+            }}>
+                {/* Tab Headers */}
+                <div style={{ display: 'flex', borderBottom: '1px solid #334155', background: '#0f172a', alignItems: 'center' }}>
+                    {[
+                        { key: 'input', label: '📝 Custom Input' },
+                        { key: 'output', label: '⚙️ Output' },
+                        { key: 'tests', label: `🧪 Test Cases${testResults.length > 0 ? ` (${passedCount}/${testResults.length})` : tcs.length > 0 ? ` (${tcs.length})` : ''}` }
+                    ].map(tab => (
+                        <button key={tab.key}
+                            onClick={() => { setActiveOutputTab(tab.key); if (terminalSize === 'minimized') setTerminalSize('normal'); }}
+                            style={{
+                                padding: '0.65rem 1.1rem', background: activeOutputTab === tab.key ? '#1e293b' : 'transparent', border: 'none',
+                                borderBottom: activeOutputTab === tab.key
+                                    ? `2px solid ${tab.key === 'input' ? '#f59e0b' : tab.key === 'output' ? '#3b82f6' : '#06b6d4'}`
+                                    : '2px solid transparent',
+                                color: activeOutputTab === tab.key
+                                    ? (tab.key === 'input' ? '#fbbf24' : tab.key === 'output' ? '#60a5fa' : '#06b6d4')
+                                    : '#64748b',
+                                cursor: 'pointer', fontSize: '0.82rem', fontWeight: 500, display: 'flex', alignItems: 'center', gap: '0.4rem'
+                            }}>
+                            {tab.label}
+                            {tab.key === 'output' && outputSegments.length > 0 && (
+                                <span style={{ width: 6, height: 6, borderRadius: '50%', background: outputSegments.some(s => s.type === 'stderr') ? '#ef4444' : '#10b981' }} />
+                            )}
+                        </button>
                     ))}
+                    <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '4px', paddingRight: '8px' }}>
+                        <button onClick={() => setTerminalSize(s => s === 'minimized' ? 'normal' : 'minimized')} title="Minimize" style={{ padding: '2px 8px', background: 'transparent', border: '1px solid #334155', borderRadius: '4px', color: '#475569', fontSize: '0.8rem', cursor: 'pointer', lineHeight: 1 }}>â”€</button>
+                        <button onClick={() => setTerminalSize(s => s === 'maximized' ? 'normal' : 'maximized')} title="Maximize" style={{ padding: '2px 6px', background: 'transparent', border: '1px solid #334155', borderRadius: '4px', color: '#475569', fontSize: '0.7rem', cursor: 'pointer', lineHeight: 1 }}>{terminalSize === 'maximized' ? '⊡' : '⊞'}</button>
+                    </div>
                 </div>
-            )}
+
+                {/* Custom Input Tab */}
+                {activeOutputTab === 'input' && terminalSize !== 'minimized' && (
+                    <div style={{ padding: '0.75rem', flex: 1 }}>
+                        <textarea
+                            value={customInput}
+                            onChange={e => setCustomInput(e.target.value)}
+                            placeholder={`Enter your input here (stdin)...\nExample:\n5\n1 2 3 4 5`}
+                            style={{ width: '100%', height: 'calc(100% - 30px)', minHeight: '140px', background: '#0f172a', color: '#e2e8f0', border: '1px solid #334155', borderRadius: '8px', padding: '0.75rem', fontFamily: 'monospace', fontSize: '0.85rem', resize: 'none', outline: 'none', boxSizing: 'border-box' }}
+                        />
+                        <div style={{ marginTop: '0.5rem', fontSize: '0.7rem', color: '#64748b' }}>💡 Type your stdin input, then click Run Code</div>
+                    </div>
+                )}
+
+                {/* Output Tab â€” exact ProctoredCodeEditor terminal */}
+                {activeOutputTab === 'output' && (
+                    <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0, background: '#090d18', borderTop: '1px solid #1e3a5f' }}>
+                        {/* Terminal header bar */}
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '6px 14px', background: '#0d1929', borderBottom: '1px solid #1e293b', flexShrink: 0 }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                <div style={{ display: 'flex', gap: '5px' }}>
+                                    <div title="Minimize" onClick={() => setTerminalSize(s => s === 'minimized' ? 'normal' : 'minimized')}
+                                        style={{ width: '10px', height: '10px', borderRadius: '50%', background: '#ef4444', opacity: 0.85, cursor: 'pointer' }} />
+                                    <div title="Normal" onClick={() => setTerminalSize('normal')}
+                                        style={{ width: '10px', height: '10px', borderRadius: '50%', background: '#f59e0b', opacity: 0.85, cursor: 'pointer' }} />
+                                    <div title="Maximize" onClick={() => setTerminalSize(s => s === 'maximized' ? 'normal' : 'maximized')}
+                                        style={{ width: '10px', height: '10px', borderRadius: '50%', background: '#22c55e', opacity: 0.85, cursor: 'pointer' }} />
+                                </div>
+                                <span style={{ fontSize: '0.72rem', fontWeight: 600, color: '#475569', letterSpacing: '0.05em', fontFamily: 'ui-monospace,monospace' }}>TERMINAL</span>
+                            </div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                {isRunning && (
+                                    <span style={{ display: 'flex', alignItems: 'center', gap: '5px', fontSize: '0.68rem', fontWeight: 700, color: '#4ade80', background: 'rgba(34,197,94,0.1)', border: '1px solid rgba(34,197,94,0.25)', borderRadius: '4px', padding: '2px 8px' }}>
+                                        <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#4ade80', display: 'inline-block', animation: 'blink 1s step-end infinite' }} />
+                                        RUNNING
+                                    </span>
+                                )}
+                                {!isRunning && outputSegments.length > 0 && (
+                                    <span style={{ fontSize: '0.68rem', fontWeight: 600, color: runResult ? (runResult.passed ? '#4ade80' : '#f87171') : '#64748b' }}>
+                                        {runResult ? (runResult.passed ? '✅ Accepted' : '❌ Wrong Answer') : 'â— Finished'}
+                                    </span>
+                                )}
+                                {isRunning && (
+                                    <button onClick={stopRun} style={{ padding: '2px 8px', background: 'rgba(239,68,68,0.12)', border: '1px solid rgba(239,68,68,0.3)', borderRadius: '4px', color: '#f87171', fontSize: '0.68rem', fontWeight: 600, cursor: 'pointer' }}>â–  Stop</button>
+                                )}
+                                <button onClick={() => setTerminalSize(s => s === 'minimized' ? 'normal' : 'minimized')} style={{ padding: '2px 7px', background: 'rgba(71,85,105,0.2)', border: '1px solid #334155', borderRadius: '4px', color: '#94a3b8', fontSize: '0.75rem', cursor: 'pointer', lineHeight: 1 }}>â”€</button>
+                                <button onClick={() => setTerminalSize(s => s === 'maximized' ? 'normal' : 'maximized')} style={{ padding: '2px 6px', background: 'rgba(71,85,105,0.2)', border: '1px solid #334155', borderRadius: '4px', color: '#94a3b8', fontSize: '0.65rem', cursor: 'pointer', lineHeight: 1 }}>{terminalSize === 'maximized' ? '⊡' : '⊞'}</button>
+                            </div>
+                        </div>
+
+                        {/* Scrollable output area */}
+                        {terminalSize !== 'minimized' && (
+                            <div ref={terminalRef} style={{ flex: 1, overflowY: 'auto', padding: '12px 16px', fontFamily: 'ui-monospace,SFMono-Regular,Consolas,monospace', fontSize: '0.84rem', lineHeight: 1.7, whiteSpace: 'pre-wrap', wordBreak: 'break-word', minHeight: '80px' }}>
+                                {outputSegments.length > 0
+                                    ? outputSegments.map((seg, i) => (
+                                        <span key={i} style={{ color: seg.type === 'stdin' ? '#4ade80' : seg.type === 'stderr' ? '#fca5a5' : seg.type === 'info' ? '#475569' : '#e2e8f0' }}>{seg.text}</span>
+                                    ))
+                                    : <span style={{ color: '#334155', fontStyle: 'italic' }}>â–¶ Click "Run Code" to execute your programâ€¦</span>
+                                }
+                                {isRunning && <span style={{ display: 'inline-block', width: '8px', height: '1em', background: '#4ade80', marginLeft: '1px', verticalAlign: 'text-bottom', animation: 'blink 1s step-end infinite' }} />}
+                            </div>
+                        )}
+
+                        {/* Legend + verdict */}
+                        {!isRunning && outputSegments.length > 0 && terminalSize !== 'minimized' && (
+                            <div style={{ flexShrink: 0, padding: '3px 16px 5px', fontSize: '0.7rem', color: '#334155' }}>
+                                <span style={{ color: '#4ade80' }}>â–ˆ</span> = stdin &nbsp; <span style={{ color: '#fca5a5' }}>â–ˆ</span> = stderr &nbsp; <span style={{ color: '#475569' }}>â–ˆ</span> = compiler
+                            </div>
+                        )}
+                        {!isRunning && runResult && terminalSize !== 'minimized' && (
+                            <div style={{ flexShrink: 0, margin: '0 12px 10px', padding: '10px 14px', borderRadius: '8px', background: runResult.passed ? 'rgba(16,185,129,0.09)' : 'rgba(239,68,68,0.09)', border: `1px solid ${runResult.passed ? 'rgba(16,185,129,0.3)' : 'rgba(239,68,68,0.3)'}` }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: runResult.passed ? 0 : '8px' }}>
+                                    <span style={{ fontSize: '1rem' }}>{runResult.passed ? '✅' : '❌'}</span>
+                                    <span style={{ fontWeight: 700, fontSize: '0.88rem', color: runResult.passed ? '#4ade80' : '#f87171' }}>
+                                        {runResult.passed ? 'Accepted â€” Output matches expected!' : 'Wrong Answer â€” Output does not match'}
+                                    </span>
+                                </div>
+                                {!runResult.passed && (
+                                    <div style={{ paddingLeft: '28px' }}>
+                                        <div style={{ fontSize: '0.72rem', color: '#64748b', marginBottom: '6px' }}>Expected output:</div>
+                                        <pre style={{ margin: 0, padding: '8px 12px', background: '#0d1929', border: '1px solid rgba(16,185,129,0.2)', borderRadius: '6px', color: '#34d399', fontSize: '0.78rem', whiteSpace: 'pre-wrap', fontFamily: 'ui-monospace,monospace' }}>{(runResult.expected || '').replace(/\\r\\n|\\n|\\r/g, '\n')}</pre>
+                                    </div>
+                                )}
+                            </div>
+                        )}
+
+                        {/* Interactive stdin bar â€” active when running */}
+                        <div style={{ flexShrink: 0, borderTop: `2px solid ${isRunning ? '#16a34a' : '#1e293b'}`, background: isRunning ? '#051210' : '#0a0f1a', transition: 'border-color 0.2s, background 0.2s' }}>
+                            {isRunning ? (
+                                <div style={{ display: 'flex', alignItems: 'center', padding: '0 12px', height: '42px', gap: '8px' }}>
+                                    <span style={{ color: '#4ade80', fontSize: '0.9rem', fontFamily: 'ui-monospace,monospace', fontWeight: 700, userSelect: 'none', flexShrink: 0 }}>$</span>
+                                    <input type="text" value={interactiveStdin} onChange={e => setInteractiveStdin(e.target.value)}
+                                        onKeyDown={e => { if (e.key === 'Enter') sendInteractiveStdin(); }}
+                                        placeholder="Type your input here and press Enter…"
+                                        autoFocus
+                                        style={{ flex: 1, background: 'transparent', border: 'none', outline: 'none', color: '#f8fafc', fontSize: '0.88rem', fontFamily: 'ui-monospace,SFMono-Regular,monospace', caretColor: '#4ade80' }}
+                                    />
+                                    <button onClick={sendInteractiveStdin} style={{ flexShrink: 0, padding: '6px 16px', background: '#16a34a', border: 'none', borderRadius: '5px', color: '#fff', fontSize: '0.78rem', fontWeight: 700, cursor: 'pointer' }}>↵ Send</button>
+                                </div>
+                            ) : (
+                                <div style={{ display: 'flex', alignItems: 'center', padding: '0 14px', height: '36px', gap: '8px' }}>
+                                    <span style={{ color: '#1e3a5f', fontSize: '0.72rem', fontFamily: 'ui-monospace,monospace' }}>$</span>
+                                    <span style={{ color: '#334155', fontSize: '0.75rem', fontStyle: 'italic' }}>
+                                        {outputSegments.length > 0 ? 'Process finished. Run code again to restart.' : 'Stdin will appear here when your program requests input'}
+                                    </span>
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                )}
+
+                {/* Test Cases Tab */}
+                {activeOutputTab === 'tests' && terminalSize !== 'minimized' && (
+                    <div style={{ padding: '0.75rem', flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column' }}>
+                        {testResults.length === 0 && !runningTests && (
+                            <div style={{ textAlign: 'center', paddingTop: '28px' }}>
+                                <button onClick={handleRunAllTests} disabled={isRunning}
+                                    style={{ background: 'linear-gradient(135deg,#06b6d4,#0891b2)', border: 'none', color: '#fff', padding: '0.65rem 1.4rem', borderRadius: '8px', cursor: isRunning ? 'not-allowed' : 'pointer', fontWeight: 700, fontSize: '0.9rem', opacity: isRunning ? 0.5 : 1 }}>
+                                    {runningTests ? '⏳ Running All Tests...' : `🧪 Run All Tests (${tcs.length})`}
+                                </button>
+                                <p style={{ color: '#475569', fontSize: '12px', marginTop: '8px' }}>Compare your output against {tcs.length} test case{tcs.length !== 1 ? 's' : ''}</p>
+                            </div>
+                        )}
+                        {runningTests && (
+                            <div style={{ padding: '24px', textAlign: 'center', color: '#06b6d4', fontSize: '13px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
+                                <Loader2 size={15} className="spin" /> Running test casesâ€¦
+                            </div>
+                        )}
+                        {testResults.length > 0 && (
+                            <div>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '10px', padding: '8px 12px', background: passedCount === testResults.length ? 'rgba(34,197,94,0.08)' : 'rgba(239,68,68,0.08)', borderRadius: '8px', border: `1px solid ${passedCount === testResults.length ? 'rgba(34,197,94,0.25)' : 'rgba(239,68,68,0.25)'}` }}>
+                                    <span style={{ fontSize: '18px' }}>{passedCount === testResults.length ? '🎉' : '❌'}</span>
+                                    <span style={{ fontWeight: 700, fontSize: '13px', color: passedCount === testResults.length ? '#4ade80' : '#f87171' }}>{passedCount}/{testResults.length} test cases passed</span>
+                                </div>
+                                {testResults.map((res, i) => (
+                                    <div key={i} style={{ marginBottom: '8px', borderRadius: '9px', overflow: 'hidden', border: `1px solid ${res.passed ? 'rgba(34,197,94,0.25)' : 'rgba(239,68,68,0.25)'}` }}>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '7px 12px', background: res.passed ? 'rgba(34,197,94,0.08)' : 'rgba(239,68,68,0.08)' }}>
+                                            <span style={{ fontSize: '14px' }}>{res.passed ? '✅' : '❌'}</span>
+                                            <span style={{ fontWeight: 700, fontSize: '12px', color: res.passed ? '#4ade80' : '#f87171' }}>Test Case {i + 1}</span>
+                                        </div>
+                                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', background: '#060a10' }}>
+                                            {[['Input', String(res.input ?? 'â€”'), '#94a3b8'], ['Expected', res.expected || 'â€”', '#4ade80'], ['Actual', res.actual || '(no output)', res.passed ? '#4ade80' : '#f87171']].map(([label, val, col]) => (
+                                                <div key={label} style={{ padding: '8px 11px', borderRight: '1px solid #1e293b' }}>
+                                                    <div style={{ fontSize: '10px', color: '#475569', fontWeight: 700, textTransform: 'uppercase', marginBottom: '4px' }}>{label}</div>
+                                                    <code style={{ fontSize: '11.5px', color: col, fontFamily: 'ui-monospace,monospace', whiteSpace: 'pre-wrap' }}>{val}</code>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+                    </div>
+                )}
+            </div>
         </div>
     );
 }
 
-// ─── SQL Question Component ───────────────────────────────────────────────────
+// â”€â”€â”€ SQL Question Component â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function SQLQuestion({ question, index, answer, onChange, attemptId }) {
-    const [query, setQuery] = useState(answer?.query || '-- Write your SQL query here\n');
-    const [running, setRunning] = useState(false);
-    const [output, setOutput] = useState('');
-    const [showSchema, setShowSchema] = useState(false);
+    const [query, setQuery] = useState(answer?.query || '-- Write your SQL query here\nSELECT * FROM table_name;\n');
+    const [sqlTool, setSqlTool] = useState('validator'); // 'validator' | 'visualizer' | 'debugger'
+    const [schemaOpen, setSchemaOpen] = useState(false);
 
-    const runSQL = async () => {
-        setRunning(true); setOutput('Executing…');
-        try {
-            const { data } = await axios.post(`${API}/api/crt/attempt/${attemptId}/run-sql`, { query, schema: question.sql_schema || '' }, { headers: authHeader() });
-            setOutput(data.output || '(no rows)');
-        } catch (e) { setOutput(`Error: ${e.message}`); }
-        setRunning(false);
-    };
-
-    const handleChange = (v) => { setQuery(v); onChange({ query: v, student_answer: v }); };
+    const handleChange = v => { setQuery(v); onChange({ query: v, student_answer: v }); };
+    const schema = question.sql_schema || question.sqlSchema || '';
 
     return (
-        <div style={{ background: '#1e293b', borderRadius: '12px', border: '1px solid #334155', marginBottom: '16px', overflow: 'hidden' }}>
-            <div style={{ padding: '14px 18px', borderBottom: '1px solid #334155', display: 'flex', gap: '10px', alignItems: 'flex-start' }}>
-                <span style={{ background: '#334155', color: '#94a3b8', borderRadius: '6px', padding: '2px 8px', fontSize: '12px', fontWeight: 700 }}>Q{index + 1}</span>
-                <p style={{ margin: 0, color: '#f1f5f9', fontSize: '14px', lineHeight: '1.5', flex: 1 }}>{question.question}</p>
+        <div style={{ display: 'flex', flexDirection: 'column', background: '#0a0f1a', borderRadius: '14px', border: '1px solid #1e293b', overflow: 'hidden' }}>
+            {/* Question header */}
+            <div style={{ padding: '14px 18px', background: 'linear-gradient(135deg,rgba(30,41,59,0.9),rgba(15,23,42,0.95))', borderBottom: '1px solid #1e293b', display: 'flex', gap: '10px', alignItems: 'flex-start' }}>
+                <span style={{ background: 'linear-gradient(135deg,#14b8a6,#0d9488)', color: '#fff', borderRadius: '7px', padding: '3px 9px', fontSize: '11px', fontWeight: 800, flexShrink: 0 }}>🗄 Q{index + 1}</span>
+                <p style={{ margin: 0, color: '#e2e8f0', fontSize: '14px', lineHeight: '1.65', flex: 1 }}>{question.question}</p>
             </div>
 
-            {/* Schema toggle */}
-            {question.sql_schema && (
-                <div style={{ borderBottom: '1px solid #334155' }}>
-                    <button onClick={() => setShowSchema(!showSchema)} style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '9px 16px', background: 'none', border: 'none', color: '#14b8a6', cursor: 'pointer', fontSize: '12px', fontWeight: 700, width: '100%', textAlign: 'left' }}>
-                        <Database size={13} /> {showSchema ? 'Hide Schema' : 'View Schema'} {showSchema ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
-                    </button>
-                    {showSchema && (
-                        <div style={{ padding: '10px 16px', background: '#0f172a', borderTop: '1px solid #334155' }}>
-                            <pre style={{ margin: 0, fontFamily: 'monospace', fontSize: '12px', color: '#a5f3fc', whiteSpace: 'pre-wrap' }}>{question.sql_schema}</pre>
+            {/* Schema — button always visible, popup on click */}
+            {schema && (
+                <>
+                    <div style={{ padding: '8px 16px', borderBottom: '1px solid #1e293b', background: '#060e14', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <Database size={12} color="#2dd4bf" />
+                        <span style={{ fontSize: '0.72rem', fontWeight: 700, color: '#2dd4bf', textTransform: 'uppercase', letterSpacing: '0.08em' }}>Database Schema</span>
+                        <button onClick={() => setSchemaOpen(true)}
+                            style={{ marginLeft: 'auto', padding: '3px 12px', background: 'rgba(45,212,191,0.1)', border: '1px solid rgba(45,212,191,0.3)', borderRadius: '5px', color: '#2dd4bf', fontSize: '0.75rem', fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                            <Eye size={11} /> View Schema
+                        </button>
+                    </div>
+                    {schemaOpen && (
+                        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.82)', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '2rem' }}
+                            onClick={() => setSchemaOpen(false)}>
+                            <div style={{ background: '#0d1929', border: '1px solid #1e3a5f', borderRadius: '16px', maxWidth: '720px', width: '100%', maxHeight: '82vh', overflow: 'hidden', display: 'flex', flexDirection: 'column', boxShadow: '0 25px 60px rgba(0,0,0,0.6)' }}
+                                onClick={e => e.stopPropagation()}>
+                                <div style={{ padding: '14px 18px', borderBottom: '1px solid #1e3a5f', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0 }}>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                        <Database size={15} color="#2dd4bf" />
+                                        <span style={{ fontWeight: 700, fontSize: '0.92rem', color: '#2dd4bf' }}>Database Schema</span>
+                                    </div>
+                                    <button onClick={() => setSchemaOpen(false)} style={{ background: 'transparent', border: 'none', color: '#64748b', cursor: 'pointer', padding: '4px', display: 'flex', alignItems: 'center', borderRadius: '4px' }}>
+                                        <X size={16} />
+                                    </button>
+                                </div>
+                                <div style={{ overflowY: 'auto', padding: '16px 20px' }}>
+                                    <pre style={{ margin: 0, color: '#93c5fd', fontSize: '0.84rem', whiteSpace: 'pre-wrap', fontFamily: 'ui-monospace,JetBrains Mono,monospace', lineHeight: 1.7 }}>{schema}</pre>
+                                </div>
+                            </div>
                         </div>
                     )}
-                </div>
+                </>
             )}
 
             {/* Toolbar */}
-            <div style={{ padding: '8px 14px', background: '#0f172a', borderBottom: '1px solid #1e293b', display: 'flex', gap: '8px', alignItems: 'center' }}>
-                <span style={{ fontSize: '11px', color: '#64748b', fontWeight: 700, fontFamily: 'monospace' }}>SQL</span>
-                <button onClick={runSQL} disabled={running} style={{ display: 'flex', alignItems: 'center', gap: '5px', padding: '6px 14px', background: running ? '#475569' : 'linear-gradient(135deg, #14b8a6, #0d9488)', border: 'none', borderRadius: '8px', color: '#fff', cursor: running ? 'not-allowed' : 'pointer', fontSize: '12px', fontWeight: 700 }}>
-                    {running ? <Loader2 size={13} className="spin" /> : <Play size={13} />} Run Query
-                </button>
+            <div style={{ padding: '0.75rem 1rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #334155', background: '#1e293b' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                    <label style={{ color: '#94a3b8', fontSize: '0.85rem' }}>Language:</label>
+                    <select disabled style={{ background: '#0f172a', color: '#f8fafc', border: '1px solid #334155', borderRadius: '6px', padding: '0.4rem 0.75rem', fontSize: '0.85rem', opacity: 0.7, cursor: 'not-allowed' }}>
+                        <option>SQL</option>
+                    </select>
+                </div>
+                <span style={{ fontSize: '10px', fontWeight: 800, color: '#14b8a6', letterSpacing: '0.12em', fontFamily: 'monospace', padding: '4px 10px', background: 'rgba(20,184,166,0.1)', borderRadius: '6px', border: '1px solid rgba(20,184,166,0.25)' }}>SQL MODE</span>
             </div>
 
-            <Editor height="160px" language="sql" theme="vs-dark" value={query} onChange={handleChange}
-                options={{ minimap: { enabled: false }, fontSize: 13, lineNumbers: 'on', scrollBeyondLastLine: false, wordWrap: 'on', automaticLayout: true }} />
+            {/* Monaco SQL Editor */}
+            <Editor
+                height="260px"
+                language="sql"
+                theme="vs-dark"
+                value={query}
+                onChange={handleChange}
+                options={{ minimap: { enabled: false }, fontSize: 14, lineNumbers: 'on', scrollBeyondLastLine: false, wordWrap: 'on', automaticLayout: true, padding: { top: 20 }, fontFamily: 'ui-monospace,JetBrains Mono,monospace', renderLineHighlight: 'all', smoothScrolling: true }}
+            />
 
-            {output && (
-                <div style={{ padding: '10px 14px', background: '#0f172a', borderTop: '1px solid #1e293b' }}>
-                    <p style={{ margin: '0 0 4px', fontSize: '11px', fontWeight: 700, color: '#64748b' }}>RESULT:</p>
-                    <pre style={{ margin: 0, fontFamily: 'monospace', fontSize: '12px', color: '#a5f3fc', whiteSpace: 'pre-wrap' }}>{output}</pre>
+            {/* SQL Tools Suite — like ProctoredCodeEditor */}
+            <div style={{ borderTop: '1px solid #334155', padding: '1.25rem', background: '#0f172a', overflowY: 'auto', maxHeight: '420px' }}>
+                <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1rem', padding: '4px', background: '#020617', borderRadius: '10px', width: 'fit-content' }}>
+                    <button onClick={() => setSqlTool('validator')}
+                        style={{ padding: '0.5rem 1rem', borderRadius: '8px', border: 'none', cursor: 'pointer', background: sqlTool === 'validator' ? 'rgba(59,130,246,0.2)' : 'transparent', color: sqlTool === 'validator' ? '#60a5fa' : '#64748b', fontSize: '0.82rem', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                        <Shield size={14} /> Validator
+                    </button>
+                    <button onClick={() => setSqlTool('visualizer')}
+                        style={{ padding: '0.5rem 1rem', borderRadius: '8px', border: 'none', cursor: 'pointer', background: sqlTool === 'visualizer' ? 'rgba(139,92,246,0.2)' : 'transparent', color: sqlTool === 'visualizer' ? '#a78bfa' : '#64748b', fontSize: '0.82rem', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                        <Database size={14} /> ER Diagram
+                    </button>
+                    <button onClick={() => setSqlTool('debugger')}
+                        style={{ padding: '0.5rem 1rem', borderRadius: '8px', border: 'none', cursor: 'pointer', background: sqlTool === 'debugger' ? 'rgba(16,185,129,0.2)' : 'transparent', color: sqlTool === 'debugger' ? '#4ade80' : '#64748b', fontSize: '0.82rem', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                        <Layers size={14} /> Debugger
+                    </button>
                 </div>
-            )}
+                {sqlTool === 'validator' && <SQLValidator query={query} onQueryChange={handleChange} schemaContext={schema} />}
+                {sqlTool === 'visualizer' && <SQLVisualizer schema={schema} />}
+                {sqlTool === 'debugger' && <SQLDebugger query={query} schema={schema} />}
+            </div>
         </div>
     );
 }
 
-// ─── Report view ─────────────────────────────────────────────────────────────
+// â”€â”€â”€ Report view â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function ReportView({ result, test, onClose }) {
     const { overall_score, section_scores, passed, pass_percentage, proctoring_violations } = result;
     const sections = test?.sections || [];
@@ -292,7 +596,7 @@ function ReportView({ result, test, onClose }) {
                     </div>
                     <h2 style={{ margin: '0 0 0.25rem', color: 'white', fontSize: '1.5rem', fontWeight: 800 }}>{passed ? '🎉 Congratulations!' : 'Test Completed'}</h2>
                     <p style={{ margin: '0 0 0.5rem', color: 'rgba(255,255,255,0.6)', fontSize: '0.9rem' }}>
-                        {test?.company_name} — {test?.title}
+                        {test?.company_name} â€” {test?.title}
                     </p>
                     <p style={{ margin: 0, color: 'rgba(255,255,255,0.5)', fontSize: '0.82rem' }}>
                         {passed ? 'You have successfully passed the assessment!' : `Keep practicing! Pass mark is ${pass_percentage}%`}
@@ -368,7 +672,7 @@ function ReportView({ result, test, onClose }) {
                 {/* Footer */}
                 <div style={{ padding: '1rem 2rem', borderTop: '1px solid rgba(139,92,246,0.15)', display: 'flex', justifyContent: 'center', background: 'rgba(15,23,42,0.5)' }}>
                     <button onClick={onClose} style={{ padding: '0.85rem 2.5rem', background: 'linear-gradient(135deg, #6366f1, #8b5cf6)', border: 'none', borderRadius: '12px', color: 'white', fontWeight: 700, fontSize: '1rem', cursor: 'pointer', boxShadow: '0 4px 14px rgba(99,102,241,0.4)' }}>
-                        ← Back to Tests
+                        â† Back to Tests
                     </button>
                 </div>
             </div>
@@ -376,9 +680,9 @@ function ReportView({ result, test, onClose }) {
     );
 }
 
-// ═══════════════════════════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 //  MAIN STUDENT COMPONENT
-// ═══════════════════════════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 export default function CompanyRoundInterface({ user }) {
     const [view, setView] = useState('list'); // 'list' | 'test' | 'report'
     const [tests, setTests] = useState([]);
@@ -464,7 +768,7 @@ export default function CompanyRoundInterface({ user }) {
         return () => clearInterval(tid);
     }, [activeSection, testData, sectionTimeLeft[activeSection]]);
 
-    // ── Proctoring setup ─────────────────────────────────────────────────────
+    // â”€â”€ Proctoring setup â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     const setupProctoring = useCallback((config) => {
         if (!config?.enabled) return;
         const addViolation = (msg) => {
@@ -493,7 +797,7 @@ export default function CompanyRoundInterface({ user }) {
             document.addEventListener('cut', handlers.cut);
         }
 
-        // Fullscreen — always force, regardless of config flag
+        // Fullscreen â€” always force, regardless of config flag
         if (document.documentElement.requestFullscreen) {
             document.documentElement.requestFullscreen().catch(() => {});
         }
@@ -571,7 +875,7 @@ export default function CompanyRoundInterface({ user }) {
         setSubmitting(false);
     };
 
-    // ── Render: Test list ─────────────────────────────────────────────────────
+    // â”€â”€ Render: Test list â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     if (view === 'list') {
         return (
             <div style={{ padding: '24px', maxWidth: '900px', margin: '0 auto' }}>
@@ -589,7 +893,7 @@ export default function CompanyRoundInterface({ user }) {
                 {loading ? (
                     <div style={{ textAlign: 'center', padding: '60px' }}>
                         <div style={{ width: '36px', height: '36px', border: '3px solid #334155', borderTopColor: '#3b82f6', borderRadius: '50%', animation: 'spin 0.8s linear infinite', margin: '0 auto 10px' }} />
-                        <p style={{ color: '#64748b' }}>Loading tests…</p>
+                        <p style={{ color: '#64748b' }}>Loading testsâ€¦</p>
                     </div>
                 ) : tests.length === 0 ? (
                     <div style={{ textAlign: 'center', padding: '72px 40px', background: '#1e293b', borderRadius: '18px', border: '2px dashed #334155' }}>
@@ -624,7 +928,7 @@ export default function CompanyRoundInterface({ user }) {
                                                 <span style={{ color: '#64748b', display: 'flex', gap: '4px', alignItems: 'center' }}><FileText size={12} /> {test.total_questions || 0} questions</span>
                                                 <span style={{ color: '#64748b', display: 'flex', gap: '4px', alignItems: 'center' }}><Target size={12} /> Pass {test.pass_percentage}%</span>
                                                 <span style={{ color: '#64748b', display: 'flex', gap: '4px', alignItems: 'center' }}><Shield size={12} /> {test.proctoring_config?.enabled ? 'Proctored' : 'No proctoring'}</span>
-                                                <span style={{ color: '#64748b' }}>Attempts: {test.my_attempts}/{test.max_attempts === 0 ? '∞' : test.max_attempts}</span>
+                                                <span style={{ color: '#64748b' }}>Attempts: {test.my_attempts}/{test.max_attempts === 0 ? 'âˆž' : test.max_attempts}</span>
                                             </div>
                                         </div>
 
@@ -643,7 +947,7 @@ export default function CompanyRoundInterface({ user }) {
         );
     }
 
-    // ── Render: Report ────────────────────────────────────────────────────────
+    // â”€â”€ Render: Report â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     if (view === 'report') {
         return (
             <>
@@ -653,7 +957,7 @@ export default function CompanyRoundInterface({ user }) {
         );
     }
 
-    // ── Render: Active Test ───────────────────────────────────────────────────
+    // â”€â”€ Render: Active Test â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     if (view === 'test' && testData) {
         const { test, questionsBySection, attemptId } = testData;
         const sectionDef = SECTIONS[activeSection];
@@ -702,12 +1006,12 @@ export default function CompanyRoundInterface({ user }) {
                             <Building2 size={18} color="white" />
                         </div>
                         <div>
-                            <h3 style={{ margin: 0, fontSize: '15px', fontWeight: 800, color: '#f1f5f9' }}>{test.company_name} — {test.title}</h3>
+                            <h3 style={{ margin: 0, fontSize: '15px', fontWeight: 800, color: '#f1f5f9' }}>{test.company_name} â€” {test.title}</h3>
                             <p style={{ margin: 0, fontSize: '11px', color: '#64748b' }}>{totalAnswered}/{totalQ} questions answered</p>
                         </div>
                     </div>
                     <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
-                        <Timer totalSeconds={test.duration_minutes * 60} onExpire={() => { showToast('⏰ Time up! Auto-submitting…'); setTimeout(() => submitTest(true), 1000); }} />
+                        <Timer totalSeconds={test.duration_minutes * 60} onExpire={() => { showToast('⏰ Time up! Auto-submittingâ€¦'); setTimeout(() => submitTest(true), 1000); }} />
                         {violations.length > 0 && (
                             <span style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '12px', fontWeight: 700, color: '#f59e0b', padding: '4px 10px', background: '#f59e0b15', borderRadius: '8px', border: '1px solid #f59e0b30' }}>
                                 <AlertTriangle size={13} /> {violations.length} violation{violations.length !== 1 ? 's' : ''}
@@ -733,7 +1037,7 @@ export default function CompanyRoundInterface({ user }) {
                         <button onClick={() => submitTest(false)} disabled={submitting}
                             style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '8px 20px', background: submitting ? '#475569' : 'linear-gradient(135deg, #22c55e, #16a34a)', border: 'none', borderRadius: '10px', color: '#fff', fontWeight: 700, fontSize: '13px', cursor: submitting ? 'not-allowed' : 'pointer', boxShadow: '0 2px 8px rgba(34,197,94,0.25)' }}>
                             {submitting ? <Loader2 size={14} className="spin" /> : <Check size={14} />}
-                            {submitting ? 'Submitting…' : 'Submit Test'}
+                            {submitting ? 'Submittingâ€¦' : 'Submit Test'}
                         </button>
                     </div>
                 </div>
@@ -852,7 +1156,7 @@ export default function CompanyRoundInterface({ user }) {
                                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: '18px', gap: '10px' }}>
                                         <button onClick={() => setCurrentQIdx(i => Math.max(0, i - 1))} disabled={isFirst}
                                             style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '9px 20px', background: isFirst ? '#1e293b' : 'rgba(99,102,241,0.15)', border: `1px solid ${isFirst ? '#334155' : '#6366f1'}`, borderRadius: '10px', color: isFirst ? '#475569' : '#a5b4fc', fontWeight: 700, fontSize: '13px', cursor: isFirst ? 'not-allowed' : 'pointer', transition: 'all 0.15s' }}>
-                                            ← Previous
+                                            â† Previous
                                         </button>
 
                                         <span style={{ fontSize: '12px', color: '#64748b', fontWeight: 600 }}>
@@ -862,7 +1166,7 @@ export default function CompanyRoundInterface({ user }) {
                                         {!isLast ? (
                                             <button onClick={() => setCurrentQIdx(i => Math.min(currentQs.length - 1, i + 1))}
                                                 style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '9px 20px', background: 'rgba(99,102,241,0.15)', border: '1px solid #6366f1', borderRadius: '10px', color: '#a5b4fc', fontWeight: 700, fontSize: '13px', cursor: 'pointer', transition: 'all 0.15s' }}>
-                                                Next →
+                                                Next â†’
                                             </button>
                                         ) : !isLastSection ? (
                                             <button onClick={() => {
@@ -871,12 +1175,12 @@ export default function CompanyRoundInterface({ user }) {
                                                 else showToast('Complete this section first');
                                             }}
                                                 style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '9px 20px', background: 'rgba(34,197,94,0.15)', border: '1px solid #22c55e', borderRadius: '10px', color: '#4ade80', fontWeight: 700, fontSize: '13px', cursor: 'pointer', transition: 'all 0.15s' }}>
-                                                Next Section →
+                                                Next Section â†’
                                             </button>
                                         ) : (
                                             <button onClick={() => submitTest(false)} disabled={submitting}
                                                 style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '9px 20px', background: submitting ? '#475569' : 'linear-gradient(135deg,#22c55e,#16a34a)', border: 'none', borderRadius: '10px', color: '#fff', fontWeight: 700, fontSize: '13px', cursor: submitting ? 'not-allowed' : 'pointer' }}>
-                                                {submitting ? <><Loader2 size={13} className="spin" /> Submitting…</> : <><Check size={13} /> Submit Test</>}
+                                                {submitting ? <><Loader2 size={13} className="spin" /> Submittingâ€¦</> : <><Check size={13} /> Submit Test</>}
                                             </button>
                                         )}
                                     </div>
@@ -889,7 +1193,7 @@ export default function CompanyRoundInterface({ user }) {
                             <span style={{ fontSize: '12px', color: '#94a3b8' }}>{totalAnswered}/{totalQ} answered across all sections</span>
                             <button onClick={() => submitTest(false)} disabled={submitting}
                                 style={{ padding: '9px 24px', background: submitting ? '#475569' : 'linear-gradient(135deg, #22c55e, #16a34a)', border: 'none', borderRadius: '10px', color: '#fff', fontWeight: 700, fontSize: '13px', cursor: submitting ? 'not-allowed' : 'pointer', display: 'inline-flex', alignItems: 'center', gap: '7px' }}>
-                                {submitting ? <><Loader2 size={14} className="spin" /> Submitting…</> : <><Check size={14} /> Submit Test</>}
+                                {submitting ? <><Loader2 size={14} className="spin" /> Submittingâ€¦</> : <><Check size={14} /> Submit Test</>}
                             </button>
                         </div>
                     </div>

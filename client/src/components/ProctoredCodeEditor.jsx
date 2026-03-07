@@ -1153,9 +1153,15 @@ function ProctoredCodeEditor({ problem, user, onClose, onSubmitSuccess }) {
                                         )}
                                     </>
                                 ) : (() => {
-                                    // Helper: normalize text to lines array, splitting on \n or \\n literal
-                                    const toLines = (text = '') =>
-                                        (text || '').replace(/\\n/g, '\n').split('\n').map(l => l.trimEnd());
+                                    // Helper: normalize text to lines array, splitting on all forms of newlines
+                                    const toLines = (text = '') => {
+                                        let t = text || '';
+                                        // Handle literal escape sequences stored in DB (\\r\\n, \\n, \\r)
+                                        t = t.replace(/\\r\\n/g, '\n').replace(/\\n/g, '\n').replace(/\\r/g, '\n');
+                                        // Handle actual \r\n and \r
+                                        t = t.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+                                        return t.split('\n').map(l => l.trimEnd());
+                                    };
                                     // Helper: render input as stdin-style labeled lines
                                     const InputBlock = ({ raw, onUse }) => {
                                         const lines = toLines(raw);
@@ -1240,7 +1246,12 @@ function ProctoredCodeEditor({ problem, user, onClose, onSubmitSuccess }) {
                                                 <div style={{ marginBottom: runResult ? '8px' : 0 }}>
                                                     <div style={{ fontSize: '0.7rem', fontWeight: 700, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '5px' }}>📤 Expected Output</div>
                                                     <OutputBlock
-                                                        raw={problem.expectedOutput || problem.expected_output}
+                                                        raw={
+                                                            // When passed, use actual output for display — it has real newlines & matches
+                                                            runResult?.passed && runResult.actual
+                                                                ? runResult.actual
+                                                                : (problem.expectedOutput || problem.expected_output)
+                                                        }
                                                         actualRaw={runResult ? runResult.actual : undefined}
                                                         label="EXPECTED"
                                                         passed={runResult?.passed}
@@ -1255,7 +1266,7 @@ function ProctoredCodeEditor({ problem, user, onClose, onSubmitSuccess }) {
                                                                 <span style={{ fontSize: '0.68rem', fontWeight: 700, color: runResult.passed ? '#4ade80' : '#f87171', fontFamily: 'ui-monospace,monospace', letterSpacing: '0.07em' }}>STDOUT</span>
                                                             </div>
                                                             <div style={{ padding: '10px 14px' }}>
-                                                                {(runResult.actual || '').replace(/\\n/g, '\n').split('\n').map((line, i) => (
+                                                                {toLines(runResult.actual || '').map((line, i) => (
                                                                     <div key={i} style={{ display: 'flex', gap: '8px', minHeight: '1.4em' }}>
                                                                         <span style={{ color: '#334155', fontSize: '0.72rem', fontFamily: 'ui-monospace,monospace', userSelect: 'none', paddingTop: '1px', minWidth: '18px', textAlign: 'right' }}>{i + 1}</span>
                                                                         <span style={{ color: runResult.passed ? '#4ade80' : '#fca5a5', fontSize: '0.82rem', fontFamily: 'ui-monospace,monospace', whiteSpace: 'pre-wrap' }}>{line}</span>
@@ -1670,7 +1681,7 @@ function ProctoredCodeEditor({ problem, user, onClose, onSubmitSuccess }) {
                                                 {!runResult.passed && (
                                                     <div style={{ paddingLeft: '28px' }}>
                                                         <div style={{ fontSize: '0.72rem', color: '#64748b', marginBottom: '6px' }}>Expected output:</div>
-                                                        <pre style={{ margin: 0, padding: '8px 12px', background: '#0d1929', border: '1px solid rgba(16,185,129,0.2)', borderRadius: '6px', color: '#34d399', fontSize: '0.78rem', whiteSpace: 'pre-wrap', fontFamily: 'ui-monospace,monospace' }}>{runResult.expected}</pre>
+                                                        <pre style={{ margin: 0, padding: '8px 12px', background: '#0d1929', border: '1px solid rgba(16,185,129,0.2)', borderRadius: '6px', color: '#34d399', fontSize: '0.78rem', whiteSpace: 'pre-wrap', fontFamily: 'ui-monospace,monospace' }}>{(runResult.expected || '').replace(/\\r\\n|\\n|\\r/g, '\n')}</pre>
                                                     </div>
                                                 )}
                                             </div>
