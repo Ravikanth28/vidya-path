@@ -1384,6 +1384,9 @@ function AllSubmissions() {
     const [viewMLReport, setViewMLReport] = useState(null)
     const [viewAptitudeResult, setViewAptitudeResult] = useState(null)
     const [viewGlobalReport, setViewGlobalReport] = useState(null)
+    const [viewCRTReport, setViewCRTReport] = useState(null)
+    const [crtReportData, setCrtReportData] = useState(null)
+    const [crtReportLoading, setCrtReportLoading] = useState(false)
     const [resetting, setResetting] = useState(false)
     // Column filters
     const [filterStudent, setFilterStudent] = useState('')
@@ -1930,9 +1933,20 @@ function AllSubmissions() {
                                                 <Eye size={12} /> ML
                                             </button>
                                         ) : sub.subType === 'crt' ? (
-                                            <span style={{ fontSize: '0.75rem', padding: '4px 10px', borderRadius: '6px', background: sub.status === 'Passed' ? 'rgba(16,185,129,0.1)' : 'rgba(239,68,68,0.1)', color: sub.status === 'Passed' ? '#10b981' : '#ef4444', fontWeight: 700, border: `1px solid ${sub.status === 'Passed' ? 'rgba(16,185,129,0.3)' : 'rgba(239,68,68,0.3)'}` }}>
-                                                {sub.status === 'Passed' ? '✅ Passed' : '❌ Failed'}
-                                            </span>
+                                            <button onClick={async () => {
+                                                setViewCRTReport(sub)
+                                                setCrtReportLoading(true)
+                                                try {
+                                                    const { data } = await axios.get(`${API_BASE}/crt/attempt/${sub.attemptId || sub.id}/report`, { headers: { Authorization: `Bearer ${localStorage.getItem('authToken')}` } })
+                                                    setCrtReportData(data)
+                                                } catch (err) {
+                                                    console.error('CRT report error:', err)
+                                                    setCrtReportData(null)
+                                                }
+                                                setCrtReportLoading(false)
+                                            }} style={{ background: 'rgba(245,158,11,0.1)', border: 'none', color: '#f59e0b', padding: '4px 10px', borderRadius: '6px', cursor: 'pointer', fontSize: '0.75rem', display: 'flex', alignItems: 'center', gap: '3px' }}>
+                                                <Eye size={12} /> Report
+                                            </button>
                                         ) : (
                                             <button onClick={() => setViewReport(sub)} style={{ background: 'rgba(59,130,246,0.1)', border: 'none', color: '#3b82f6', padding: '4px 10px', borderRadius: '6px', cursor: 'pointer', fontSize: '0.75rem', display: 'flex', alignItems: 'center', gap: '3px' }}>
                                                 <Eye size={12} /> Report
@@ -1967,6 +1981,226 @@ function AllSubmissions() {
                     onClose={() => setViewReport(null)}
                 />
             )}
+
+            {/* CRT Report Modal */}
+            {viewCRTReport && (
+                <AdminCRTReportModal
+                    submission={viewCRTReport}
+                    reportData={crtReportData}
+                    loading={crtReportLoading}
+                    onClose={() => { setViewCRTReport(null); setCrtReportData(null); }}
+                />
+            )}
+        </div>
+    )
+}
+
+// ==================== ADMIN CRT REPORT MODAL ====================
+function AdminCRTReportModal({ submission, reportData, loading, onClose }) {
+    const SECTION_DEFS = {
+        aptitude: { label: 'Aptitude', icon: '🧮', color: '#f59e0b' },
+        verbal: { label: 'Verbal', icon: '📝', color: '#06b6d4' },
+        logical: { label: 'Logical', icon: '🧠', color: '#8b5cf6' },
+        reasoning: { label: 'Reasoning', icon: '🔍', color: '#ec4899' },
+        technical_mcq: { label: 'Technical MCQ', icon: '💻', color: '#3b82f6' },
+        pseudocode: { label: 'Pseudo Code', icon: '📋', color: '#10b981' },
+        debug: { label: 'Debugging', icon: '🐛', color: '#ef4444' },
+        coding: { label: 'Coding', icon: '⌨️', color: '#6366f1' },
+        sql: { label: 'SQL', icon: '🗄️', color: '#14b8a6' },
+    }
+
+    const attempt = reportData?.attempt
+    const answers = reportData?.answers || []
+    const sections = attempt?.sections || []
+    const sectionScores = attempt?.section_scores || {}
+    const overallScore = attempt?.overall_score || submission?.score || 0
+    const passPercentage = attempt?.pass_percentage || 60
+    const passed = overallScore >= passPercentage
+
+    const answersBySection = {}
+    answers.forEach(a => {
+        if (!answersBySection[a.section]) answersBySection[a.section] = []
+        answersBySection[a.section].push(a)
+    })
+
+    return (
+        <div className="modal-overlay" onClick={onClose}>
+            <div className="modal-content" onClick={e => e.stopPropagation()} style={{ maxWidth: '920px', maxHeight: '90vh', overflowY: 'auto' }}>
+                <div className="modal-header" style={{ background: passed ? 'linear-gradient(135deg, rgba(16,185,129,0.15), rgba(6,182,212,0.1))' : 'linear-gradient(135deg, rgba(239,68,68,0.15), rgba(251,146,60,0.1))' }}>
+                    <div className="modal-title-with-icon">
+                        <div style={{ width: '40px', height: '40px', borderRadius: '10px', background: passed ? 'linear-gradient(135deg, #10b981, #06b6d4)' : 'linear-gradient(135deg, #ef4444, #f97316)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                            {passed ? <CheckCircle size={20} color="white" /> : <XCircle size={20} color="white" />}
+                        </div>
+                        <div>
+                            <span style={{ fontSize: '0.7rem', color: '#f59e0b', textTransform: 'uppercase', fontWeight: 600 }}>Round Test Report — Admin View</span>
+                            <h2 style={{ margin: 0, fontSize: '1.1rem' }}>{attempt?.title || submission?.itemTitle || 'Round Test'}</h2>
+                            {submission?.studentName && <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Student: {submission.studentName} ({submission.studentEmail || ''})</span>}
+                        </div>
+                    </div>
+                    <button onClick={onClose} className="modal-close"><XCircle size={20} /></button>
+                </div>
+
+                <div className="modal-body" style={{ padding: '1.5rem' }}>
+                    {loading ? (
+                        <div style={{ textAlign: 'center', padding: '3rem', color: 'var(--text-muted)' }}>
+                            <div className="loading-spinner" style={{ margin: '0 auto 1rem' }}></div>
+                            Loading report...
+                        </div>
+                    ) : !reportData ? (
+                        <div style={{ textAlign: 'center', padding: '2rem' }}>
+                            <div style={{ display: 'flex', gap: '1rem', justifyContent: 'center', marginBottom: '1.5rem', flexWrap: 'wrap' }}>
+                                <div style={{ padding: '1.25rem 2rem', background: passed ? 'rgba(16,185,129,0.1)' : 'rgba(239,68,68,0.1)', borderRadius: '16px', border: `2px solid ${passed ? 'rgba(16,185,129,0.3)' : 'rgba(239,68,68,0.3)'}`, textAlign: 'center', minWidth: 140 }}>
+                                    <div style={{ fontSize: '2.5rem', fontWeight: 900, color: passed ? '#10b981' : '#ef4444', lineHeight: 1 }}>{Math.round(overallScore)}%</div>
+                                    <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: 6 }}>Overall Score</div>
+                                </div>
+                                <div style={{ padding: '1.25rem 2rem', background: passed ? 'rgba(34,197,94,0.08)' : 'rgba(239,68,68,0.08)', borderRadius: '16px', border: `1px solid ${passed ? 'rgba(34,197,94,0.25)' : 'rgba(239,68,68,0.25)'}`, textAlign: 'center', minWidth: 140 }}>
+                                    <div style={{ fontSize: '1.5rem', fontWeight: 800, color: passed ? '#4ade80' : '#f87171', lineHeight: 1 }}>{passed ? '✅ PASSED' : '❌ FAILED'}</div>
+                                    <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: 6 }}>Pass mark: {passPercentage}%</div>
+                                </div>
+                            </div>
+                        </div>
+                    ) : (
+                        <>
+                            {/* Info bar */}
+                            <div style={{ marginBottom: '1.5rem', padding: '1rem', background: 'var(--bg-tertiary)', borderRadius: '0.5rem', border: '1px solid var(--border-color)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '1rem' }}>
+                                <div>
+                                    <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Company</span>
+                                    <div style={{ fontWeight: 600, fontSize: '1rem' }}>{attempt?.company_name || 'N/A'}</div>
+                                </div>
+                                <div>
+                                    <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Difficulty</span>
+                                    <div style={{ fontWeight: 500 }}>{attempt?.difficulty || 'N/A'}</div>
+                                </div>
+                                <div style={{ textAlign: 'right' }}>
+                                    <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Completed</span>
+                                    <div style={{ fontWeight: 500 }}>{attempt?.completed_at ? new Date(attempt.completed_at).toLocaleString() : 'N/A'}</div>
+                                </div>
+                            </div>
+
+                            {/* Score Cards */}
+                            <div style={{ display: 'flex', gap: '1rem', marginBottom: '1.5rem', flexWrap: 'wrap', justifyContent: 'center' }}>
+                                <div style={{ padding: '1.25rem 2rem', background: passed ? 'rgba(16,185,129,0.1)' : 'rgba(239,68,68,0.1)', borderRadius: '16px', border: `2px solid ${passed ? 'rgba(16,185,129,0.3)' : 'rgba(239,68,68,0.3)'}`, textAlign: 'center', minWidth: 150 }}>
+                                    <div style={{ fontSize: '3rem', fontWeight: 900, color: passed ? '#10b981' : '#ef4444', lineHeight: 1 }}>{Math.round(overallScore)}%</div>
+                                    <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: 6, textTransform: 'uppercase', letterSpacing: '1.5px', fontWeight: 600 }}>Overall Score</div>
+                                </div>
+                                <div style={{ padding: '1.25rem 2rem', background: passed ? 'rgba(34,197,94,0.08)' : 'rgba(239,68,68,0.08)', borderRadius: '16px', border: `1px solid ${passed ? 'rgba(34,197,94,0.25)' : 'rgba(239,68,68,0.25)'}`, textAlign: 'center', minWidth: 150 }}>
+                                    <div style={{ fontSize: '1.5rem', fontWeight: 800, color: passed ? '#4ade80' : '#f87171', lineHeight: 1 }}>{passed ? '✅ PASSED' : '❌ FAILED'}</div>
+                                    <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: 6, textTransform: 'uppercase', letterSpacing: '1.5px', fontWeight: 600 }}>Pass mark: {passPercentage}%</div>
+                                </div>
+                            </div>
+
+                            {/* Section-wise Performance */}
+                            {sections.length > 0 && (
+                                <>
+                                    <h3 style={{ margin: '0 0 0.75rem', fontSize: '1rem', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                        <BarChart2 size={17} color="#8b5cf6" /> Section-wise Performance
+                                    </h3>
+                                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))', gap: '0.6rem', marginBottom: '1.5rem' }}>
+                                        {sections.map(sec => {
+                                            const def = SECTION_DEFS[sec]
+                                            const ss = sectionScores[sec] || {}
+                                            const pct = Math.round(ss.score || 0)
+                                            const scoreColor = pct >= 70 ? '#10b981' : pct >= 50 ? '#f59e0b' : '#ef4444'
+                                            return (
+                                                <div key={sec} style={{ padding: '0.9rem 1rem', background: 'var(--bg-tertiary)', borderRadius: 12, border: '1px solid var(--border-color)', textAlign: 'center' }}>
+                                                    <div style={{ fontSize: '1.5rem', marginBottom: 3 }}>{def?.icon || '📊'}</div>
+                                                    <div style={{ fontSize: '1.4rem', fontWeight: 800, color: scoreColor, lineHeight: 1 }}>{pct}%</div>
+                                                    <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: 3, textTransform: 'capitalize' }}>{def?.label || sec}</div>
+                                                    <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginTop: 2 }}>{ss.correct || 0}/{ss.total || 0} correct</div>
+                                                    <div style={{ marginTop: 6, height: 4, background: 'rgba(255,255,255,0.08)', borderRadius: 2, overflow: 'hidden' }}>
+                                                        <div style={{ height: '100%', width: `${pct}%`, background: scoreColor, borderRadius: 2, transition: 'width 0.8s ease' }} />
+                                                    </div>
+                                                </div>
+                                            )
+                                        })}
+                                    </div>
+                                </>
+                            )}
+
+                            {/* Detailed Answers */}
+                            {sections.map(sec => {
+                                const secAnswers = answersBySection[sec] || []
+                                if (secAnswers.length === 0) return null
+                                const def = SECTION_DEFS[sec]
+                                return (
+                                    <div key={sec} style={{ marginBottom: '1.5rem' }}>
+                                        <h4 style={{ margin: '0 0 0.6rem', fontSize: '0.9rem', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '6px', color: def?.color || 'var(--text-primary)' }}>
+                                            {def?.icon} {def?.label || sec}
+                                        </h4>
+                                        {secAnswers.map((ans, idx) => (
+                                            <div key={ans.id || idx} style={{ marginBottom: '0.6rem', padding: '0.85rem 1rem', background: 'var(--bg-tertiary)', border: `1px solid ${ans.is_correct ? 'rgba(16,185,129,0.3)' : 'rgba(239,68,68,0.3)'}`, borderRadius: '10px' }}>
+                                                <div style={{ display: 'flex', alignItems: 'flex-start', gap: '8px', marginBottom: '0.4rem' }}>
+                                                    <span style={{ fontSize: '0.85rem', flexShrink: 0 }}>{ans.is_correct ? '✅' : '❌'}</span>
+                                                    <div style={{ flex: 1 }}>
+                                                        <div style={{ fontSize: '0.85rem', fontWeight: 600, lineHeight: 1.5 }}>Q{idx + 1}: {ans.question}</div>
+                                                    </div>
+                                                    <span style={{
+                                                        fontSize: '0.7rem', padding: '2px 8px', borderRadius: '6px', fontWeight: 700, flexShrink: 0,
+                                                        background: ans.is_correct ? 'rgba(16,185,129,0.1)' : 'rgba(239,68,68,0.1)',
+                                                        color: ans.is_correct ? '#10b981' : '#ef4444'
+                                                    }}>{Math.round(ans.score || 0)}%</span>
+                                                </div>
+                                                {ans.question_type === 'mcq' && (
+                                                    <div style={{ marginLeft: '26px', fontSize: '0.8rem' }}>
+                                                        <div style={{ color: ans.is_correct ? '#4ade80' : '#f87171' }}>
+                                                            Student answer: <strong>{typeof ans.student_answer === 'object' ? JSON.stringify(ans.student_answer) : (ans.student_answer || 'Not answered')}</strong>
+                                                        </div>
+                                                        {!ans.is_correct && (
+                                                            <div style={{ color: '#4ade80', marginTop: '2px' }}>
+                                                                Correct answer: <strong>{typeof ans.correct_answer === 'object' ? JSON.stringify(ans.correct_answer) : ans.correct_answer}</strong>
+                                                            </div>
+                                                        )}
+                                                        {ans.explanation && (
+                                                            <div style={{ color: 'var(--text-muted)', marginTop: '4px', fontSize: '0.78rem', fontStyle: 'italic' }}>
+                                                                💡 {typeof ans.explanation === 'object' ? JSON.stringify(ans.explanation) : ans.explanation}
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                )}
+                                                {(ans.question_type === 'code' || ans.question_type === 'sql') && (
+                                                    <div style={{ marginLeft: '26px', fontSize: '0.78rem', marginTop: '4px' }}>
+                                                        {ans.student_answer && (
+                                                            <details style={{ marginTop: '4px' }}>
+                                                                <summary style={{ cursor: 'pointer', color: '#60a5fa', fontSize: '0.78rem' }}>View submitted code</summary>
+                                                                <pre style={{ marginTop: '4px', padding: '8px 10px', background: '#0f172a', borderRadius: '6px', fontFamily: 'monospace', fontSize: '0.75rem', color: '#94a3b8', maxHeight: '150px', overflow: 'auto', whiteSpace: 'pre-wrap' }}>{typeof ans.student_answer === 'object' ? JSON.stringify(ans.student_answer, null, 2) : ans.student_answer}</pre>
+                                                            </details>
+                                                        )}
+                                                        {ans.execution_result && (
+                                                            <>
+                                                                {ans.execution_result.passedCases !== undefined && (
+                                                                    <span style={{ color: ans.is_correct ? '#4ade80' : '#f59e0b' }}>
+                                                                        Test cases: {ans.execution_result.passedCases}/{ans.execution_result.totalCases} passed
+                                                                    </span>
+                                                                )}
+                                                            </>
+                                                        )}
+                                                    </div>
+                                                )}
+                                            </div>
+                                        ))}
+                                    </div>
+                                )
+                            })}
+
+                            {/* Proctoring Violations */}
+                            {attempt?.proctoring_violations && attempt.proctoring_violations.length > 0 && (
+                                <div style={{ padding: '1rem', background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.25)', borderRadius: 12, marginBottom: '1rem' }}>
+                                    <p style={{ margin: '0 0 6px', fontSize: '0.82rem', fontWeight: 700, color: '#fbbf24', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                        <AlertTriangle size={13} /> {attempt.proctoring_violations.length} Proctoring Violation{attempt.proctoring_violations.length > 1 ? 's' : ''} Recorded
+                                    </p>
+                                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                                        {attempt.proctoring_violations.map((v, i) => (
+                                            <span key={i} style={{ fontSize: '0.75rem', color: '#fbbf24', background: 'rgba(245,158,11,0.12)', padding: '2px 8px', borderRadius: 6 }}>
+                                                {typeof v === 'string' ? v : (v.type || v.message || JSON.stringify(v))}
+                                            </span>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
+                        </>
+                    )}
+                </div>
+            </div>
         </div>
     )
 }
