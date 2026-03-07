@@ -2213,6 +2213,16 @@ function AdminCRTReportModal({ submission, reportData, loading, onClose }) {
                                                                         Test cases: {ans.execution_result.passedCases}/{ans.execution_result.totalCases} passed
                                                                     </span>
                                                                 )}
+                                                                {ans.execution_result.method === 'ai_review' && (
+                                                                    <span style={{ marginLeft: 8, fontSize: '0.72rem', background: 'rgba(99,102,241,0.15)', color: '#818cf8', padding: '1px 7px', borderRadius: 6, fontWeight: 600 }}>
+                                                                        🤖 AI evaluated — {ans.execution_result.reason}
+                                                                    </span>
+                                                                )}
+                                                                {ans.execution_result.method === 'partial_credit' && (
+                                                                    <span style={{ marginLeft: 8, fontSize: '0.72rem', background: 'rgba(245,158,11,0.1)', color: '#fbbf24', padding: '1px 7px', borderRadius: 6, fontWeight: 600 }}>
+                                                                        ⚠️ {ans.execution_result.reason}
+                                                                    </span>
+                                                                )}
                                                             </>
                                                         )}
                                                     </div>
