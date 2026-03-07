@@ -5,6 +5,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import axios from 'axios';
 import Editor from '@monaco-editor/react';
+import socketService from '../services/socketService';
 import {
     Building2, Clock, Play, Check, ChevronRight, ChevronDown, ChevronUp,
     AlertTriangle, Shield, Eye, EyeOff, Database, Code, Brain, RefreshCw,
@@ -60,29 +61,41 @@ function Timer({ totalSeconds, onExpire }) {
 function MCQQuestion({ question, index, answer, onChange }) {
     const letters = ['A', 'B', 'C', 'D'];
     return (
-        <div style={{ background: '#1e293b', borderRadius: '12px', padding: '18px', border: '1px solid #334155', marginBottom: '12px' }}>
-            <div style={{ display: 'flex', gap: '10px', marginBottom: '14px' }}>
-                <span style={{ background: '#334155', color: '#94a3b8', borderRadius: '6px', padding: '2px 8px', fontSize: '12px', fontWeight: 700, minWidth: '28px', textAlign: 'center' }}>Q{index + 1}</span>
-                <p style={{ margin: 0, color: '#f1f5f9', fontSize: '14px', lineHeight: '1.6', whiteSpace: 'pre-wrap' }}>{question.question}</p>
+        <div style={{ background: '#0a0f1a', borderRadius: '14px', border: '1px solid #1e293b', overflow: 'hidden' }}>
+            {/* Question header */}
+            <div style={{ padding: '14px 18px', background: 'linear-gradient(135deg,rgba(30,41,59,0.9),rgba(15,23,42,0.95))', borderBottom: '1px solid #1e293b', display: 'flex', gap: '10px', alignItems: 'flex-start' }}>
+                <span style={{ background: 'linear-gradient(135deg,#3b82f6,#2563eb)', color: '#fff', borderRadius: '7px', padding: '3px 9px', fontSize: '11px', fontWeight: 800, flexShrink: 0 }}>Q{index + 1}</span>
+                <p style={{ margin: 0, color: '#e2e8f0', fontSize: '14px', lineHeight: '1.65', whiteSpace: 'pre-wrap', flex: 1 }}>{question.question}</p>
             </div>
+            {/* Code snippet */}
             {question.code_snippet && (
-                <div style={{ background: '#0f172a', borderRadius: '8px', padding: '12px', marginBottom: '12px', fontFamily: 'monospace', fontSize: '13px', color: '#a5f3fc', overflow: 'auto', border: '1px solid #334155' }}>
-                    <pre style={{ margin: 0, whiteSpace: 'pre-wrap' }}>{question.code_snippet}</pre>
+                <div style={{ padding: '12px 16px', background: '#060a10', borderBottom: '1px solid #1e293b' }}>
+                    <pre style={{ margin: 0, padding: '12px 14px', background: '#0d1117', border: '1px solid #1e293b', borderRadius: '8px', fontFamily: 'ui-monospace,monospace', fontSize: '13px', color: '#a5f3fc', whiteSpace: 'pre-wrap', overflowX: 'auto', lineHeight: 1.65 }}>{question.code_snippet}</pre>
                 </div>
             )}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+            {/* Options */}
+            <div style={{ padding: '16px 18px', display: 'flex', flexDirection: 'column', gap: '9px' }}>
                 {(question.options || []).map((opt, oi) => {
                     const letter = letters[oi];
                     const selected = answer === letter;
                     return (
-                        <label key={oi} style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '10px 14px', borderRadius: '9px', cursor: 'pointer', background: selected ? 'rgba(59,130,246,0.15)' : 'rgba(30,41,59,0.5)', border: `2px solid ${selected ? '#3b82f6' : '#334155'}`, transition: 'all 0.15s' }}>
-                            <input type="radio" name={`q${question.id}`} value={letter} checked={selected} onChange={() => onChange(letter)} style={{ accentColor: '#3b82f6', width: '16px', height: '16px' }} />
-                            <span style={{ fontWeight: selected ? 700 : 400, color: selected ? '#93c5fd' : '#cbd5e1', fontSize: '14px' }}>{opt}</span>
+                        <label key={oi} onClick={() => onChange(letter)}
+                            style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '11px 16px', borderRadius: '10px', cursor: 'pointer', background: selected ? 'rgba(99,102,241,0.12)' : 'rgba(15,23,42,0.6)', border: `2px solid ${selected ? '#6366f1' : '#1e293b'}`, transition: 'all 0.15s', outline: 'none' }}>
+                            <div style={{ width: 22, height: 22, borderRadius: '50%', border: `2px solid ${selected ? '#6366f1' : '#334155'}`, background: selected ? '#6366f1' : 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, transition: 'all 0.15s' }}>
+                                {selected && <Check size={12} color="white" />}
+                            </div>
+                            <span style={{ fontSize: '13px', fontWeight: 700, color: '#475569', fontFamily: 'monospace', flexShrink: 0, width: '18px' }}>{letter}</span>
+                            <span style={{ fontWeight: selected ? 600 : 400, color: selected ? '#c7d2fe' : '#94a3b8', fontSize: '14px', flex: 1 }}>{opt}</span>
                         </label>
                     );
                 })}
             </div>
-            {!answer && <p style={{ margin: '10px 0 0', fontSize: '11px', color: '#64748b' }}>⚠ Not answered yet</p>}
+            {!answer && (
+                <div style={{ padding: '8px 18px 14px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <AlertTriangle size={12} color="#f59e0b" />
+                    <span style={{ fontSize: '11px', color: '#78716c', fontWeight: 600 }}>Not answered yet</span>
+                </div>
+            )}
         </div>
     );
 }
@@ -91,117 +104,244 @@ function MCQQuestion({ question, index, answer, onChange }) {
 function CodingQuestion({ question, index, answer, onChange, attemptId, isDebug }) {
     const [code, setCode] = useState(answer?.code || question.starter_code || '');
     const [language, setLanguage] = useState(answer?.language || question.language || 'Python');
-    const [running, setRunning] = useState(false);
-    const [output, setOutput] = useState('');
+    const [isRunning, setIsRunning] = useState(false);
+    const [outputSegments, setOutputSegments] = useState([]); // { text, type }
+    const [stdin, setStdin] = useState('');
     const [testResults, setTestResults] = useState(null);
-    const [showSchema, setShowSchema] = useState(false);
+    const [runningTests, setRunningTests] = useState(false);
+    const [activeTab, setActiveTab] = useState('terminal'); // 'terminal' | 'tests'
+    const terminalRef = useRef(null);
 
-    const LANG_MAP = { Python: 'python', JavaScript: 'javascript', Java: 'java', 'C': 'c', 'C++': 'cpp' };
+    const LANG_MAP = { Python: 'python', JavaScript: 'javascript', Java: 'java', C: 'c', 'C++': 'cpp' };
 
-    const runCode = async (stdin = '') => {
-        setRunning(true); setOutput('Running…');
-        try {
-            const { data } = await axios.post(`${API}/api/crt/attempt/${attemptId}/run-code`, { code, language, stdin }, { headers: authHeader() });
-            setOutput(data.output || '(no output)');
-        } catch (e) { setOutput(`Error: ${e.message}`); }
-        setRunning(false);
+    const scrollTerminal = () => {
+        setTimeout(() => { if (terminalRef.current) terminalRef.current.scrollTop = terminalRef.current.scrollHeight; }, 0);
     };
 
-    const runAllTests = async () => {
-        setRunning(true);
+    const handleRun = () => {
+        setIsRunning(true);
+        setOutputSegments([]);
+        setTestResults(null);
+        setActiveTab('terminal');
+
+        const socket = socketService.connect();
+        socket.emit('run-interactive', { code, language, problemId: question.id });
+
+        const onOutput = ({ text, type }) => {
+            setOutputSegments(prev => [...prev, { text, type: type || 'stdout' }]);
+            scrollTerminal();
+        };
+        const onExit = () => {
+            socket.off('run-output', onOutput);
+            socket.off('run-exit', onExit);
+            setIsRunning(false);
+            scrollTerminal();
+        };
+        socket.on('run-output', onOutput);
+        socket.on('run-exit', onExit);
+    };
+
+    const sendStdin = () => {
+        if (!stdin.trim() && stdin !== '') return;
+        socketService.connect().emit('run-stdin', stdin);
+        setOutputSegments(prev => [...prev, { text: stdin + '\n', type: 'stdin' }]);
+        setStdin('');
+        scrollTerminal();
+    };
+
+    const stopRun = () => { socketService.connect().emit('kill-run'); };
+
+    const handleRunAllTests = async () => {
         const tcs = question.test_cases || [];
+        if (!tcs.length) return;
+        setRunningTests(true);
+        setActiveTab('tests');
         const results = [];
         for (const tc of tcs) {
             try {
-                const { data } = await axios.post(`${API}/api/crt/attempt/${attemptId}/run-code`, { code, language, stdin: String(tc.input || '') }, { headers: authHeader() });
+                const { data } = await axios.post(`${API}/api/crt/attempt/${attemptId}/run-code`,
+                    { code, language, stdin: String(tc.input || '') }, { headers: authHeader() });
                 const actual = (data.output || '').trim();
                 const expected = String(tc.expected_output || '').trim();
-                results.push({ input: tc.input, expected, actual, passed: actual === expected });
-            } catch (e) { results.push({ input: tc.input, expected: tc.expected_output, actual: `Error: ${e.message}`, passed: false }); }
+                const norm = s => s.replace(/\r\n/g, '\n').replace(/\r/g, '\n').split('\n').map(l => l.trim()).filter(Boolean).join('\n');
+                results.push({ input: tc.input, expected, actual, passed: norm(actual) === norm(expected) });
+            } catch (e) {
+                results.push({ input: tc.input, expected: tc.expected_output, actual: `Error: ${e.message}`, passed: false });
+            }
         }
         setTestResults(results);
-        const passed = results.filter(r => r.passed).length;
-        setOutput(`${passed}/${results.length} test cases passed`);
-        setRunning(false);
-
-        // Update answer with latest code
         onChange({ code, language, student_answer: code });
+        setRunningTests(false);
     };
 
-    const handleCodeChange = (v) => {
+    const handleCodeChange = v => {
         setCode(v);
         onChange({ code: v, language, student_answer: v });
     };
 
+    const tcs = question.test_cases || [];
+    const passedCount = testResults ? testResults.filter(r => r.passed).length : 0;
+
     return (
-        <div style={{ background: '#1e293b', borderRadius: '12px', border: '1px solid #334155', marginBottom: '16px', overflow: 'hidden' }}>
-            {/* Header */}
-            <div style={{ padding: '14px 18px', borderBottom: '1px solid #334155', display: 'flex', gap: '10px', alignItems: 'flex-start' }}>
-                <span style={{ background: '#334155', color: '#94a3b8', borderRadius: '6px', padding: '2px 8px', fontSize: '12px', fontWeight: 700 }}>Q{index + 1}</span>
-                <p style={{ margin: 0, color: '#f1f5f9', fontSize: '14px', lineHeight: '1.5', whiteSpace: 'pre-wrap', flex: 1 }}>{question.question}</p>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 0, background: '#0a0f1a', borderRadius: '14px', border: '1px solid #1e293b', overflow: 'hidden' }}>
+            {/* Question header */}
+            <div style={{ padding: '14px 18px', background: 'linear-gradient(135deg,rgba(30,41,59,0.9),rgba(15,23,42,0.95))', borderBottom: '1px solid #1e293b', display: 'flex', gap: '10px', alignItems: 'flex-start' }}>
+                <span style={{ background: 'linear-gradient(135deg,#6366f1,#4f46e5)', color: '#fff', borderRadius: '7px', padding: '3px 9px', fontSize: '11px', fontWeight: 800, flexShrink: 0 }}>{isDebug ? '🐛' : '💻'} Q{index + 1}</span>
+                <p style={{ margin: 0, color: '#e2e8f0', fontSize: '14px', lineHeight: '1.65', whiteSpace: 'pre-wrap', flex: 1 }}>{question.question}</p>
             </div>
 
-            {/* Buggy code for debug */}
+            {/* Buggy code for debug mode */}
             {isDebug && question.code_snippet && (
-                <div style={{ padding: '12px 18px', borderBottom: '1px solid #334155', background: '#0f172a' }}>
-                    <p style={{ margin: '0 0 6px', fontSize: '11px', fontWeight: 700, color: '#f87171' }}>🐛 Buggy Code to Fix:</p>
-                    <pre style={{ margin: 0, fontFamily: 'monospace', fontSize: '13px', color: '#fca5a5', whiteSpace: 'pre-wrap' }}>{question.code_snippet}</pre>
+                <div style={{ padding: '12px 18px', borderBottom: '1px solid #1e293b', background: 'rgba(239,68,68,0.05)' }}>
+                    <p style={{ margin: '0 0 8px', fontSize: '11px', fontWeight: 700, color: '#f87171', display: 'flex', alignItems: 'center', gap: '5px' }}>🐛 Buggy Code to Fix</p>
+                    <pre style={{ margin: 0, padding: '12px 14px', background: '#0f172a', border: '1px solid rgba(239,68,68,0.2)', borderRadius: '8px', fontFamily: 'ui-monospace,monospace', fontSize: '13px', color: '#fca5a5', whiteSpace: 'pre-wrap', overflowX: 'auto' }}>{question.code_snippet}</pre>
                 </div>
             )}
 
-            {/* Language selector + run buttons */}
-            <div style={{ padding: '10px 14px', borderBottom: '1px solid #334155', display: 'flex', gap: '8px', alignItems: 'center', background: '#0f172a', flexWrap: 'wrap' }}>
-                <select value={language} onChange={e => { setLanguage(e.target.value); onChange({ code, language: e.target.value, student_answer: code }); }}
-                    style={{ background: '#1e293b', border: '1px solid #475569', color: '#f1f5f9', borderRadius: '8px', padding: '5px 10px', fontSize: '12px', cursor: 'pointer', outline: 'none' }}>
-                    {['Python', 'JavaScript', 'Java', 'C', 'C++'].map(l => <option key={l} value={l}>{l}</option>)}
+            {/* Toolbar */}
+            <div style={{ padding: '8px 12px', background: '#0d1117', borderBottom: '1px solid #1e293b', display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
+                <select value={language}
+                    onChange={e => { setLanguage(e.target.value); onChange({ code, language: e.target.value, student_answer: code }); }}
+                    style={{ background: '#1e293b', border: '1px solid #334155', color: '#e2e8f0', borderRadius: '7px', padding: '5px 10px', fontSize: '12px', cursor: 'pointer', outline: 'none', fontWeight: 600 }}>
+                    {['Python', 'JavaScript', 'Java', 'C', 'C++'].map(l => <option key={l}>{l}</option>)}
                 </select>
-                <button onClick={() => runCode()} disabled={running} style={{ display: 'flex', alignItems: 'center', gap: '5px', padding: '6px 14px', background: '#1e293b', border: '1px solid #475569', borderRadius: '8px', color: '#94a3b8', cursor: running ? 'not-allowed' : 'pointer', fontSize: '12px', fontWeight: 600 }}>
-                    {running ? <Loader2 size={13} className="spin" /> : <Play size={13} />} Run
-                </button>
-                {(question.test_cases || []).length > 0 && (
-                    <button onClick={runAllTests} disabled={running} style={{ display: 'flex', alignItems: 'center', gap: '5px', padding: '6px 14px', background: running ? '#475569' : 'linear-gradient(135deg, #6366f1, #4f46e5)', border: 'none', borderRadius: '8px', color: '#fff', cursor: running ? 'not-allowed' : 'pointer', fontSize: '12px', fontWeight: 700 }}>
-                        <Zap size={13} /> Run All Tests
+
+                {!isRunning ? (
+                    <button onClick={handleRun}
+                        style={{ display: 'flex', alignItems: 'center', gap: '5px', padding: '6px 15px', background: 'rgba(34,197,94,0.12)', border: '1px solid rgba(34,197,94,0.35)', borderRadius: '7px', color: '#4ade80', cursor: 'pointer', fontSize: '12px', fontWeight: 700 }}>
+                        <Play size={12} /> Run
+                    </button>
+                ) : (
+                    <button onClick={stopRun}
+                        style={{ display: 'flex', alignItems: 'center', gap: '5px', padding: '6px 15px', background: 'rgba(239,68,68,0.12)', border: '1px solid rgba(239,68,68,0.35)', borderRadius: '7px', color: '#f87171', cursor: 'pointer', fontSize: '12px', fontWeight: 700 }}>
+                        <X size={12} /> Stop
                     </button>
                 )}
-                <span style={{ fontSize: '11px', color: '#475569', marginLeft: 'auto' }}>{(question.test_cases || []).length} test case{question.test_cases?.length !== 1 ? 's' : ''}</span>
-            </div>
 
-            {/* Monaco editor */}
-            <div style={{ borderBottom: '1px solid #334155' }}>
-                <Editor
-                    height="220px"
-                    language={LANG_MAP[language] || 'python'}
-                    theme="vs-dark"
-                    value={code}
-                    onChange={handleCodeChange}
-                    options={{ minimap: { enabled: false }, fontSize: 13, lineNumbers: 'on', scrollBeyondLastLine: false, wordWrap: 'on', automaticLayout: true }}
-                />
-            </div>
+                {tcs.length > 0 && (
+                    <button onClick={handleRunAllTests} disabled={runningTests || isRunning}
+                        style={{ display: 'flex', alignItems: 'center', gap: '5px', padding: '6px 15px', background: (runningTests || isRunning) ? '#1e293b' : 'rgba(99,102,241,0.15)', border: `1px solid ${(runningTests || isRunning) ? '#334155' : 'rgba(99,102,241,0.4)'}`, borderRadius: '7px', color: (runningTests || isRunning) ? '#475569' : '#a5b4fc', cursor: (runningTests || isRunning) ? 'not-allowed' : 'pointer', fontSize: '12px', fontWeight: 700 }}>
+                        {runningTests ? <Loader2 size={12} className="spin" /> : <Zap size={12} />} Run All Tests
+                    </button>
+                )}
 
-            {/* Output */}
-            {output && (
-                <div style={{ padding: '10px 14px', background: '#0f172a', borderTop: '1px solid #1e293b' }}>
-                    <p style={{ margin: '0 0 4px', fontSize: '11px', fontWeight: 700, color: '#64748b' }}>OUTPUT:</p>
-                    <pre style={{ margin: 0, fontFamily: 'monospace', fontSize: '12px', color: '#a5f3fc', whiteSpace: 'pre-wrap' }}>{output}</pre>
+                <div style={{ marginLeft: 'auto', display: 'flex', gap: '6px', alignItems: 'center' }}>
+                    {tcs.length > 0 && <span style={{ fontSize: '11px', color: '#475569', fontWeight: 600 }}>{tcs.length} test case{tcs.length !== 1 ? 's' : ''}</span>}
+                    {isRunning && (
+                        <span style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '11px', color: '#4ade80', fontWeight: 700 }}>
+                            <span style={{ width: 7, height: 7, borderRadius: '50%', background: '#4ade80', animation: 'spin 1s linear infinite' }} /> Running
+                        </span>
+                    )}
                 </div>
-            )}
+            </div>
 
-            {/* Test case results */}
-            {testResults && (
-                <div style={{ padding: '12px 14px', borderTop: '1px solid #334155' }}>
-                    <p style={{ margin: '0 0 8px', fontSize: '12px', fontWeight: 700, color: '#f1f5f9' }}>
-                        Test Results: <span style={{ color: testResults.filter(r => r.passed).length === testResults.length ? '#4ade80' : '#f87171' }}>{testResults.filter(r => r.passed).length}/{testResults.length} passed</span>
-                    </p>
-                    {testResults.map((res, i) => (
-                        <div key={i} style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr auto', gap: '6px', padding: '7px 10px', borderRadius: '8px', background: res.passed ? 'rgba(34,197,94,0.08)' : 'rgba(239,68,68,0.08)', border: `1px solid ${res.passed ? '#22c55e30' : '#ef444430'}`, marginBottom: '4px', fontSize: '11px' }}>
-                            <div><span style={{ color: '#64748b', display: 'block', marginBottom: '2px' }}>Input</span><code style={{ color: '#e2e8f0' }}>{String(res.input || '—')}</code></div>
-                            <div><span style={{ color: '#64748b', display: 'block', marginBottom: '2px' }}>Expected</span><code style={{ color: '#86efac' }}>{res.expected || '—'}</code></div>
-                            <div><span style={{ color: '#64748b', display: 'block', marginBottom: '2px' }}>Actual</span><code style={{ color: res.passed ? '#86efac' : '#fca5a5' }}>{res.actual || '—'}</code></div>
-                            <span style={{ color: res.passed ? '#4ade80' : '#f87171', fontSize: '16px', display: 'flex', alignItems: 'center' }}>{res.passed ? '✓' : '✗'}</span>
-                        </div>
+            {/* Monaco Editor */}
+            <Editor
+                height="320px"
+                language={LANG_MAP[language] || 'python'}
+                theme="vs-dark"
+                value={code}
+                onChange={handleCodeChange}
+                options={{ minimap: { enabled: false }, fontSize: 13, lineNumbers: 'on', scrollBeyondLastLine: false, wordWrap: 'on', automaticLayout: true, padding: { top: 10, bottom: 10 }, fontFamily: 'ui-monospace,JetBrains Mono,monospace' }}
+            />
+
+            {/* Output tabs + panel */}
+            <div style={{ background: '#0d1117', borderTop: '1px solid #1e293b' }}>
+                {/* Tab bar */}
+                <div style={{ display: 'flex', borderBottom: '1px solid #1e293b' }}>
+                    {[{ key: 'terminal', label: '⚡ Terminal' }, ...(tcs.length ? [{ key: 'tests', label: `🧪 Test Cases${testResults ? ` (${passedCount}/${testResults.length})` : ` (${tcs.length})`}` }] : [])].map(t => (
+                        <button key={t.key} onClick={() => setActiveTab(t.key)}
+                            style={{ padding: '7px 16px', background: 'none', border: 'none', borderBottom: activeTab === t.key ? '2px solid #6366f1' : '2px solid transparent', color: activeTab === t.key ? '#a5b4fc' : '#475569', cursor: 'pointer', fontSize: '11px', fontWeight: 700, letterSpacing: '0.02em', transition: 'all 0.15s' }}>
+                            {t.label}
+                        </button>
                     ))}
                 </div>
-            )}
+
+                {/* Terminal */}
+                {activeTab === 'terminal' && (
+                    <div>
+                        <div ref={terminalRef}
+                            style={{ height: '180px', overflowY: 'auto', padding: '10px 14px', fontFamily: 'ui-monospace,monospace', fontSize: '12.5px', lineHeight: 1.7, background: '#060a10', cursor: 'text' }}>
+                            {outputSegments.length === 0 && !isRunning && (
+                                <span style={{ color: '#334155', fontStyle: 'italic' }}>Press Run to execute your code…</span>
+                            )}
+                            {outputSegments.map((seg, i) => (
+                                <span key={i} style={{
+                                    color: seg.type === 'stdin' ? '#34d399' : seg.type === 'stderr' ? '#f87171' : seg.type === 'compiler' ? '#fb923c' : '#e2e8f0',
+                                    whiteSpace: 'pre-wrap'
+                                }}>{seg.text}</span>
+                            ))}
+                            {isRunning && <span style={{ color: '#475569', animation: 'pulse 1s ease-in-out infinite' }}>▌</span>}
+                        </div>
+
+                        {/* Stdin input bar */}
+                        <div style={{ display: 'flex', gap: '8px', padding: '8px 12px', borderTop: '1px solid #1e293b', background: '#0a0f1a' }}>
+                            <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: '8px', background: '#0d1117', border: '1px solid #1e293b', borderRadius: '7px', padding: '5px 10px' }}>
+                                <span style={{ color: '#4ade80', fontFamily: 'monospace', fontSize: '13px', fontWeight: 700, flexShrink: 0 }}>→</span>
+                                <input
+                                    value={stdin}
+                                    onChange={e => setStdin(e.target.value)}
+                                    onKeyDown={e => e.key === 'Enter' && isRunning && sendStdin()}
+                                    placeholder={isRunning ? 'Type input and press Enter…' : 'Start running to send input'}
+                                    disabled={!isRunning}
+                                    style={{ flex: 1, background: 'none', border: 'none', outline: 'none', color: '#e2e8f0', fontSize: '12.5px', fontFamily: 'ui-monospace,monospace' }}
+                                />
+                            </div>
+                            <button onClick={sendStdin} disabled={!isRunning}
+                                style={{ padding: '5px 14px', background: isRunning ? 'rgba(34,197,94,0.15)' : '#1e293b', border: `1px solid ${isRunning ? 'rgba(34,197,94,0.4)' : '#334155'}`, borderRadius: '7px', color: isRunning ? '#4ade80' : '#475569', cursor: isRunning ? 'pointer' : 'not-allowed', fontSize: '12px', fontWeight: 700 }}>
+                                Send
+                            </button>
+                        </div>
+
+                        {/* Legend */}
+                        <div style={{ display: 'flex', gap: '14px', padding: '5px 14px 7px', borderTop: '1px solid #0f172a' }}>
+                            {[['#e2e8f0','stdout'],['#f87171','stderr'],['#34d399','your input'],['#fb923c','compiler']].map(([c,l]) => (
+                                <span key={l} style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '10px', color: '#334155', fontWeight: 600 }}>
+                                    <span style={{ width: 8, height: 8, borderRadius: 2, background: c }} />{l}
+                                </span>
+                            ))}
+                        </div>
+                    </div>
+                )}
+
+                {/* Test results */}
+                {activeTab === 'tests' && (
+                    <div style={{ maxHeight: '300px', overflowY: 'auto' }}>
+                        {!testResults && !runningTests && (
+                            <div style={{ padding: '24px', textAlign: 'center', color: '#475569', fontSize: '13px' }}>Click Run All Tests to evaluate {tcs.length} test case{tcs.length !== 1 ? 's' : ''}</div>
+                        )}
+                        {runningTests && (
+                            <div style={{ padding: '24px', textAlign: 'center', color: '#a5b4fc', fontSize: '13px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
+                                <Loader2 size={15} className="spin" /> Running test cases…
+                            </div>
+                        )}
+                        {testResults && (
+                            <div style={{ padding: '12px' }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '10px', padding: '8px 12px', background: passedCount === testResults.length ? 'rgba(34,197,94,0.08)' : 'rgba(239,68,68,0.08)', borderRadius: '8px', border: `1px solid ${passedCount === testResults.length ? 'rgba(34,197,94,0.25)' : 'rgba(239,68,68,0.25)'}` }}>
+                                    <span style={{ fontSize: '18px' }}>{passedCount === testResults.length ? '🎉' : '❌'}</span>
+                                    <span style={{ fontWeight: 700, fontSize: '13px', color: passedCount === testResults.length ? '#4ade80' : '#f87171' }}>{passedCount}/{testResults.length} test cases passed</span>
+                                </div>
+                                {testResults.map((res, i) => (
+                                    <div key={i} style={{ marginBottom: '8px', borderRadius: '9px', overflow: 'hidden', border: `1px solid ${res.passed ? 'rgba(34,197,94,0.25)' : 'rgba(239,68,68,0.25)'}` }}>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '7px 12px', background: res.passed ? 'rgba(34,197,94,0.08)' : 'rgba(239,68,68,0.08)' }}>
+                                            <span style={{ fontSize: '14px' }}>{res.passed ? '✅' : '❌'}</span>
+                                            <span style={{ fontWeight: 700, fontSize: '12px', color: res.passed ? '#4ade80' : '#f87171' }}>Test Case {i + 1}</span>
+                                        </div>
+                                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 0, background: '#060a10' }}>
+                                            {[['Input', String(res.input ?? '—'), '#94a3b8'], ['Expected', res.expected || '—', '#4ade80'], ['Actual', res.actual || '—', res.passed ? '#4ade80' : '#f87171']].map(([label, val, col]) => (
+                                                <div key={label} style={{ padding: '8px 11px', borderRight: '1px solid #1e293b' }}>
+                                                    <div style={{ fontSize: '10px', color: '#475569', fontWeight: 700, textTransform: 'uppercase', marginBottom: '4px' }}>{label}</div>
+                                                    <code style={{ fontSize: '11.5px', color: col, fontFamily: 'ui-monospace,monospace', whiteSpace: 'pre-wrap' }}>{val}</code>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+                    </div>
+                )}
+            </div>
         </div>
     );
 }
@@ -210,56 +350,136 @@ function CodingQuestion({ question, index, answer, onChange, attemptId, isDebug 
 function SQLQuestion({ question, index, answer, onChange, attemptId }) {
     const [query, setQuery] = useState(answer?.query || '-- Write your SQL query here\n');
     const [running, setRunning] = useState(false);
-    const [output, setOutput] = useState('');
-    const [showSchema, setShowSchema] = useState(false);
+    const [result, setResult] = useState(null); // { columns, rows } | { error }
+    const [rawOutput, setRawOutput] = useState('');
+    const [showSchema, setShowSchema] = useState(true);
+
+    // Parse output into columns/rows if it's tabular
+    const parseOutput = (text) => {
+        if (!text) return null;
+        const lines = text.trim().split('\n').filter(Boolean);
+        if (lines.length < 2) return { error: text };
+        // Check for pipe-delimited table (mysql-style)
+        if (lines[0].includes('|')) {
+            const dataLines = lines.filter(l => !/^[\-\+]+$/.test(l.trim()));
+            if (dataLines.length < 2) return { error: text };
+            const columns = dataLines[0].split('|').map(c => c.trim()).filter(Boolean);
+            const rows = dataLines.slice(1).map(l => l.split('|').map(c => c.trim()).filter(Boolean));
+            return { columns, rows };
+        }
+        return { error: text };
+    };
 
     const runSQL = async () => {
-        setRunning(true); setOutput('Executing…');
+        setRunning(true);
+        setResult(null);
+        setRawOutput('');
         try {
-            const { data } = await axios.post(`${API}/api/crt/attempt/${attemptId}/run-sql`, { query, schema: question.sql_schema || '' }, { headers: authHeader() });
-            setOutput(data.output || '(no rows)');
-        } catch (e) { setOutput(`Error: ${e.message}`); }
+            const { data } = await axios.post(`${API}/api/crt/attempt/${attemptId}/run-sql`,
+                { query, schema: question.sql_schema || '' }, { headers: authHeader() });
+            const out = data.output || '(no rows)';
+            setRawOutput(out);
+            setResult(parseOutput(out));
+        } catch (e) {
+            const msg = e.response?.data?.error || e.message;
+            setResult({ error: msg });
+        }
         setRunning(false);
     };
 
-    const handleChange = (v) => { setQuery(v); onChange({ query: v, student_answer: v }); };
+    const handleChange = v => { setQuery(v); onChange({ query: v, student_answer: v }); };
 
     return (
-        <div style={{ background: '#1e293b', borderRadius: '12px', border: '1px solid #334155', marginBottom: '16px', overflow: 'hidden' }}>
-            <div style={{ padding: '14px 18px', borderBottom: '1px solid #334155', display: 'flex', gap: '10px', alignItems: 'flex-start' }}>
-                <span style={{ background: '#334155', color: '#94a3b8', borderRadius: '6px', padding: '2px 8px', fontSize: '12px', fontWeight: 700 }}>Q{index + 1}</span>
-                <p style={{ margin: 0, color: '#f1f5f9', fontSize: '14px', lineHeight: '1.5', flex: 1 }}>{question.question}</p>
+        <div style={{ display: 'flex', flexDirection: 'column', background: '#0a0f1a', borderRadius: '14px', border: '1px solid #1e293b', overflow: 'hidden' }}>
+            {/* Question header */}
+            <div style={{ padding: '14px 18px', background: 'linear-gradient(135deg,rgba(30,41,59,0.9),rgba(15,23,42,0.95))', borderBottom: '1px solid #1e293b', display: 'flex', gap: '10px', alignItems: 'flex-start' }}>
+                <span style={{ background: 'linear-gradient(135deg,#14b8a6,#0d9488)', color: '#fff', borderRadius: '7px', padding: '3px 9px', fontSize: '11px', fontWeight: 800, flexShrink: 0 }}>🗄 Q{index + 1}</span>
+                <p style={{ margin: 0, color: '#e2e8f0', fontSize: '14px', lineHeight: '1.65', flex: 1 }}>{question.question}</p>
             </div>
 
             {/* Schema toggle */}
             {question.sql_schema && (
-                <div style={{ borderBottom: '1px solid #334155' }}>
-                    <button onClick={() => setShowSchema(!showSchema)} style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '9px 16px', background: 'none', border: 'none', color: '#14b8a6', cursor: 'pointer', fontSize: '12px', fontWeight: 700, width: '100%', textAlign: 'left' }}>
-                        <Database size={13} /> {showSchema ? 'Hide Schema' : 'View Schema'} {showSchema ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+                <div style={{ borderBottom: '1px solid #1e293b' }}>
+                    <button onClick={() => setShowSchema(p => !p)}
+                        style={{ display: 'flex', alignItems: 'center', gap: '7px', padding: '9px 16px', background: 'rgba(20,184,166,0.06)', border: 'none', color: '#2dd4bf', cursor: 'pointer', fontSize: '12px', fontWeight: 700, width: '100%', textAlign: 'left', transition: 'background 0.15s' }}>
+                        <Database size={13} /> {showSchema ? 'Hide Schema' : 'Show Schema'}
+                        {showSchema ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
                     </button>
                     {showSchema && (
-                        <div style={{ padding: '10px 16px', background: '#0f172a', borderTop: '1px solid #334155' }}>
-                            <pre style={{ margin: 0, fontFamily: 'monospace', fontSize: '12px', color: '#a5f3fc', whiteSpace: 'pre-wrap' }}>{question.sql_schema}</pre>
+                        <div style={{ padding: '12px 16px', background: '#060e14', borderTop: '1px solid rgba(20,184,166,0.15)', overflowX: 'auto' }}>
+                            <pre style={{ margin: 0, fontFamily: 'ui-monospace,monospace', fontSize: '12.5px', color: '#a5f3fc', whiteSpace: 'pre', lineHeight: 1.65 }}>{question.sql_schema}</pre>
                         </div>
                     )}
                 </div>
             )}
 
-            {/* Toolbar */}
-            <div style={{ padding: '8px 14px', background: '#0f172a', borderBottom: '1px solid #1e293b', display: 'flex', gap: '8px', alignItems: 'center' }}>
-                <span style={{ fontSize: '11px', color: '#64748b', fontWeight: 700, fontFamily: 'monospace' }}>SQL</span>
-                <button onClick={runSQL} disabled={running} style={{ display: 'flex', alignItems: 'center', gap: '5px', padding: '6px 14px', background: running ? '#475569' : 'linear-gradient(135deg, #14b8a6, #0d9488)', border: 'none', borderRadius: '8px', color: '#fff', cursor: running ? 'not-allowed' : 'pointer', fontSize: '12px', fontWeight: 700 }}>
-                    {running ? <Loader2 size={13} className="spin" /> : <Play size={13} />} Run Query
+            {/* SQL toolbar */}
+            <div style={{ padding: '8px 12px', background: '#0d1117', borderBottom: '1px solid #1e293b', display: 'flex', gap: '8px', alignItems: 'center' }}>
+                <span style={{ fontSize: '10px', fontWeight: 800, color: '#14b8a6', letterSpacing: '0.12em', fontFamily: 'monospace', padding: '2px 7px', background: 'rgba(20,184,166,0.1)', borderRadius: '4px', border: '1px solid rgba(20,184,166,0.25)' }}>SQL</span>
+                <button onClick={runSQL} disabled={running}
+                    style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '6px 18px', background: running ? '#1e293b' : 'linear-gradient(135deg,#14b8a6,#0d9488)', border: 'none', borderRadius: '7px', color: running ? '#475569' : '#fff', cursor: running ? 'not-allowed' : 'pointer', fontSize: '12px', fontWeight: 700, boxShadow: running ? 'none' : '0 2px 8px rgba(20,184,166,0.25)' }}>
+                    {running ? <><Loader2 size={13} className="spin" /> Executing…</> : <><Play size={13} /> Run Query</>}
                 </button>
+                {result && !result.error && (
+                    <span style={{ fontSize: '11px', color: '#2dd4bf', fontWeight: 600, marginLeft: 'auto' }}>{result.rows?.length ?? 0} row{result.rows?.length !== 1 ? 's' : ''} returned</span>
+                )}
             </div>
 
-            <Editor height="160px" language="sql" theme="vs-dark" value={query} onChange={handleChange}
-                options={{ minimap: { enabled: false }, fontSize: 13, lineNumbers: 'on', scrollBeyondLastLine: false, wordWrap: 'on', automaticLayout: true }} />
+            {/* Monaco SQL Editor */}
+            <Editor
+                height="220px"
+                language="sql"
+                theme="vs-dark"
+                value={query}
+                onChange={handleChange}
+                options={{ minimap: { enabled: false }, fontSize: 13, lineNumbers: 'on', scrollBeyondLastLine: false, wordWrap: 'on', automaticLayout: true, padding: { top: 10 }, fontFamily: 'ui-monospace,JetBrains Mono,monospace' }}
+            />
 
-            {output && (
-                <div style={{ padding: '10px 14px', background: '#0f172a', borderTop: '1px solid #1e293b' }}>
-                    <p style={{ margin: '0 0 4px', fontSize: '11px', fontWeight: 700, color: '#64748b' }}>RESULT:</p>
-                    <pre style={{ margin: 0, fontFamily: 'monospace', fontSize: '12px', color: '#a5f3fc', whiteSpace: 'pre-wrap' }}>{output}</pre>
+            {/* Results panel */}
+            {(result || running) && (
+                <div style={{ borderTop: '1px solid #1e293b', background: '#060a10' }}>
+                    <div style={{ padding: '7px 14px', borderBottom: '1px solid #1e293b', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <span style={{ fontSize: '10px', fontWeight: 800, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.1em' }}>Results</span>
+                        {running && <Loader2 size={11} className="spin" style={{ color: '#14b8a6' }} />}
+                    </div>
+
+                    {running && (
+                        <div style={{ padding: '20px', textAlign: 'center', color: '#14b8a6', fontSize: '13px' }}>Executing query…</div>
+                    )}
+
+                    {result?.error && (
+                        <div style={{ padding: '14px 16px', display: 'flex', gap: '10px', alignItems: 'flex-start' }}>
+                            <XCircle size={16} color="#f87171" style={{ flexShrink: 0, marginTop: 2 }} />
+                            <pre style={{ margin: 0, fontFamily: 'ui-monospace,monospace', fontSize: '12.5px', color: '#fca5a5', whiteSpace: 'pre-wrap' }}>{result.error}</pre>
+                        </div>
+                    )}
+
+                    {result?.columns && (
+                        <div style={{ overflowX: 'auto', maxHeight: '240px', overflowY: 'auto' }}>
+                            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12.5px', fontFamily: 'ui-monospace,monospace' }}>
+                                <thead>
+                                    <tr style={{ background: 'rgba(20,184,166,0.08)', position: 'sticky', top: 0 }}>
+                                        <th style={{ padding: '7px 12px', textAlign: 'right', color: '#334155', fontWeight: 700, borderBottom: '1px solid #1e293b', width: '36px', fontSize: '11px' }}>#</th>
+                                        {result.columns.map(col => (
+                                            <th key={col} style={{ padding: '7px 12px', textAlign: 'left', color: '#2dd4bf', fontWeight: 700, borderBottom: '1px solid rgba(20,184,166,0.2)', borderRight: '1px solid #1e293b', whiteSpace: 'nowrap' }}>{col}</th>
+                                        ))}
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {result.rows.length === 0 ? (
+                                        <tr><td colSpan={result.columns.length + 1} style={{ padding: '16px', textAlign: 'center', color: '#475569', fontStyle: 'italic' }}>No rows returned</td></tr>
+                                    ) : result.rows.map((row, ri) => (
+                                        <tr key={ri} style={{ background: ri % 2 === 0 ? 'transparent' : 'rgba(255,255,255,0.02)' }}>
+                                            <td style={{ padding: '6px 12px', color: '#334155', textAlign: 'right', borderBottom: '1px solid #0f172a', fontSize: '11px' }}>{ri + 1}</td>
+                                            {row.map((cell, ci) => (
+                                                <td key={ci} style={{ padding: '6px 12px', color: '#e2e8f0', borderBottom: '1px solid #0f172a', borderRight: '1px solid #0f172a', whiteSpace: 'nowrap' }}>{cell}</td>
+                                            ))}
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+                    )}
                 </div>
             )}
         </div>
