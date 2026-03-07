@@ -638,7 +638,16 @@ function ProctoredCodeEditor({ problem, user, onClose, onSubmitSuccess }) {
         }
     }, [proctoring])
 
-    const normalizeForCompare = s => (s || '').trim().replace(/\s+/g, ' ')
+    // Normalize: handle \r, literal \\n, trim each line, remove blank lines
+    const normalizeForCompare = s => {
+        if (!s) return '';
+        return s
+            .replace(/\r\n/g, '\n').replace(/\r/g, '\n')
+            .replace(/\\n/g, '\n') // literal backslash-n → real newline
+            .split('\n').map(l => l.trim()).filter(l => l.length > 0).join('\n');
+    };
+    // Whitespace-collapsed compare — matches when expected uses spaces where actual uses newlines
+    const wsCollapse = s => normalizeForCompare(s).replace(/\s+/g, ' ').trim();
 
     const handleRun = () => {
         setIsRunning(true)
@@ -674,7 +683,12 @@ function ProctoredCodeEditor({ problem, user, onClose, onSubmitSuccess }) {
             const progText = (progOutput !== undefined ? progOutput : accOutput)
             const expectedRaw = (problem.expectedOutput || problem.expected_output || '').trim()
             if (expectedRaw) {
-                const passed = normalizeForCompare(progText) === normalizeForCompare(expectedRaw)
+                const normMatch = normalizeForCompare(progText) === normalizeForCompare(expectedRaw)
+                const wsMatch = wsCollapse(progText) === wsCollapse(expectedRaw)
+                // Strip lone-number lines (stdin echoes) from actual for problems stored without terminal echo
+                const stripEchoLines = s => normalizeForCompare(s).split('\n').filter(l => !/^\d+$/.test(l)).join('\n');
+                const echoStrippedMatch = stripEchoLines(progText) === stripEchoLines(expectedRaw);
+                const passed = normMatch || wsMatch || echoStrippedMatch
                 setRunResult({ actual: progText.trim(), expected: expectedRaw, passed })
             }
         }
@@ -1122,92 +1136,160 @@ function ProctoredCodeEditor({ problem, user, onClose, onSubmitSuccess }) {
 
                         {/* Examples Tab */}
                         {descTab === 'examples' && (
-                            <div style={{ padding: '1.5rem', flex: 1 }}>
+                            <div style={{ padding: '1.25rem', flex: 1 }}>
                                 {isSQLProblem ? (
                                     <>
                                         {problem.sqlSchema && (
                                             <div style={{ marginBottom: '1.25rem' }}>
-                                                <div style={{ fontSize: '0.78rem', fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '8px' }}>📦 Database Schema (Input)</div>
+                                                <div style={{ fontSize: '0.72rem', fontWeight: 700, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.09em', marginBottom: '7px' }}>📦 Database Schema</div>
                                                 <pre style={{ margin: 0, padding: '14px 16px', background: '#0d1929', border: '1px solid #1e3a5f', borderRadius: '10px', color: '#93c5fd', fontSize: '0.78rem', overflowX: 'auto', whiteSpace: 'pre-wrap', fontFamily: 'ui-monospace,monospace' }}>{problem.sqlSchema}</pre>
                                             </div>
                                         )}
                                         {problem.expectedQueryResult && (
                                             <div>
-                                                <div style={{ fontSize: '0.78rem', fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '8px' }}>✅ Expected Output</div>
+                                                <div style={{ fontSize: '0.72rem', fontWeight: 700, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.09em', marginBottom: '7px' }}>✅ Expected Output</div>
                                                 <pre style={{ margin: 0, padding: '14px 16px', background: 'rgba(16,185,129,0.06)', border: '1px solid rgba(16,185,129,0.25)', borderRadius: '10px', color: '#34d399', fontSize: '0.78rem', overflowX: 'auto', whiteSpace: 'pre-wrap', fontFamily: 'ui-monospace,monospace' }}>{problem.expectedQueryResult}</pre>
                                             </div>
                                         )}
                                     </>
-                                ) : (
-                                    <>  
-                                        {/* Example 1 — always show */}
-                                        <div style={{ marginBottom: '1.5rem' }}>
-                                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px' }}>
-                                                <span style={{ fontSize: '0.88rem', fontWeight: 700, color: '#f1f5f9' }}>Example 1</span>
+                                ) : (() => {
+                                    // Helper: normalize text to lines array, splitting on \n or \\n literal
+                                    const toLines = (text = '') =>
+                                        (text || '').replace(/\\n/g, '\n').split('\n').map(l => l.trimEnd());
+                                    // Helper: render input as stdin-style labeled lines
+                                    const InputBlock = ({ raw, onUse }) => {
+                                        const lines = toLines(raw);
+                                        return (
+                                            <div style={{ background: '#080e1a', border: '1px solid #1e3a5f', borderRadius: '10px', overflow: 'hidden' }}>
+                                                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '6px 12px 6px 14px', background: '#0d1929', borderBottom: '1px solid #1e2d4a' }}>
+                                                    <span style={{ fontSize: '0.68rem', fontWeight: 700, color: '#475569', letterSpacing: '0.07em', fontFamily: 'ui-monospace,monospace' }}>STDIN</span>
+                                                    {onUse && (
+                                                        <button onClick={onUse} style={{ padding: '2px 10px', background: 'rgba(59,130,246,0.15)', border: '1px solid rgba(59,130,246,0.4)', borderRadius: '5px', color: '#60a5fa', fontSize: '0.68rem', fontWeight: 700, cursor: 'pointer' }}>▶ Use as Input</button>
+                                                    )}
+                                                </div>
+                                                <div style={{ padding: '10px 14px' }}>
+                                                    {lines.map((line, i) => (
+                                                        <div key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: '8px', minHeight: '1.4em' }}>
+                                                            <span style={{ color: '#334155', fontSize: '0.72rem', fontFamily: 'ui-monospace,monospace', userSelect: 'none', paddingTop: '1px', minWidth: '18px', textAlign: 'right' }}>{i + 1}</span>
+                                                            <span style={{ color: '#e2e8f0', fontSize: '0.82rem', fontFamily: 'ui-monospace,monospace', whiteSpace: 'pre-wrap' }}>{line || <span style={{ color: '#334155' }}>↵</span>}</span>
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        );
+                                    };
+                                    // Helper: render output block with per-line diff
+                                    const OutputBlock = ({ raw, actualRaw, label, passed }) => {
+                                        const expLines = toLines(raw);
+                                        const actLines = actualRaw !== undefined ? toLines(actualRaw) : null;
+                                        // Use passed from parent (which uses smarter whitespace-collapsed comparison)
+                                        const effectivePassed = actLines === null ? undefined : passed;
+                                        const borderColor = actLines === null ? 'rgba(16,185,129,0.3)' : effectivePassed ? 'rgba(16,185,129,0.4)' : 'rgba(239,68,68,0.35)';
+                                        const headerBg = actLines === null ? '#061510' : effectivePassed ? 'rgba(16,185,129,0.08)' : 'rgba(239,68,68,0.08)';
+                                        // Per-line diff only makes sense when line counts are similar
+                                        const showPerLine = actLines !== null && !effectivePassed;
+                                        return (
+                                            <div style={{ background: '#070d0a', border: `1px solid ${borderColor}`, borderRadius: '10px', overflow: 'hidden' }}>
+                                                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '6px 12px', background: headerBg, borderBottom: `1px solid ${borderColor}` }}>
+                                                    <span style={{ fontSize: '0.68rem', fontWeight: 700, color: actLines === null ? '#34d399' : effectivePassed ? '#4ade80' : '#f87171', letterSpacing: '0.07em', fontFamily: 'ui-monospace,monospace' }}>{label}</span>
+                                                    {actLines !== null && <span style={{ fontSize: '0.68rem', fontWeight: 700, color: effectivePassed ? '#4ade80' : '#f87171' }}>{effectivePassed ? '✅ Match' : '❌ Mismatch'}</span>}
+                                                </div>
+                                                <div style={{ padding: '10px 14px' }}>
+                                                    {expLines.map((line, i) => {
+                                                        const actLine = showPerLine ? (actLines[i] ?? '') : null;
+                                                        const lineMatch = actLine === null ? null : line.trim() === actLine.trim();
+                                                        return (
+                                                            <div key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: '6px', minHeight: '1.4em', borderRadius: '3px', background: lineMatch === false ? 'rgba(239,68,68,0.06)' : 'transparent', margin: '0 -4px', padding: '0 4px' }}>
+                                                                <span style={{ color: '#334155', fontSize: '0.72rem', fontFamily: 'ui-monospace,monospace', userSelect: 'none', paddingTop: '1px', minWidth: '18px', textAlign: 'right' }}>{i + 1}</span>
+                                                                <span style={{ color: actLines === null ? '#34d399' : effectivePassed ? '#4ade80' : lineMatch === false ? '#fca5a5' : '#4ade80', fontSize: '0.82rem', fontFamily: 'ui-monospace,monospace', whiteSpace: 'pre-wrap', flex: 1 }}>{line || ''}</span>
+                                                                {lineMatch === false && actLine !== undefined && <span style={{ color: '#f87171', fontSize: '0.72rem', fontFamily: 'ui-monospace,monospace', whiteSpace: 'pre-wrap', flex: 1, borderLeft: '1px solid rgba(239,68,68,0.25)', paddingLeft: '8px' }}>{actLine}</span>}
+                                                                {effectivePassed && actLines !== null && <span style={{ color: '#1e4a2a', fontSize: '0.7rem', flexShrink: 0 }}>✓</span>}
+                                                            </div>
+                                                        );
+                                                    })}
+                                                    {/* extra actual lines not in expected — only shown when NOT passed */}
+                                                    {showPerLine && actLines.slice(expLines.length).map((line, i) => (
+                                                        <div key={'extra-' + i} style={{ display: 'flex', alignItems: 'flex-start', gap: '6px', background: 'rgba(239,68,68,0.06)', borderRadius: '3px', margin: '0 -4px', padding: '0 4px' }}>
+                                                            <span style={{ color: '#334155', fontSize: '0.72rem', fontFamily: 'ui-monospace,monospace', userSelect: 'none', paddingTop: '1px', minWidth: '18px', textAlign: 'right' }}>{expLines.length + i + 1}</span>
+                                                            <span style={{ flex: 1 }} />
+                                                            <span style={{ color: '#f87171', fontSize: '0.82rem', fontFamily: 'ui-monospace,monospace', whiteSpace: 'pre-wrap', flex: 1, borderLeft: '1px solid rgba(239,68,68,0.25)', paddingLeft: '8px' }}>{line}</span>
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        );
+                                    };
+                                    return (
+                                        <>
+                                            {/* Example 1 */}
+                                            <div style={{ marginBottom: '1.5rem' }}>
+                                                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '10px' }}>
+                                                    <span style={{ fontSize: '0.9rem', fontWeight: 700, color: '#f1f5f9' }}>Example 1</span>
+                                                    {runResult && (
+                                                        <span style={{ display: 'flex', alignItems: 'center', gap: '5px', padding: '3px 10px', borderRadius: '999px', fontSize: '0.72rem', fontWeight: 700, background: runResult.passed ? 'rgba(16,185,129,0.15)' : 'rgba(239,68,68,0.15)', color: runResult.passed ? '#4ade80' : '#f87171', border: `1px solid ${runResult.passed ? 'rgba(16,185,129,0.4)' : 'rgba(239,68,68,0.4)'}` }}>
+                                                            {runResult.passed ? '✅ Passed' : '❌ Wrong Answer'}
+                                                        </span>
+                                                    )}
+                                                </div>
+                                                {/* Input */}
+                                                <div style={{ marginBottom: '8px' }}>
+                                                    <div style={{ fontSize: '0.7rem', fontWeight: 700, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '5px' }}>📥 Input</div>
+                                                    <InputBlock raw={problem.sampleInput} onUse={() => { setCustomInput(problem.sampleInput || ''); setActiveOutputTab('input'); }} />
+                                                </div>
+                                                {/* Expected Output — with diff if runResult exists */}
+                                                <div style={{ marginBottom: runResult ? '8px' : 0 }}>
+                                                    <div style={{ fontSize: '0.7rem', fontWeight: 700, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '5px' }}>📤 Expected Output</div>
+                                                    <OutputBlock
+                                                        raw={problem.expectedOutput || problem.expected_output}
+                                                        actualRaw={runResult ? runResult.actual : undefined}
+                                                        label="EXPECTED"
+                                                        passed={runResult?.passed}
+                                                    />
+                                                </div>
+                                                {/* Your Output — shown after run, as separate block */}
                                                 {runResult && (
-                                                    <span style={{ display: 'flex', alignItems: 'center', gap: '5px', padding: '3px 10px', borderRadius: '999px', fontSize: '0.72rem', fontWeight: 700, background: runResult.passed ? 'rgba(16,185,129,0.15)' : 'rgba(239,68,68,0.15)', color: runResult.passed ? '#4ade80' : '#f87171', border: `1px solid ${runResult.passed ? 'rgba(16,185,129,0.4)' : 'rgba(239,68,68,0.4)'}` }}>
-                                                        {runResult.passed ? '✅ Passed' : '❌ Wrong Answer'}
-                                                    </span>
+                                                    <div>
+                                                        <div style={{ fontSize: '0.7rem', fontWeight: 700, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '5px' }}>🖥️ Your Output</div>
+                                                        <div style={{ background: '#070d0a', border: `1px solid ${runResult.passed ? 'rgba(16,185,129,0.3)' : 'rgba(239,68,68,0.25)'}`, borderRadius: '10px', overflow: 'hidden' }}>
+                                                            <div style={{ padding: '6px 12px', background: runResult.passed ? 'rgba(16,185,129,0.07)' : 'rgba(239,68,68,0.06)', borderBottom: `1px solid ${runResult.passed ? 'rgba(16,185,129,0.2)' : 'rgba(239,68,68,0.15)'}` }}>
+                                                                <span style={{ fontSize: '0.68rem', fontWeight: 700, color: runResult.passed ? '#4ade80' : '#f87171', fontFamily: 'ui-monospace,monospace', letterSpacing: '0.07em' }}>STDOUT</span>
+                                                            </div>
+                                                            <div style={{ padding: '10px 14px' }}>
+                                                                {(runResult.actual || '').replace(/\\n/g, '\n').split('\n').map((line, i) => (
+                                                                    <div key={i} style={{ display: 'flex', gap: '8px', minHeight: '1.4em' }}>
+                                                                        <span style={{ color: '#334155', fontSize: '0.72rem', fontFamily: 'ui-monospace,monospace', userSelect: 'none', paddingTop: '1px', minWidth: '18px', textAlign: 'right' }}>{i + 1}</span>
+                                                                        <span style={{ color: runResult.passed ? '#4ade80' : '#fca5a5', fontSize: '0.82rem', fontFamily: 'ui-monospace,monospace', whiteSpace: 'pre-wrap' }}>{line}</span>
+                                                                    </div>
+                                                                ))}
+                                                            </div>
+                                                        </div>
+                                                    </div>
                                                 )}
                                             </div>
-                                            {/* Input */}
-                                            <div style={{ marginBottom: '10px' }}>
-                                                <div style={{ fontSize: '0.78rem', fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: '6px' }}>Input</div>
-                                                <div style={{ background: '#0d1929', border: '1px solid #1e3a5f', borderRadius: '10px', padding: '12px 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '8px' }}>
-                                                    <pre style={{ margin: 0, color: '#e2e8f0', fontSize: '0.82rem', fontFamily: 'ui-monospace,monospace', whiteSpace: 'pre-wrap', flex: 1 }}>{problem.sampleInput || 'No sample input provided'}</pre>
-                                                    <button
-                                                        onClick={() => { setCustomInput(problem.sampleInput || ''); setActiveOutputTab('input'); }}
-                                                        title="Load into Custom Input"
-                                                        style={{ flexShrink: 0, padding: '4px 10px', background: '#1e3a5f', border: '1px solid #3b82f6', borderRadius: '6px', color: '#60a5fa', fontSize: '0.7rem', fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap' }}>
-                                                        ▶ Use
-                                                    </button>
-                                                </div>
-                                            </div>
-                                            {/* Output */}
-                                            <div style={{ marginBottom: runResult ? '10px' : 0 }}>
-                                                <div style={{ fontSize: '0.78rem', fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: '6px' }}>Expected Output</div>
-                                                <div style={{ background: 'rgba(16,185,129,0.06)', border: `1px solid ${runResult && !runResult.passed ? 'rgba(239,68,68,0.3)' : 'rgba(16,185,129,0.25)'}`, borderRadius: '10px', padding: '12px 16px' }}>
-                                                    <pre style={{ margin: 0, color: '#34d399', fontSize: '0.82rem', fontFamily: 'ui-monospace,monospace', whiteSpace: 'pre-wrap' }}>{problem.expectedOutput || problem.expected_output || 'See problem statement'}</pre>
-                                                </div>
-                                            </div>
-                                            {/* Your output comparison (shown after run) */}
-                                            {runResult && (
-                                                <div style={{ marginTop: '10px' }}>
-                                                    <div style={{ fontSize: '0.78rem', fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: '6px' }}>Your Output</div>
-                                                    <div style={{ background: runResult.passed ? 'rgba(16,185,129,0.06)' : 'rgba(239,68,68,0.06)', border: `1px solid ${runResult.passed ? 'rgba(16,185,129,0.35)' : 'rgba(239,68,68,0.35)'}`, borderRadius: '10px', padding: '12px 16px' }}>
-                                                        <pre style={{ margin: 0, color: runResult.passed ? '#4ade80' : '#f87171', fontSize: '0.82rem', fontFamily: 'ui-monospace,monospace', whiteSpace: 'pre-wrap' }}>{runResult.actual}</pre>
+
+                                            {/* Test cases from DB */}
+                                            {testCases.filter(tc => !tc.isHidden).map((tc, i) => (
+                                                <div key={tc.id || i} style={{ marginBottom: '1.5rem' }}>
+                                                    <div style={{ fontSize: '0.9rem', fontWeight: 700, color: '#f1f5f9', marginBottom: '10px' }}>Example {i + 2}</div>
+                                                    <div style={{ marginBottom: '8px' }}>
+                                                        <div style={{ fontSize: '0.7rem', fontWeight: 700, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '5px' }}>📥 Input</div>
+                                                        <InputBlock raw={tc.input} onUse={() => { setCustomInput(tc.input); setActiveOutputTab('input'); }} />
                                                     </div>
+                                                    <div>
+                                                        <div style={{ fontSize: '0.7rem', fontWeight: 700, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '5px' }}>📤 Expected Output</div>
+                                                        <OutputBlock raw={tc.expectedOutput || tc.expected_output} label="EXPECTED" passed={undefined} />
+                                                    </div>
+                                                    {tc.description && <p style={{ margin: '6px 0 0', fontSize: '0.75rem', color: '#64748b' }}>ℹ️ {tc.description}</p>}
+                                                </div>
+                                            ))}
+                                            {testCases.filter(tc => tc.isHidden).length > 0 && (
+                                                <div style={{ textAlign: 'center', padding: '12px', background: '#1e293b', borderRadius: '10px', color: '#64748b', fontSize: '0.8rem' }}>
+                                                    🔒 +{testCases.filter(tc => tc.isHidden).length} hidden test cases will run on Submit
                                                 </div>
                                             )}
-                                        </div>
-
-                                        {/* Test cases from DB */}
-                                        {testCases.filter(tc => !tc.isHidden).map((tc, i) => (
-                                            <div key={tc.id || i} style={{ marginBottom: '1.5rem' }}>
-                                                <div style={{ fontSize: '0.88rem', fontWeight: 700, color: '#f1f5f9', marginBottom: '12px' }}>Example {i + 2}</div>
-                                                <div style={{ marginBottom: '10px' }}>
-                                                    <div style={{ fontSize: '0.78rem', fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: '6px' }}>Input</div>
-                                                    <div style={{ background: '#0d1929', border: '1px solid #1e3a5f', borderRadius: '10px', padding: '12px 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '8px' }}>
-                                                        <pre style={{ margin: 0, color: '#e2e8f0', fontSize: '0.82rem', fontFamily: 'ui-monospace,monospace', whiteSpace: 'pre-wrap', flex: 1 }}>{tc.input}</pre>
-                                                        <button onClick={() => { setCustomInput(tc.input); setActiveOutputTab('input'); }} style={{ flexShrink: 0, padding: '4px 10px', background: '#1e3a5f', border: '1px solid #3b82f6', borderRadius: '6px', color: '#60a5fa', fontSize: '0.7rem', fontWeight: 600, cursor: 'pointer' }}>▶ Use</button>
-                                                    </div>
-                                                </div>
-                                                <div>
-                                                    <div style={{ fontSize: '0.78rem', fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: '6px' }}>Output</div>
-                                                    <div style={{ background: 'rgba(16,185,129,0.06)', border: '1px solid rgba(16,185,129,0.25)', borderRadius: '10px', padding: '12px 16px' }}>
-                                                        <pre style={{ margin: 0, color: '#34d399', fontSize: '0.82rem', fontFamily: 'ui-monospace,monospace', whiteSpace: 'pre-wrap' }}>{tc.expectedOutput || tc.expected_output}</pre>
-                                                    </div>
-                                                </div>
-                                                {tc.description && <p style={{ margin: '6px 0 0', fontSize: '0.75rem', color: '#64748b' }}>ℹ️ {tc.description}</p>}
-                                            </div>
-                                        ))}
-                                        {testCases.filter(tc => tc.isHidden).length > 0 && (
-                                            <div style={{ textAlign: 'center', padding: '12px', background: '#1e293b', borderRadius: '10px', color: '#64748b', fontSize: '0.8rem' }}>
-                                                🔒 +{testCases.filter(tc => tc.isHidden).length} hidden test cases will run on Submit
-                                            </div>
-                                        )}
-                                    </>
-                                )}
+                                        </>
+                                    );
+                                })()}
                             </div>
                         )}
 

@@ -1376,6 +1376,7 @@ function AllSubmissions() {
     const [aptitudeSubmissions, setAptitudeSubmissions] = useState([])
     const [globalSubmissions, setGlobalSubmissions] = useState([])
     const [mcqSubmissions, setMcqSubmissions] = useState([])
+    const [crtSubmissions, setCrtSubmissions] = useState([])
     const [loading, setLoading] = useState(true)
     const [searchTerm, setSearchTerm] = useState('')
     const [activeTab, setActiveTab] = useState('all')
@@ -1400,8 +1401,9 @@ function AllSubmissions() {
             axios.get(`${API_BASE}/submissions?limit=5000`),
             axios.get(`${API_BASE}/aptitude-submissions`),
             axios.get(`${API_BASE}/global-test-submissions`),
-            axios.get(`${API_BASE}/mcq-submissions`, { headers: { Authorization: `Bearer ${localStorage.getItem('authToken')}` } }).catch(() => ({ data: { submissions: [] } }))
-        ]).then(([codeRes, aptRes, globalRes, mcqRes]) => {
+            axios.get(`${API_BASE}/mcq-submissions`, { headers: { Authorization: `Bearer ${localStorage.getItem('authToken')}` } }).catch(() => ({ data: { submissions: [] } })),
+            axios.get(`${API_BASE}/crt-submissions`, { headers: { Authorization: `Bearer ${localStorage.getItem('authToken')}` } }).catch(() => ({ data: { submissions: [] } }))
+        ]).then(([codeRes, aptRes, globalRes, mcqRes, crtRes]) => {
             const codeData = Array.isArray(codeRes.data) ? codeRes.data : (codeRes.data?.data || [])
             const mlTasks = codeData.filter(s => s.isMLTask).map(s => ({ ...s, subType: 'ml-task' }))
             const codeSubs = codeData.filter(s => !s.isMLTask).map(s => ({ ...s, subType: 'code' }))
@@ -1427,11 +1429,13 @@ function AllSubmissions() {
                 studentEmail: s.student_email,
                 submittedAt: s.submitted_at
             }))
+            const crtSubs = (crtRes.data?.submissions || [])
             setSubmissions(codeSubs)
             setMlTaskSubmissions(mlTasks)
             setAptitudeSubmissions(aptSubs)
             setGlobalSubmissions(globalSubs)
             setMcqSubmissions(mcqSubs)
+            setCrtSubmissions(crtSubs)
             setLoading(false)
         }).catch(err => {
             console.error('Fetch error:', err)
@@ -1472,9 +1476,9 @@ function AllSubmissions() {
         const rows = dataToExport.map(sub => [
             sub.studentName || '',
             sub.studentEmail || '',
-            sub.subType === 'aptitude' ? 'Aptitude' : sub.subType === 'global' ? 'Global' : 'Code',
+            sub.subType === 'aptitude' ? 'Aptitude' : sub.subType === 'global' ? 'Global' : sub.subType === 'crt' ? 'Round Test' : 'Code',
             sub.itemTitle || sub.testTitle || '',
-            sub.subType === 'aptitude' ? 'N/A' : sub.subType === 'global' ? 'Mixed' : (sub.language || 'N/A'),
+            sub.subType === 'aptitude' ? 'N/A' : sub.subType === 'global' ? 'Mixed' : sub.subType === 'crt' ? 'Round Test' : (sub.language || 'N/A'),
             sub.score || 0,
             sub.status || '',
             sub.integrity?.tabSwitches || sub.tabSwitches || 0,
@@ -1546,7 +1550,7 @@ function AllSubmissions() {
         }
     }
 
-    const allSubmissions = [...submissions, ...mlTaskSubmissions, ...aptitudeSubmissions, ...globalSubmissions, ...mcqSubmissions]
+    const allSubmissions = [...submissions, ...mlTaskSubmissions, ...aptitudeSubmissions, ...globalSubmissions, ...mcqSubmissions, ...crtSubmissions]
         .sort((a, b) => new Date(b.submittedAt) - new Date(a.submittedAt))
 
     // Compute attempt numbers: group by (studentId + problemId/testId) and assign attempt #
@@ -1593,7 +1597,9 @@ function AllSubmissions() {
                         ? aptitudeSubmissions
                         : activeTab === 'mcq'
                             ? mcqSubmissions
-                            : globalSubmissions
+                            : activeTab === 'crt'
+                                ? crtSubmissions
+                                : globalSubmissions
 
         // Text search
         if (searchTerm) {
@@ -1699,7 +1705,8 @@ function AllSubmissions() {
                             { key: 'ml-task', label: '🧠 ML', count: mlTaskSubmissions.length, color: '#06b6d4' },
                             { key: 'aptitude', label: '📝 Apt', count: aptitudeSubmissions.length, color: '#8b5cf6' },
                             { key: 'global', label: '🌐 Global', count: globalSubmissions.length, color: '#3b82f6' },
-                            { key: 'mcq', label: '🔢 MCQ', count: mcqSubmissions.length, color: '#8b5cf6' }
+                            { key: 'mcq', label: '🔢 MCQ', count: mcqSubmissions.length, color: '#8b5cf6' },
+                            { key: 'crt', label: '🏢 Round', count: crtSubmissions.length, color: '#f59e0b' }
                         ].map(tab => (
                             <button key={tab.key} onClick={() => setActiveTab(tab.key)}
                                 style={{ padding: '0.4rem 0.75rem', background: activeTab === tab.key ? tab.color : 'transparent', border: 'none', color: activeTab === tab.key ? 'white' : 'var(--text-muted)', cursor: 'pointer', fontSize: '0.8rem', whiteSpace: 'nowrap' }}
@@ -1857,10 +1864,10 @@ function AllSubmissions() {
                                     <td style={{ padding: '0.6rem 1rem' }}>
                                         <span style={{
                                             fontSize: '0.72rem', padding: '3px 8px', borderRadius: '4px', whiteSpace: 'nowrap',
-                                            background: sub.subType === 'aptitude' ? 'rgba(139,92,246,0.12)' : sub.subType === 'global' ? 'rgba(59,130,246,0.12)' : sub.subType === 'ml-task' ? 'rgba(6,182,212,0.12)' : 'rgba(59, 130, 246, 0.1)',
-                                            color: sub.subType === 'ml-task' ? '#06b6d4' : sub.subType === 'aptitude' ? '#8b5cf6' : sub.subType === 'global' ? '#3b82f6' : 'var(--primary)'
+                                            background: sub.subType === 'aptitude' ? 'rgba(139,92,246,0.12)' : sub.subType === 'global' ? 'rgba(59,130,246,0.12)' : sub.subType === 'ml-task' ? 'rgba(6,182,212,0.12)' : sub.subType === 'crt' ? 'rgba(245,158,11,0.12)' : 'rgba(59, 130, 246, 0.1)',
+                                            color: sub.subType === 'ml-task' ? '#06b6d4' : sub.subType === 'aptitude' ? '#8b5cf6' : sub.subType === 'global' ? '#3b82f6' : sub.subType === 'crt' ? '#f59e0b' : 'var(--primary)'
                                         }}>
-                                            {sub.subType === 'ml-task' ? '🧠 ML' : sub.subType === 'aptitude' ? '📝 Apt' : sub.subType === 'global' ? '🌐 Global' : '💻 Code'}
+                                            {sub.subType === 'ml-task' ? '🧠 ML' : sub.subType === 'aptitude' ? '📝 Apt' : sub.subType === 'global' ? '🌐 Global' : sub.subType === 'crt' ? '🏢 Round' : '💻 Code'}
                                         </span>
                                     </td>
                                     <td style={{ padding: '0.6rem 1rem' }}>
@@ -1868,7 +1875,7 @@ function AllSubmissions() {
                                     </td>
                                     <td style={{ padding: '0.6rem 1rem' }}>
                                         <span style={{ fontSize: '0.72rem', padding: '3px 8px', borderRadius: '4px', background: 'rgba(59,130,246,0.08)', color: 'var(--primary)', whiteSpace: 'nowrap' }}>
-                                            {sub.subType === 'aptitude' ? 'N/A' : sub.subType === 'global' ? 'Mixed' : (sub.language?.toUpperCase() || 'N/A')}
+                                            {sub.subType === 'aptitude' ? 'N/A' : sub.subType === 'global' ? 'Mixed' : sub.subType === 'crt' ? 'Round Test' : (sub.language?.toUpperCase() || 'N/A')}
                                         </span>
                                     </td>
                                     <td style={{ padding: '0.6rem 1rem', textAlign: 'center' }}>
@@ -1922,6 +1929,10 @@ function AllSubmissions() {
                                             <button onClick={() => setViewMLReport(sub)} style={{ background: 'rgba(6,182,212,0.1)', border: 'none', color: '#06b6d4', padding: '4px 10px', borderRadius: '6px', cursor: 'pointer', fontSize: '0.75rem', display: 'flex', alignItems: 'center', gap: '3px' }}>
                                                 <Eye size={12} /> ML
                                             </button>
+                                        ) : sub.subType === 'crt' ? (
+                                            <span style={{ fontSize: '0.75rem', padding: '4px 10px', borderRadius: '6px', background: sub.status === 'Passed' ? 'rgba(16,185,129,0.1)' : 'rgba(239,68,68,0.1)', color: sub.status === 'Passed' ? '#10b981' : '#ef4444', fontWeight: 700, border: `1px solid ${sub.status === 'Passed' ? 'rgba(16,185,129,0.3)' : 'rgba(239,68,68,0.3)'}` }}>
+                                                {sub.status === 'Passed' ? '✅ Passed' : '❌ Failed'}
+                                            </span>
                                         ) : (
                                             <button onClick={() => setViewReport(sub)} style={{ background: 'rgba(59,130,246,0.1)', border: 'none', color: '#3b82f6', padding: '4px 10px', borderRadius: '6px', cursor: 'pointer', fontSize: '0.75rem', display: 'flex', alignItems: 'center', gap: '3px' }}>
                                                 <Eye size={12} /> Report
