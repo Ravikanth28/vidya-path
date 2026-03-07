@@ -1,6 +1,6 @@
 /**
  * AI Service Module - Cerebras-powered question generation & evaluation
- * Used for Skill Test system (MCQ, Coding, SQL, Interview, Reports)
+ * Used for Skill Test system (MCQ, Coding, SQL, Interview, Reports,)
  */
 require('dotenv').config({ path: require('path').join(__dirname, '..', '.env') });
 
