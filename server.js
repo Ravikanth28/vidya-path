@@ -557,7 +557,7 @@ pool.getConnection()
             `CREATE TABLE IF NOT EXISTS crt_attempts (
                 id INT AUTO_INCREMENT PRIMARY KEY,
                 test_id INT NOT NULL,
-                student_id INT NOT NULL,
+                student_id VARCHAR(255) NOT NULL,
                 student_name VARCHAR(255),
                 status ENUM('in_progress','completed','expired') DEFAULT 'in_progress',
                 overall_score FLOAT DEFAULT 0,
@@ -591,6 +591,13 @@ pool.getConnection()
             console.log('✅ Added section_time_limits column');
         } catch (e) {
             if (!e.message.includes('Duplicate column')) console.warn('⚠️ section_time_limits migration:', e.message);
+        }
+        // Migrate: crt_attempts.student_id INT → VARCHAR(255) for UUID/string student IDs
+        try {
+            await pool.query(`ALTER TABLE crt_attempts MODIFY COLUMN student_id VARCHAR(255) NOT NULL`);
+            console.log('✅ crt_attempts.student_id migrated to VARCHAR(255)');
+        } catch (e) {
+            if (!e.message.includes('doesn\'t exist')) console.warn('⚠️ crt_attempts student_id migration:', e.message);
         }
         console.log('✅ Company Round Test (CRT) tables ready');
     })
@@ -2917,10 +2924,15 @@ Respond in this exact JSON format:
                             parsed.analysis[key] = Math.min(100, Math.max(0, Math.round(Number(parsed.analysis[key]) || 0)));
                         }
                     }
+                    // Ensure feedback is never null/empty
+                    if (!parsed.feedback?.trim()) {
+                        parsed.feedback = `Your ${language} code scored ${parsed.score || 0}/100. Please review the problem requirements and improve your solution.`;
+                    }
                     evaluationResult = parsed;
                 }
             } catch (e) {
                 console.error('AI Evaluation error:', e.message);
+                evaluationResult.feedback = `Automated evaluation could not be completed for this ${language} submission. Score: ${evaluationResult.score || 0}/100.`;
             }
         }
 
@@ -9490,8 +9502,223 @@ io.on('connection', (socket) => {
 
     // ================== END NOTIFICATION HANDLERS ==================
 
+    // ================== INTERACTIVE CODE RUNNER ==================
+    // Runs code with live stdin/stdout streaming via Socket.IO
+    // Client emits 'run-interactive', server spawns process, streams output back,
+    // client sends each line of stdin via 'run-stdin' as the user types.
+
+    socket._runProc = null;
+    socket._runCleanup = [];
+
+    const killRunProc = () => {
+        if (socket._runProc) {
+            try { socket._runProc.kill('SIGTERM'); } catch (e) {}
+            socket._runProc = null;
+        }
+        for (const f of socket._runCleanup) {
+            try {
+                if (fs.existsSync(f)) {
+                    const st = fs.statSync(f);
+                    if (st.isDirectory()) fs.rmSync(f, { recursive: true, force: true });
+                    else fs.unlinkSync(f);
+                }
+            } catch (e) {}
+        }
+        socket._runCleanup = [];
+    };
+
+    socket.on('run-interactive', async (data) => {
+        const { code = '', language = '', problemId, sqlSchema } = data || {};
+        const os = require('os');
+        const { spawn } = require('child_process');
+        const runId = uuidv4().slice(0, 8);
+
+        // Kill any previous run for this socket
+        killRunProc();
+
+        const emitError = (msg) => {
+            socket.emit('run-output', { text: msg, type: 'stderr' });
+            socket.emit('run-exit', { code: 1 });
+        };
+
+        try {
+            let command, args;
+            let stdinInit = null; // for non-interactive modes (SQL)
+            const cleanupFiles = [];
+            let codeToExecute = code;
+
+            if (language === 'SQL' || language === 'SQLITE') {
+                let schemaToUse = sqlSchema;
+                if (!schemaToUse && problemId) {
+                    try {
+                        const [probs] = await pool.query('SELECT sql_schema FROM problems WHERE id = ?', [problemId]);
+                        if (probs.length > 0) schemaToUse = probs[0].sql_schema;
+                    } catch (e) {}
+                }
+                if (schemaToUse) codeToExecute = `${schemaToUse}\n\n${code}`;
+                const dbFile = path.join(os.tmpdir(), `run_${runId}.db`);
+                cleanupFiles.push(dbFile);
+                command = 'sqlite3'; args = [dbFile, '-batch'];
+                stdinInit = codeToExecute; // SQL is not interactive — pipe all at once
+
+            } else if (language === 'Python') {
+                const filePath = path.join(os.tmpdir(), `run_${runId}.py`);
+                fs.writeFileSync(filePath, codeToExecute);
+                cleanupFiles.push(filePath);
+                command = 'python'; args = ['-u', filePath]; // -u = unbuffered stdout
+
+            } else if (language === 'JavaScript') {
+                const filePath = path.join(os.tmpdir(), `run_${runId}.js`);
+                fs.writeFileSync(filePath, codeToExecute);
+                cleanupFiles.push(filePath);
+                command = 'node'; args = [filePath];
+
+            } else if (language === 'C') {
+                const srcPath = path.join(os.tmpdir(), `run_${runId}.c`);
+                const outPath = path.join(os.tmpdir(), `run_${runId}${process.platform === 'win32' ? '.exe' : ''}`);
+                // Prepend a GCC constructor that runs BEFORE main() to force unbuffered stdout/stderr.
+                // __attribute__((constructor)) is invoked by the C runtime before main(), so it
+                // defeats Windows CRT pipe-buffering which setvbuf()-inside-main cannot fix.
+                const unbufPreamble = [
+                    '#include <stdio.h>',
+                    '__attribute__((constructor))',
+                    'static void __force_unbuf__(void) {',
+                    '    setvbuf(stdout, NULL, _IONBF, 0);',
+                    '    setvbuf(stderr, NULL, _IONBF, 0);',
+                    '}',
+                    '/* === user code below === */',
+                    ''
+                ].join('\n');
+                fs.writeFileSync(srcPath, unbufPreamble + codeToExecute);
+                cleanupFiles.push(srcPath, outPath);
+                socket.emit('run-output', { text: 'Compiling...\n', type: 'info' });
+                const cr = await runCodeSubprocess('gcc', [srcPath, '-o', outPath, '-lm'], '');
+                if (cr.exitCode !== 0) return emitError(`Compilation failed:\n${cr.stderr}`);
+                command = outPath; args = [];
+
+            } else if (language === 'C++') {
+                const srcPath = path.join(os.tmpdir(), `run_${runId}.cpp`);
+                const outPath = path.join(os.tmpdir(), `run_${runId}${process.platform === 'win32' ? '.exe' : ''}`);
+                // Prepend a GCC constructor that runs BEFORE main() to force unbuffered I/O.
+                // Uses C++ static initialiser trick which works the same as __attribute__((constructor)).
+                const unbufPreamble = [
+                    '#include <cstdio>',
+                    '#include <iostream>',
+                    'namespace {',
+                    '  struct __ForceUnbuf__ {',
+                    '    __ForceUnbuf__() {',
+                    '      setvbuf(stdout, NULL, _IONBF, 0);',
+                    '      setvbuf(stderr, NULL, _IONBF, 0);',
+                    '      std::cout.setf(std::ios::unitbuf);',
+                    '      std::cerr.setf(std::ios::unitbuf);',
+                    '    }',
+                    '  } __force_unbuf_instance__;',
+                    '}',
+                    '/* === user code below === */',
+                    ''
+                ].join('\n');
+                fs.writeFileSync(srcPath, unbufPreamble + codeToExecute);
+                cleanupFiles.push(srcPath, outPath);
+                socket.emit('run-output', { text: 'Compiling...\n', type: 'info' });
+                const cr = await runCodeSubprocess('g++', [srcPath, '-o', outPath, '-lm'], '');
+                if (cr.exitCode !== 0) return emitError(`Compilation failed:\n${cr.stderr}`);
+                command = outPath; args = [];
+
+            } else if (language === 'Java') {
+                const classMatch = codeToExecute.match(/public\s+class\s+(\w+)/);
+                const className = classMatch ? classMatch[1] : 'Main';
+                const javaDir = path.join(os.tmpdir(), `java_${runId}`);
+                fs.mkdirSync(javaDir, { recursive: true });
+                const srcPath = path.join(javaDir, `${className}.java`);
+                fs.writeFileSync(srcPath, codeToExecute);
+                cleanupFiles.push(javaDir);
+                socket.emit('run-output', { text: 'Compiling...\n', type: 'info' });
+                const cr = await runCodeSubprocess('javac', [srcPath], '');
+                if (cr.exitCode !== 0) return emitError(`Compilation failed:\n${cr.stderr}`);
+                command = 'java'; args = ['-cp', javaDir, className];
+
+            } else {
+                return emitError(`Unsupported language: ${language}`);
+            }
+
+            const proc = spawn(command, args, { stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true });
+            socket._runProc = proc;
+            socket._runCleanup = cleanupFiles;
+            let allOutput = '';
+
+            const stdinHandler = (line) => {
+                try { if (proc.stdin.writable) proc.stdin.write(line + '\n'); } catch (e) {}
+            };
+            socket.on('run-stdin', stdinHandler);
+
+            // Feed initial stdin (SQL) or leave open for interactive languages
+            if (stdinInit !== null) {
+                proc.stdin.write(stdinInit);
+                proc.stdin.end();
+            }
+
+            const TIMEOUT_MS = 30000;
+            const timeoutHandle = setTimeout(() => {
+                try { proc.kill('SIGTERM'); } catch (e) {}
+                socket.emit('run-output', { text: '\n⏰ Timed out (30s limit)', type: 'stderr' });
+                socket.emit('run-exit', { code: -1, allOutput });
+            }, TIMEOUT_MS);
+
+            proc.stdout.on('data', (chunk) => {
+                const text = chunk.toString();
+                allOutput += text;
+                socket.emit('run-output', { text, type: 'stdout' });
+            });
+
+            proc.stderr.on('data', (chunk) => {
+                const text = chunk.toString();
+                allOutput += text;
+                socket.emit('run-output', { text, type: 'stderr' });
+            });
+
+            proc.on('close', (exitCode) => {
+                clearTimeout(timeoutHandle);
+                socket.off('run-stdin', stdinHandler);
+                socket._runProc = null;
+                socket.emit('run-exit', { code: exitCode, allOutput });
+                // cleanup files
+                for (const f of cleanupFiles) {
+                    try {
+                        if (fs.existsSync(f)) {
+                            const st = fs.statSync(f);
+                            if (st.isDirectory()) fs.rmSync(f, { recursive: true, force: true });
+                            else fs.unlinkSync(f);
+                        }
+                    } catch (e) {}
+                }
+                socket._runCleanup = [];
+            });
+
+            proc.on('error', (err) => {
+                clearTimeout(timeoutHandle);
+                socket.off('run-stdin', stdinHandler);
+                socket._runProc = null;
+                socket.emit('run-output', { text: `\nError: ${err.message}`, type: 'stderr' });
+                socket.emit('run-exit', { code: 1, allOutput });
+            });
+
+        } catch (err) {
+            emitError(`Error: ${err.message}`);
+        }
+    });
+
+    socket.on('kill-run', () => {
+        killRunProc();
+        socket.emit('run-output', { text: '\n🛑 Execution stopped', type: 'stderr' });
+        socket.emit('run-exit', { code: -1 });
+    });
+
+    // ================== END INTERACTIVE CODE RUNNER ==================
+
     // Handle disconnection
     socket.on('disconnect', () => {
+        // Kill any running interactive process for this socket
+        killRunProc();
         if (socket.userData) {
             const { userId, role } = socket.userData;
 
@@ -12834,9 +13061,16 @@ app.get('/api/mcq/student', authenticate, async (req, res) => {
         for (const t of all) {
             const questions = JSON.parse(t.questions || '[]');
             const [sub] = await pool.query(
-                'SELECT id, score, status, submitted_at FROM mcq_submissions WHERE mcq_id = ? AND student_id = ? ORDER BY submitted_at DESC LIMIT 1',
+                'SELECT id, score, status, submitted_at, correct_answers, total_questions, ai_report FROM mcq_submissions WHERE mcq_id = ? AND student_id = ? ORDER BY submitted_at DESC LIMIT 1',
                 [t.id, studentId]
             );
+            const parsedSub = sub[0] ? {
+                ...sub[0],
+                correctAnswers: sub[0].correct_answers,
+                totalQuestions: sub[0].total_questions,
+                aiReport: sub[0].ai_report ? JSON.parse(sub[0].ai_report) : null,
+                ai_report: undefined
+            } : null;
             const [attRows] = await pool.query(
                 'SELECT COUNT(*) as cnt FROM mcq_submissions WHERE mcq_id = ? AND student_id = ?',
                 [t.id, studentId]
@@ -12845,7 +13079,7 @@ app.get('/api/mcq/student', authenticate, async (req, res) => {
                 ...t,
                 questions: questions.map(q => ({ ...q, correct_answer: undefined })), // hide correct answers
                 questionCount: questions.length,
-                submission: sub[0] || null,
+                submission: parsedSub,
                 attempts_used: attRows[0]?.cnt || 0,
                 pass_mark: t.pass_mark || 70,
                 max_attempts: t.max_attempts || 1

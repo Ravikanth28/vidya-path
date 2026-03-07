@@ -43,16 +43,21 @@ function ProctoredCodeEditor({ problem, user, onClose, onSubmitSuccess }) {
     const [code, setCode] = useState(LANGUAGE_CONFIG[problem.language]?.defaultCode || '')
     const [isSubmitting, setIsSubmitting] = useState(false)
     const [isRunning, setIsRunning] = useState(false)
-    const [output, setOutput] = useState('')
+    const [output, setOutput] = useState([]) // [{text, type: 'stdout'|'stderr'|'info'|'stdin'}]
     const [hint, setHint] = useState('')
     const [loadingHint, setLoadingHint] = useState(false)
     const [isFullscreen, setIsFullscreen] = useState(false)
-    const [customInput, setCustomInput] = useState('')
+    const [customInput, setCustomInput] = useState(problem.sampleInput || '')
     const [activeOutputTab, setActiveOutputTab] = useState('output')
     const [testCases, setTestCases] = useState([])
     const [testResults, setTestResults] = useState([])
     const [runningTests, setRunningTests] = useState(false)
     const [sqlTool, setSqlTool] = useState('validator')
+    const [descTab, setDescTab] = useState('description')
+    const [runResult, setRunResult] = useState(null)  // { actual, expected, passed }
+    const [interactiveStdin, setInteractiveStdin] = useState('')
+    const [terminalSize, setTerminalSize] = useState('normal') // 'minimized' | 'normal' | 'maximized'
+    const terminalRef = useRef(null)
     const containerRef = useRef(null)
 
     const isSQLProblem = problem.type === 'SQL' || problem.language === 'SQL'
@@ -633,47 +638,62 @@ function ProctoredCodeEditor({ problem, user, onClose, onSubmitSuccess }) {
         }
     }, [proctoring])
 
-    const handleRun = async () => {
+    const normalizeForCompare = s => (s || '').trim().replace(/\s+/g, ' ')
+
+    const handleRun = () => {
         setIsRunning(true)
-        setOutput('')
-        try {
-            const res = await axios.post(`${API_BASE}/run`, {
-                code,
-                language: selectedLanguage,
-                problemId: problem.id,
-                sqlSchema: problem.sqlSchema,  // Pass SQL schema for execution
-                stdin: customInput  // Pass custom input as stdin
-            })
-            setOutput(res.data.output || res.data.error || 'No output')
-            setActiveOutputTab('output')  // Switch to output tab to show results
+        setOutput([])
+        setRunResult(null)
+        setInteractiveStdin('')
+        setActiveOutputTab('output')
 
-            // Emit test execution event to socket
-            if (res.data.error || res.data.output?.includes('FAILED') || res.data.output?.includes('Error')) {
-                // Test failed
-                socketService.emitTestFailed(
-                    user.id,
-                    user.name || user.email,
-                    problem.id,
-                    `Run Test - ${problem.title}`,
-                    problem.mentorId
-                )
-            }
-        } catch (err) {
-            const errorMsg = 'Error running code: ' + (err.response?.data?.error || err.message)
-            setOutput(errorMsg)
-            setActiveOutputTab('output')  // Switch to output tab to show error
+        const socket = socketService.connect()
+        socket.emit('run-interactive', {
+            code,
+            language: selectedLanguage,
+            problemId: problem.id,
+            sqlSchema: problem.sqlSchema
+        })
 
-            // Emit test failed event
-            socketService.emitTestFailed(
-                user.id,
-                user.name || user.email,
-                problem.id,
-                `Run Error - ${problem.title}`,
-                problem.mentorId
-            )
-        } finally {
-            setIsRunning(false)
+        let accOutput = ''
+
+        const onOutput = ({ text, type }) => {
+            if (type !== 'stdin') accOutput += text
+            setOutput(prev => [...prev, { text, type: type || 'stdout' }])
+            // Auto-scroll terminal to bottom
+            setTimeout(() => {
+                if (terminalRef.current) terminalRef.current.scrollTop = terminalRef.current.scrollHeight
+            }, 0)
         }
+
+        const onExit = ({ code: exitCode, allOutput: progOutput }) => {
+            socket.off('run-output', onOutput)
+            socket.off('run-exit', onExit)
+            setIsRunning(false)
+            // Use allOutput from server — it's pure program output, excludes "Compiling..." status messages
+            const progText = (progOutput !== undefined ? progOutput : accOutput)
+            const expectedRaw = (problem.expectedOutput || problem.expected_output || '').trim()
+            if (expectedRaw) {
+                const passed = normalizeForCompare(progText) === normalizeForCompare(expectedRaw)
+                setRunResult({ actual: progText.trim(), expected: expectedRaw, passed })
+            }
+        }
+
+        socket.on('run-output', onOutput)
+        socket.on('run-exit', onExit)
+    }
+
+    const sendInteractiveStdin = () => {
+        const socket = socketService.connect()
+        socket.emit('run-stdin', interactiveStdin)
+        // Echo stdin as a green segment so user knows what they typed
+        setOutput(prev => [...prev, { text: interactiveStdin + '\n', type: 'stdin' }])
+        setInteractiveStdin('')
+    }
+
+    const stopRun = () => {
+        const socket = socketService.connect()
+        socket.emit('kill-run')
     }
 
     const handleGetHint = async () => {
@@ -1011,122 +1031,212 @@ function ProctoredCodeEditor({ problem, user, onClose, onSubmitSuccess }) {
                 </div>
             ) : (
                 <div style={{ padding: 0, display: 'flex', flexDirection: 'row', flex: 1, minHeight: 0, overflow: 'hidden', background: '#0f172a' }}>
-                    {/* Left Side: Problem Description & Hints */}
-                    <div style={{ width: '400px', borderRight: '1px solid #334155', padding: '2rem', overflowY: 'auto', background: '#0f172a', display: 'flex', flexDirection: 'column' }}>
-                        <h3 style={{ marginTop: 0, marginBottom: '1.5rem', color: '#f8fafc' }}>Problem Description</h3>
-                        <div style={{ color: '#cbd5e1', fontSize: '0.95rem', lineHeight: '1.7' }}>
-                            {problem.description}
+                    {/* Left Side: LeetCode-style Problem Panel */}
+                    <div style={{ width: '420px', borderRight: '1px solid #1e293b', overflowY: 'auto', background: '#0f172a', display: 'flex', flexDirection: 'column', flexShrink: 0 }}>
+                        {/* Tab bar */}
+                        <div style={{ display: 'flex', borderBottom: '1px solid #1e293b', background: '#0a0f1a', flexShrink: 0 }}>
+                            {['description', 'examples', 'hints'].map(tab => (
+                                <button key={tab} onClick={() => setDescTab(tab)} style={{ padding: '12px 20px', background: 'none', border: 'none', cursor: 'pointer', fontSize: '0.82rem', fontWeight: 600, color: descTab === tab ? '#60a5fa' : '#64748b', borderBottom: descTab === tab ? '2px solid #3b82f6' : '2px solid transparent', textTransform: 'capitalize', transition: 'all 0.15s' }}>
+                                    {tab === 'description' ? '📄 Description' : tab === 'examples' ? '📋 Examples' : '💡 Hints'}
+                                </button>
+                            ))}
+                        </div>
 
-                            {/* Show SQL-specific fields or regular input/output */}
-                            {(problem.type === 'SQL' || problem.language === 'SQL') ? (
-                                <div style={{ background: '#1e293b', padding: '1.5rem', borderRadius: '0.5rem', border: '1px solid #334155', marginTop: '1.5rem' }}>
-                                    {problem.sqlSchema && (
-                                        <>
-                                            <div style={{ marginBottom: '0.5rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                                                <span style={{ color: '#06b6d4' }}>🗄️</span>
-                                                <strong style={{ color: '#e2e8f0' }}>Database Schema:</strong>
+                        {/* Description Tab */}
+                        {descTab === 'description' && (() => {
+                            // Smart description renderer — detects section headers & formats nicely
+                            const SECTION_PATTERNS = /^(input format|output format|constraints?|examples?|explanation|note|notes|sample input|sample output|approach|hint|hints?|format|scoring|warning|important|problem statement)(s)?\s*:?\s*$/i
+                            const lines = (problem.description || '').split('\n')
+                            const rendered = []
+                            let paraLines = []
+                            const flushPara = () => {
+                                if (paraLines.length) {
+                                    const text = paraLines.join('\n').trim()
+                                    if (text) rendered.push({ type: 'para', text })
+                                    paraLines = []
+                                }
+                            }
+                            lines.forEach((raw, i) => {
+                                const line = raw.trimEnd()
+                                if (SECTION_PATTERNS.test(line.trim())) {
+                                    flushPara()
+                                    rendered.push({ type: 'section', text: line.trim() })
+                                } else if (line.trim() === '') {
+                                    flushPara()
+                                } else {
+                                    paraLines.push(line)
+                                }
+                            })
+                            flushPara()
+                            return (
+                            <div style={{ padding: '1.5rem', flex: 1 }}>
+                                {/* Title + badges */}
+                                <div style={{ marginBottom: '1.2rem', paddingBottom: '1rem', borderBottom: '1px solid #1e293b' }}>
+                                    <h2 style={{ margin: '0 0 0.6rem', color: '#f1f5f9', fontSize: '1.1rem', fontWeight: 800, letterSpacing: '-0.01em' }}>{problem.title}</h2>
+                                    <div style={{ display: 'flex', gap: '6px', alignItems: 'center', flexWrap: 'wrap' }}>
+                                        <span style={{ padding: '3px 11px', borderRadius: '999px', fontSize: '0.7rem', fontWeight: 700, background: problem.difficulty === 'Easy' ? 'rgba(34,197,94,0.15)' : problem.difficulty === 'Hard' ? 'rgba(239,68,68,0.15)' : 'rgba(234,179,8,0.15)', color: problem.difficulty === 'Easy' ? '#4ade80' : problem.difficulty === 'Hard' ? '#f87171' : '#facc15', border: `1px solid ${problem.difficulty === 'Easy' ? 'rgba(34,197,94,0.3)' : problem.difficulty === 'Hard' ? 'rgba(239,68,68,0.3)' : 'rgba(234,179,8,0.3)'}` }}>{problem.difficulty?.toUpperCase() || 'MEDIUM'}</span>
+                                        {problem.type && <span style={{ padding: '3px 11px', borderRadius: '999px', fontSize: '0.7rem', fontWeight: 600, background: 'rgba(99,102,241,0.12)', color: '#a5b4fc', border: '1px solid rgba(99,102,241,0.25)' }}>{problem.type}</span>}
+                                        {problem.language && problem.type !== problem.language && <span style={{ padding: '3px 11px', borderRadius: '999px', fontSize: '0.7rem', fontWeight: 600, background: 'rgba(14,165,233,0.12)', color: '#38bdf8', border: '1px solid rgba(14,165,233,0.25)' }}>{problem.language}</span>}
+                                    </div>
+                                </div>
+
+                                {/* Smart-rendered description */}
+                                <div style={{ marginBottom: '1.25rem' }}>
+                                    {rendered.map((block, i) => block.type === 'section' ? (
+                                        <div key={i} style={{ marginTop: i === 0 ? 0 : '1.2rem', marginBottom: '0.5rem', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                            <div style={{ width: '3px', height: '16px', borderRadius: '2px', background: '#3b82f6', flexShrink: 0 }} />
+                                            <span style={{ fontSize: '0.8rem', fontWeight: 800, color: '#93c5fd', textTransform: 'uppercase', letterSpacing: '0.08em' }}>{block.text.replace(/:$/, '')}</span>
+                                        </div>
+                                    ) : (
+                                        <p key={i} style={{ margin: '0 0 0.75rem', color: '#cbd5e1', fontSize: '0.88rem', lineHeight: 1.85, whiteSpace: 'pre-wrap' }}>{block.text}</p>
+                                    ))}
+                                </div>
+
+                                {/* SQL schema */}
+                                {isSQLProblem && problem.sqlSchema && (
+                                    <div style={{ marginBottom: '1rem' }}>
+                                        <div style={{ fontSize: '0.75rem', fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '6px' }}><Database size={12} /> Database Schema</div>
+                                        <pre style={{ margin: 0, padding: '14px 16px', background: '#0d1929', border: '1px solid #1e3a5f', borderRadius: '10px', color: '#93c5fd', fontSize: '0.78rem', overflowX: 'auto', whiteSpace: 'pre-wrap', fontFamily: 'ui-monospace,monospace' }}>{problem.sqlSchema}</pre>
+                                    </div>
+                                )}
+
+                                {/* Constraints */}
+                                {problem.constraints && (
+                                    <div style={{ background: 'rgba(99,102,241,0.07)', border: '1px solid rgba(99,102,241,0.2)', borderRadius: '10px', padding: '12px 16px', marginBottom: '1rem' }}>
+                                        <div style={{ fontSize: '0.75rem', fontWeight: 700, color: '#a5b4fc', marginBottom: '6px', textTransform: 'uppercase', letterSpacing: '0.08em' }}>Constraints</div>
+                                        <div style={{ color: '#94a3b8', fontSize: '0.85rem', lineHeight: 1.8, whiteSpace: 'pre-wrap' }}>{problem.constraints}</div>
+                                    </div>
+                                )}
+
+                                {/* Tags */}
+                                {problem.tags && (
+                                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginTop: '0.5rem' }}>
+                                        {(typeof problem.tags === 'string' ? problem.tags.split(',') : problem.tags).filter(Boolean).map((tag, i) => (
+                                            <span key={i} style={{ padding: '2px 10px', background: '#1e293b', border: '1px solid #334155', borderRadius: '999px', color: '#64748b', fontSize: '0.7rem' }}>{tag.trim()}</span>
+                                        ))}
+                                    </div>
+                                )}
+                            </div>
+                            )
+                        })()}
+
+                        {/* Examples Tab */}
+                        {descTab === 'examples' && (
+                            <div style={{ padding: '1.5rem', flex: 1 }}>
+                                {isSQLProblem ? (
+                                    <>
+                                        {problem.sqlSchema && (
+                                            <div style={{ marginBottom: '1.25rem' }}>
+                                                <div style={{ fontSize: '0.78rem', fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '8px' }}>📦 Database Schema (Input)</div>
+                                                <pre style={{ margin: 0, padding: '14px 16px', background: '#0d1929', border: '1px solid #1e3a5f', borderRadius: '10px', color: '#93c5fd', fontSize: '0.78rem', overflowX: 'auto', whiteSpace: 'pre-wrap', fontFamily: 'ui-monospace,monospace' }}>{problem.sqlSchema}</pre>
                                             </div>
-                                            <pre style={{
-                                                color: '#93c5fd',
-                                                background: '#0f172a',
-                                                padding: '1rem',
-                                                borderRadius: '6px',
-                                                marginBottom: '1rem',
-                                                fontSize: '0.8rem',
-                                                overflowX: 'auto',
-                                                whiteSpace: 'pre-wrap',
-                                                border: '1px solid #334155'
-                                            }}>{problem.sqlSchema}</pre>
-                                        </>
-                                    )}
-                                    {problem.expectedQueryResult && (
-                                        <>
-                                            <div style={{ marginBottom: '0.5rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                                                <span style={{ color: '#10b981' }}>📊</span>
-                                                <strong style={{ color: '#e2e8f0' }}>Expected Query Result:</strong>
+                                        )}
+                                        {problem.expectedQueryResult && (
+                                            <div>
+                                                <div style={{ fontSize: '0.78rem', fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '8px' }}>✅ Expected Output</div>
+                                                <pre style={{ margin: 0, padding: '14px 16px', background: 'rgba(16,185,129,0.06)', border: '1px solid rgba(16,185,129,0.25)', borderRadius: '10px', color: '#34d399', fontSize: '0.78rem', overflowX: 'auto', whiteSpace: 'pre-wrap', fontFamily: 'ui-monospace,monospace' }}>{problem.expectedQueryResult}</pre>
                                             </div>
-                                            <pre style={{
-                                                color: '#4ade80',
-                                                background: '#0f172a',
-                                                padding: '1rem',
-                                                borderRadius: '6px',
-                                                fontSize: '0.8rem',
-                                                overflowX: 'auto',
-                                                whiteSpace: 'pre-wrap',
-                                                border: '1px solid #334155'
-                                            }}>{problem.expectedQueryResult}</pre>
-                                        </>
-                                    )}
-                                    {!problem.sqlSchema && !problem.expectedQueryResult && (
-                                        <p style={{ color: '#94a3b8', fontStyle: 'italic', margin: 0 }}>
-                                            Write a SQL query to solve this problem. Your query will be executed against the database.
-                                        </p>
-                                    )}
-                                </div>
-                            ) : (
-                                <div style={{ background: '#1e293b', padding: '1.5rem', borderRadius: '0.5rem', border: '1px solid #334155', marginTop: '1.5rem' }}>
-                                    <div style={{ marginBottom: '0.5rem' }}><strong style={{ color: '#e2e8f0' }}>Sample Input:</strong></div>
-                                    <code style={{ color: '#93c5fd', background: '#0f172a', padding: '0.4rem 0.8rem', borderRadius: '4px', display: 'block', marginBottom: '1rem' }}>{problem.sampleInput || "N/A"}</code>
-                                    <div style={{ marginBottom: '0.5rem' }}><strong style={{ color: '#e2e8f0' }}>Expected Output:</strong></div>
-                                    <code style={{ color: '#4ade80', background: '#0f172a', padding: '0.4rem 0.8rem', borderRadius: '4px', display: 'block' }}>{problem.expectedOutput || "N/A"}</code>
-                                </div>
-                            )}
-                        </div>
+                                        )}
+                                    </>
+                                ) : (
+                                    <>  
+                                        {/* Example 1 — always show */}
+                                        <div style={{ marginBottom: '1.5rem' }}>
+                                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px' }}>
+                                                <span style={{ fontSize: '0.88rem', fontWeight: 700, color: '#f1f5f9' }}>Example 1</span>
+                                                {runResult && (
+                                                    <span style={{ display: 'flex', alignItems: 'center', gap: '5px', padding: '3px 10px', borderRadius: '999px', fontSize: '0.72rem', fontWeight: 700, background: runResult.passed ? 'rgba(16,185,129,0.15)' : 'rgba(239,68,68,0.15)', color: runResult.passed ? '#4ade80' : '#f87171', border: `1px solid ${runResult.passed ? 'rgba(16,185,129,0.4)' : 'rgba(239,68,68,0.4)'}` }}>
+                                                        {runResult.passed ? '✅ Passed' : '❌ Wrong Answer'}
+                                                    </span>
+                                                )}
+                                            </div>
+                                            {/* Input */}
+                                            <div style={{ marginBottom: '10px' }}>
+                                                <div style={{ fontSize: '0.78rem', fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: '6px' }}>Input</div>
+                                                <div style={{ background: '#0d1929', border: '1px solid #1e3a5f', borderRadius: '10px', padding: '12px 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '8px' }}>
+                                                    <pre style={{ margin: 0, color: '#e2e8f0', fontSize: '0.82rem', fontFamily: 'ui-monospace,monospace', whiteSpace: 'pre-wrap', flex: 1 }}>{problem.sampleInput || 'No sample input provided'}</pre>
+                                                    <button
+                                                        onClick={() => { setCustomInput(problem.sampleInput || ''); setActiveOutputTab('input'); }}
+                                                        title="Load into Custom Input"
+                                                        style={{ flexShrink: 0, padding: '4px 10px', background: '#1e3a5f', border: '1px solid #3b82f6', borderRadius: '6px', color: '#60a5fa', fontSize: '0.7rem', fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap' }}>
+                                                        ▶ Use
+                                                    </button>
+                                                </div>
+                                            </div>
+                                            {/* Output */}
+                                            <div style={{ marginBottom: runResult ? '10px' : 0 }}>
+                                                <div style={{ fontSize: '0.78rem', fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: '6px' }}>Expected Output</div>
+                                                <div style={{ background: 'rgba(16,185,129,0.06)', border: `1px solid ${runResult && !runResult.passed ? 'rgba(239,68,68,0.3)' : 'rgba(16,185,129,0.25)'}`, borderRadius: '10px', padding: '12px 16px' }}>
+                                                    <pre style={{ margin: 0, color: '#34d399', fontSize: '0.82rem', fontFamily: 'ui-monospace,monospace', whiteSpace: 'pre-wrap' }}>{problem.expectedOutput || problem.expected_output || 'See problem statement'}</pre>
+                                                </div>
+                                            </div>
+                                            {/* Your output comparison (shown after run) */}
+                                            {runResult && (
+                                                <div style={{ marginTop: '10px' }}>
+                                                    <div style={{ fontSize: '0.78rem', fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: '6px' }}>Your Output</div>
+                                                    <div style={{ background: runResult.passed ? 'rgba(16,185,129,0.06)' : 'rgba(239,68,68,0.06)', border: `1px solid ${runResult.passed ? 'rgba(16,185,129,0.35)' : 'rgba(239,68,68,0.35)'}`, borderRadius: '10px', padding: '12px 16px' }}>
+                                                        <pre style={{ margin: 0, color: runResult.passed ? '#4ade80' : '#f87171', fontSize: '0.82rem', fontFamily: 'ui-monospace,monospace', whiteSpace: 'pre-wrap' }}>{runResult.actual}</pre>
+                                                    </div>
+                                                </div>
+                                            )}
+                                        </div>
 
-                        {/* AI Hints Section */}
-                        <div style={{ marginTop: '2rem', background: 'linear-gradient(135deg, rgba(251, 191, 36, 0.1), rgba(245, 158, 11, 0.05))', border: '1px solid rgba(251, 191, 36, 0.3)', borderRadius: '0.75rem', padding: '1.25rem' }}>
-                            <h4 style={{ margin: '0 0 0.75rem', color: '#fbbf24', fontSize: '0.9rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                                <Lightbulb size={16} /> Need Help?
-                            </h4>
-                            <p style={{ color: '#94a3b8', fontSize: '0.8rem', margin: '0 0 1rem', lineHeight: 1.6 }}>
-                                Stuck on this problem? Get AI-powered hints to guide you without revealing the full solution.
-                            </p>
-                            <button
-                                onClick={handleGetHint}
-                                disabled={loadingHint}
-                                style={{
-                                    background: 'linear-gradient(135deg, #fbbf24, #f59e0b)',
-                                    border: 'none',
-                                    color: '#1e293b',
-                                    padding: '0.6rem 1.2rem',
-                                    borderRadius: '6px',
-                                    cursor: loadingHint ? 'not-allowed' : 'pointer',
-                                    fontWeight: 600,
-                                    fontSize: '0.85rem',
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    gap: '0.5rem',
-                                    width: '100%',
-                                    justifyContent: 'center'
-                                }}
-                            >
-                                <Lightbulb size={16} /> {loadingHint ? 'Getting Hints...' : 'Get AI Hints'}
-                            </button>
-                            {hint && (
-                                <div style={{
-                                    marginTop: '0.75rem',
-                                    padding: '0.75rem',
-                                    background: 'rgba(34, 197, 94, 0.1)',
-                                    borderRadius: '8px',
-                                    border: '1px solid rgba(34, 197, 94, 0.2)',
-                                    fontSize: '0.85rem',
-                                    color: '#4ade80'
-                                }}>
-                                    💡 {hint}
-                                </div>
-                            )}
-                        </div>
+                                        {/* Test cases from DB */}
+                                        {testCases.filter(tc => !tc.isHidden).map((tc, i) => (
+                                            <div key={tc.id || i} style={{ marginBottom: '1.5rem' }}>
+                                                <div style={{ fontSize: '0.88rem', fontWeight: 700, color: '#f1f5f9', marginBottom: '12px' }}>Example {i + 2}</div>
+                                                <div style={{ marginBottom: '10px' }}>
+                                                    <div style={{ fontSize: '0.78rem', fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: '6px' }}>Input</div>
+                                                    <div style={{ background: '#0d1929', border: '1px solid #1e3a5f', borderRadius: '10px', padding: '12px 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '8px' }}>
+                                                        <pre style={{ margin: 0, color: '#e2e8f0', fontSize: '0.82rem', fontFamily: 'ui-monospace,monospace', whiteSpace: 'pre-wrap', flex: 1 }}>{tc.input}</pre>
+                                                        <button onClick={() => { setCustomInput(tc.input); setActiveOutputTab('input'); }} style={{ flexShrink: 0, padding: '4px 10px', background: '#1e3a5f', border: '1px solid #3b82f6', borderRadius: '6px', color: '#60a5fa', fontSize: '0.7rem', fontWeight: 600, cursor: 'pointer' }}>▶ Use</button>
+                                                    </div>
+                                                </div>
+                                                <div>
+                                                    <div style={{ fontSize: '0.78rem', fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: '6px' }}>Output</div>
+                                                    <div style={{ background: 'rgba(16,185,129,0.06)', border: '1px solid rgba(16,185,129,0.25)', borderRadius: '10px', padding: '12px 16px' }}>
+                                                        <pre style={{ margin: 0, color: '#34d399', fontSize: '0.82rem', fontFamily: 'ui-monospace,monospace', whiteSpace: 'pre-wrap' }}>{tc.expectedOutput || tc.expected_output}</pre>
+                                                    </div>
+                                                </div>
+                                                {tc.description && <p style={{ margin: '6px 0 0', fontSize: '0.75rem', color: '#64748b' }}>ℹ️ {tc.description}</p>}
+                                            </div>
+                                        ))}
+                                        {testCases.filter(tc => tc.isHidden).length > 0 && (
+                                            <div style={{ textAlign: 'center', padding: '12px', background: '#1e293b', borderRadius: '10px', color: '#64748b', fontSize: '0.8rem' }}>
+                                                🔒 +{testCases.filter(tc => tc.isHidden).length} hidden test cases will run on Submit
+                                            </div>
+                                        )}
+                                    </>
+                                )}
+                            </div>
+                        )}
 
-                        {/* Proctoring Rules */}
-                        <div style={{ marginTop: '2rem', background: 'rgba(239, 68, 68, 0.05)', border: '1px solid rgba(239, 68, 68, 0.2)', borderRadius: '0.75rem', padding: '1.25rem' }}>
-                            <h4 style={{ margin: '0 0 0.75rem', color: '#ef4444', fontSize: '0.9rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}><AlertTriangle size={16} /> Proctoring Rules</h4>
-                            <ul style={{ margin: 0, paddingLeft: '1.25rem', color: '#94a3b8', fontSize: '0.8rem', lineHeight: 1.8 }}>
-                                <li>Do not switch tabs or windows</li>
-                                <li>Do not exit fullscreen mode</li>
-                                <li>All violations are recorded</li>
-                                <li>3+ violations may result in disqualification</li>
-                            </ul>
-                        </div>
+                        {/* Hints Tab */}
+                        {descTab === 'hints' && (
+                            <div style={{ padding: '1.5rem', flex: 1 }}>
+                                <p style={{ color: '#94a3b8', fontSize: '0.85rem', lineHeight: 1.7, margin: '0 0 1rem' }}>
+                                    AI hints guide you toward the solution without revealing it directly.
+                                </p>
+                                <button onClick={handleGetHint} disabled={loadingHint} style={{ width: '100%', padding: '10px', background: 'linear-gradient(135deg, #fbbf24, #f59e0b)', border: 'none', borderRadius: '8px', color: '#1e293b', fontWeight: 700, fontSize: '0.88rem', cursor: loadingHint ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}>
+                                    <Lightbulb size={16} /> {loadingHint ? 'Generating...' : 'Get AI Hint'}
+                                </button>
+                                {hint && (
+                                    <div style={{ marginTop: '1rem', padding: '14px 16px', background: 'rgba(34,197,94,0.08)', border: '1px solid rgba(34,197,94,0.25)', borderRadius: '10px', color: '#4ade80', fontSize: '0.85rem', lineHeight: 1.7 }}>
+                                        💡 {hint}
+                                    </div>
+                                )}
+                                {/* Proctoring Rules in hints tab */}
+                                <div style={{ marginTop: '1.5rem', padding: '14px 16px', background: 'rgba(239,68,68,0.06)', border: '1px solid rgba(239,68,68,0.2)', borderRadius: '10px' }}>
+                                    <div style={{ fontSize: '0.78rem', fontWeight: 700, color: '#f87171', marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '6px' }}><AlertTriangle size={13} /> Proctoring Rules</div>
+                                    <ul style={{ margin: 0, paddingLeft: '1.2rem', color: '#94a3b8', fontSize: '0.8rem', lineHeight: 1.9 }}>
+                                        <li>Do not switch tabs or windows</li>
+                                        <li>Stay in fullscreen mode</li>
+                                        <li>All violations are recorded</li>
+                                        <li>3+ violations = disqualification</li>
+                                    </ul>
+                                </div>
+                            </div>
+                        )}
 
                         {/* Video Preview (if enabled) */}
                         {proctoring.videoAudio && (
@@ -1238,7 +1348,7 @@ function ProctoredCodeEditor({ problem, user, onClose, onSubmitSuccess }) {
                         </div>
 
                         {/* Editor */}
-                        <div style={{ flex: 1, position: 'relative', minHeight: 0 }}>
+                        <div style={{ flex: 1, position: 'relative', minHeight: 0, overflow: 'hidden' }}>
                             <Editor
                                 height="100%"
                                 language={LANGUAGE_CONFIG[selectedLanguage]?.monacoLang || 'python'}
@@ -1248,9 +1358,19 @@ function ProctoredCodeEditor({ problem, user, onClose, onSubmitSuccess }) {
                                 options={{
                                     minimap: { enabled: false },
                                     fontSize: 14,
-                                    scrollBeyondLastLine: false,
+                                    scrollBeyondLastLine: true,
                                     automaticLayout: true,
-                                    padding: { top: 20 }
+                                    padding: { top: 20 },
+                                    smoothScrolling: true,
+                                    cursorSmoothCaretAnimation: 'on',
+                                    mouseWheelScrollSensitivity: 1.5,
+                                    lineNumbersMinChars: 3,
+                                    renderLineHighlight: 'all',
+                                    scrollbar: {
+                                        verticalScrollbarSize: 8,
+                                        horizontalScrollbarSize: 8,
+                                        useShadows: true,
+                                    }
                                 }}
                             />
                         </div>
@@ -1315,13 +1435,17 @@ function ProctoredCodeEditor({ problem, user, onClose, onSubmitSuccess }) {
                             </div>
                         ) : (
                             /* ===== CODING OUTPUT TABS ===== */
-                            <div style={{ flex: '0 0 280px', background: '#020617', borderTop: '1px solid #334155', display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+                            <div style={{
+                                flex: terminalSize === 'maximized' ? '0 0 560px' : terminalSize === 'minimized' ? '0 0 36px' : '0 0 360px',
+                                background: '#020617', borderTop: '1px solid #334155', display: 'flex', flexDirection: 'column', minHeight: 0,
+                                transition: 'flex-basis 0.25s cubic-bezier(0.4,0,0.2,1)'
+                            }}>
                                 {/* Tab Headers */}
-                                <div style={{ display: 'flex', borderBottom: '1px solid #334155', background: '#0f172a' }}>
+                                <div style={{ display: 'flex', borderBottom: '1px solid #334155', background: '#0f172a', alignItems: 'center' }}>
                                     {['input', 'output', 'tests'].map(tab => (
                                         <button
                                             key={tab}
-                                            onClick={() => setActiveOutputTab(tab)}
+                                            onClick={() => { setActiveOutputTab(tab); if (terminalSize === 'minimized') setTerminalSize('normal'); }}
                                             style={{
                                                 padding: '0.75rem 1.25rem',
                                                 background: activeOutputTab === tab ? '#1e293b' : 'transparent',
@@ -1337,10 +1461,15 @@ function ProctoredCodeEditor({ problem, user, onClose, onSubmitSuccess }) {
                                             }}
                                         >
                                             {tab === 'input' && <>📝 Custom Input</>}
-                                            {tab === 'output' && <>⚙️ Output {output && <span style={{ width: 6, height: 6, borderRadius: '50%', background: output.includes('Error') ? '#ef4444' : '#10b981' }}></span>}</>}
+                                            {tab === 'output' && <>⚙️ Output {output.length > 0 && <span style={{ width: 6, height: 6, borderRadius: '50%', background: output.some(s => s.type === 'stderr') ? '#ef4444' : '#10b981' }}></span>}</>}
                                             {tab === 'tests' && <>🧪 Test Cases</>}
                                         </button>
                                     ))}
+                                    {/* Always-visible resize controls */}
+                                    <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '4px', paddingRight: '8px' }}>
+                                        <button onClick={() => setTerminalSize(s => s === 'minimized' ? 'normal' : 'minimized')} title={terminalSize === 'minimized' ? 'Restore' : 'Minimize'} style={{ padding: '2px 8px', background: 'transparent', border: '1px solid #334155', borderRadius: '4px', color: terminalSize === 'minimized' ? '#60a5fa' : '#475569', fontSize: '0.8rem', cursor: 'pointer', lineHeight: 1 }}>{terminalSize === 'minimized' ? '▲' : '─'}</button>
+                                        <button onClick={() => setTerminalSize(s => s === 'maximized' ? 'normal' : 'maximized')} title={terminalSize === 'maximized' ? 'Restore' : 'Maximize'} style={{ padding: '2px 8px', background: 'transparent', border: '1px solid #334155', borderRadius: '4px', color: terminalSize === 'maximized' ? '#60a5fa' : '#475569', fontSize: '0.8rem', cursor: 'pointer', lineHeight: 1 }}>{terminalSize === 'maximized' ? '⊡' : '⊞'}</button>
+                                    </div>
                                 </div>
 
                                 {/* Tab Content */}
@@ -1371,9 +1500,126 @@ function ProctoredCodeEditor({ problem, user, onClose, onSubmitSuccess }) {
                                 )}
 
                                 {activeOutputTab === 'output' && (
-                                    <div style={{ padding: '0.75rem', flex: 1, overflowY: 'auto' }}>
-                                        <div style={{ fontFamily: 'monospace', color: output.includes('Error') ? '#ef4444' : '#e2e8f0', fontSize: '0.9rem', whiteSpace: 'pre-wrap' }}>
-                                            {output || '👉 Run your code to see output here'}
+                                    <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0, background: '#090d18', borderTop: '1px solid #1e3a5f' }}>
+
+                                        {/* Terminal header bar */}
+                                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '6px 14px', background: '#0d1929', borderBottom: '1px solid #1e293b', flexShrink: 0 }}>
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                                <div style={{ display: 'flex', gap: '5px' }}>
+                                                    {/* Red = close/minimize, Amber = shrink, Green = maximize */}
+                                                    <div
+                                                        title="Minimize terminal"
+                                                        onClick={() => setTerminalSize(s => s === 'minimized' ? 'normal' : 'minimized')}
+                                                        style={{ width: '10px', height: '10px', borderRadius: '50%', background: '#ef4444', opacity: 0.85, cursor: 'pointer', transition: 'opacity 0.15s' }}
+                                                        onMouseEnter={e => e.target.style.opacity = 1}
+                                                        onMouseLeave={e => e.target.style.opacity = 0.85}
+                                                    />
+                                                    <div
+                                                        title="Normal size"
+                                                        onClick={() => setTerminalSize('normal')}
+                                                        style={{ width: '10px', height: '10px', borderRadius: '50%', background: '#f59e0b', opacity: 0.85, cursor: 'pointer', transition: 'opacity 0.15s' }}
+                                                        onMouseEnter={e => e.target.style.opacity = 1}
+                                                        onMouseLeave={e => e.target.style.opacity = 0.85}
+                                                    />
+                                                    <div
+                                                        title="Maximize terminal"
+                                                        onClick={() => setTerminalSize(s => s === 'maximized' ? 'normal' : 'maximized')}
+                                                        style={{ width: '10px', height: '10px', borderRadius: '50%', background: '#22c55e', opacity: 0.85, cursor: 'pointer', transition: 'opacity 0.15s' }}
+                                                        onMouseEnter={e => e.target.style.opacity = 1}
+                                                        onMouseLeave={e => e.target.style.opacity = 0.85}
+                                                    />
+                                                </div>
+                                                <span style={{ fontSize: '0.72rem', fontWeight: 600, color: '#475569', letterSpacing: '0.05em', fontFamily: 'ui-monospace,monospace' }}>TERMINAL</span>
+                                            </div>
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                                {isRunning && (
+                                                    <span style={{ display: 'flex', alignItems: 'center', gap: '5px', fontSize: '0.68rem', fontWeight: 700, color: '#4ade80', background: 'rgba(34,197,94,0.1)', border: '1px solid rgba(34,197,94,0.25)', borderRadius: '4px', padding: '2px 8px' }}>
+                                                        <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#4ade80', display: 'inline-block', animation: 'blink 1s step-end infinite' }} />
+                                                        RUNNING
+                                                    </span>
+                                                )}
+                                                {!isRunning && output.length > 0 && (
+                                                    <span style={{ fontSize: '0.68rem', fontWeight: 600, color: runResult ? (runResult.passed ? '#4ade80' : '#f87171') : '#64748b' }}>
+                                                        {runResult ? (runResult.passed ? '✅ Accepted' : '❌ Wrong Answer') : '● Finished'}
+                                                    </span>
+                                                )}
+                                                {isRunning && (
+                                                    <button onClick={stopRun} title="Kill process" style={{ padding: '2px 8px', background: 'rgba(239,68,68,0.12)', border: '1px solid rgba(239,68,68,0.3)', borderRadius: '4px', color: '#f87171', fontSize: '0.68rem', fontWeight: 600, cursor: 'pointer' }}>■ Stop</button>
+                                                )}
+                                                {/* Standalone minimize / maximize icon buttons */}
+                                                <button
+                                                    title={terminalSize === 'minimized' ? 'Restore' : 'Minimize'}
+                                                    onClick={() => setTerminalSize(s => s === 'minimized' ? 'normal' : 'minimized')}
+                                                    style={{ padding: '2px 7px', background: 'rgba(71,85,105,0.2)', border: '1px solid #334155', borderRadius: '4px', color: '#94a3b8', fontSize: '0.75rem', cursor: 'pointer', lineHeight: 1 }}
+                                                >─</button>
+                                                <button
+                                                    title={terminalSize === 'maximized' ? 'Restore' : 'Maximize'}
+                                                    onClick={() => setTerminalSize(s => s === 'maximized' ? 'normal' : 'maximized')}
+                                                    style={{ padding: '2px 6px', background: 'rgba(71,85,105,0.2)', border: '1px solid #334155', borderRadius: '4px', color: '#94a3b8', fontSize: '0.65rem', cursor: 'pointer', lineHeight: 1 }}
+                                                >{terminalSize === 'maximized' ? '⊡' : '⊞'}</button>
+                                            </div>
+                                        </div>
+
+                                        {/* Scrollable output area */}
+                                        <div ref={terminalRef} style={{ flex: 1, overflowY: 'auto', padding: '12px 16px', fontFamily: 'ui-monospace,SFMono-Regular,Consolas,monospace', fontSize: '0.84rem', lineHeight: 1.7, whiteSpace: 'pre-wrap', wordBreak: 'break-word', minHeight: '80px' }}>
+                                            {output.length > 0
+                                                ? output.map((seg, i) => (
+                                                    <span key={i} style={{ color: seg.type === 'stdin' ? '#4ade80' : seg.type === 'stderr' ? '#fca5a5' : seg.type === 'info' ? '#475569' : '#e2e8f0' }}>{seg.text}</span>
+                                                ))
+                                                : <span style={{ color: '#334155', fontStyle: 'italic' }}>▶ Click "Run Code" to execute your program…</span>
+                                            }
+                                            {isRunning && <span style={{ display: 'inline-block', width: '8px', height: '1em', background: '#4ade80', marginLeft: '1px', verticalAlign: 'text-bottom', animation: 'blink 1s step-end infinite' }} />}
+                                        </div>
+
+                                        {/* Verdict block — shown after process exits */}
+                                        {!isRunning && output.length > 0 && (
+                                            <div style={{ flexShrink: 0, padding: '4px 16px 6px', fontSize: '0.7rem', color: '#334155' }}>
+                                                <span style={{ color: '#4ade80' }}>█</span> = your input&nbsp;&nbsp;<span style={{ color: '#fca5a5' }}>█</span> = stderr&nbsp;&nbsp;<span style={{ color: '#475569' }}>█</span> = compiler
+                                            </div>
+                                        )}
+                                        {!isRunning && runResult && (
+                                            <div style={{ flexShrink: 0, margin: '0 12px 10px', padding: '10px 14px', borderRadius: '8px', background: runResult.passed ? 'rgba(16,185,129,0.09)' : 'rgba(239,68,68,0.09)', border: `1px solid ${runResult.passed ? 'rgba(16,185,129,0.3)' : 'rgba(239,68,68,0.3)'}` }}>
+                                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: runResult.passed ? 0 : '8px' }}>
+                                                    <span style={{ fontSize: '1rem' }}>{runResult.passed ? '✅' : '❌'}</span>
+                                                    <span style={{ fontWeight: 700, fontSize: '0.88rem', color: runResult.passed ? '#4ade80' : '#f87171' }}>
+                                                        {runResult.passed ? 'Accepted — Output matches expected!' : 'Wrong Answer — Output does not match'}
+                                                    </span>
+                                                </div>
+                                                {!runResult.passed && (
+                                                    <div style={{ paddingLeft: '28px' }}>
+                                                        <div style={{ fontSize: '0.72rem', color: '#64748b', marginBottom: '6px' }}>Expected output:</div>
+                                                        <pre style={{ margin: 0, padding: '8px 12px', background: '#0d1929', border: '1px solid rgba(16,185,129,0.2)', borderRadius: '6px', color: '#34d399', fontSize: '0.78rem', whiteSpace: 'pre-wrap', fontFamily: 'ui-monospace,monospace' }}>{runResult.expected}</pre>
+                                                    </div>
+                                                )}
+                                            </div>
+                                        )}
+
+                                        {/* Interactive stdin bar — always visible when running, hidden when done */}
+                                        <div style={{ flexShrink: 0, borderTop: `2px solid ${isRunning ? '#16a34a' : '#1e293b'}`, background: isRunning ? '#051210' : '#0a0f1a', transition: 'border-color 0.2s, background 0.2s' }}>
+                                            {isRunning ? (
+                                                <div style={{ display: 'flex', alignItems: 'center', padding: '0 12px', height: '42px', gap: '8px' }}>
+                                                    <span style={{ color: '#4ade80', fontSize: '0.9rem', fontFamily: 'ui-monospace,monospace', fontWeight: 700, userSelect: 'none', flexShrink: 0 }}>$</span>
+                                                    <input
+                                                        type="text"
+                                                        value={interactiveStdin}
+                                                        onChange={e => setInteractiveStdin(e.target.value)}
+                                                        onKeyDown={e => { if (e.key === 'Enter') sendInteractiveStdin() }}
+                                                        placeholder="Type your input here and press Enter…"
+                                                        autoFocus
+                                                        style={{ flex: 1, background: 'transparent', border: 'none', outline: 'none', color: '#f8fafc', fontSize: '0.88rem', fontFamily: 'ui-monospace,SFMono-Regular,monospace', caretColor: '#4ade80' }}
+                                                    />
+                                                    <button
+                                                        onClick={sendInteractiveStdin}
+                                                        style={{ flexShrink: 0, padding: '6px 16px', background: '#16a34a', border: 'none', borderRadius: '5px', color: '#fff', fontSize: '0.78rem', fontWeight: 700, cursor: 'pointer', letterSpacing: '0.02em' }}>
+                                                        ↵ Send
+                                                    </button>
+                                                </div>
+                                            ) : (
+                                                <div style={{ display: 'flex', alignItems: 'center', padding: '0 14px', height: '36px', gap: '8px' }}>
+                                                    <span style={{ color: '#1e3a5f', fontSize: '0.72rem', fontFamily: 'ui-monospace,monospace' }}>$</span>
+                                                    <span style={{ color: '#334155', fontSize: '0.75rem', fontStyle: 'italic' }}>{output.length > 0 ? 'Process finished. Run code again to restart.' : 'Stdin will appear here when your program requests input'}</span>
+                                                </div>
+                                            )}
                                         </div>
                                     </div>
                                 )}

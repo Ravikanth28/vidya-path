@@ -615,6 +615,12 @@ function CreateTestForm({ onCreated, onCancel, showToast }) {
     const handleCreate = async () => {
         if (!form.company_name.trim() || !form.title.trim()) return showToast('Company name and title are required', 'error');
         if (form.sections.length === 0) return showToast('Select at least one section', 'error');
+        // Validate: sum of section time limits must not exceed total duration
+        const sectionTimeTotal = Object.values(form.section_time_limits).reduce((a, v) => a + (v || 0), 0);
+        const hasAnyLimit = sectionTimeTotal > 0;
+        if (hasAnyLimit && sectionTimeTotal > form.duration_minutes) {
+            return showToast(`Section time limits total ${sectionTimeTotal} min but test duration is only ${form.duration_minutes} min. Reduce section limits or increase total duration.`, 'error');
+        }
         setCreating(true);
         try {
             const { data } = await axios.post(`${API}/api/crt/tests`, form, { headers: authHeader() });
@@ -753,22 +759,57 @@ function CreateTestForm({ onCreated, onCancel, showToast }) {
                     <div style={{ marginBottom: '18px', background: '#0f172a', borderRadius: '12px', padding: '16px', border: '1px solid #334155' }}>
                         <label style={{ ...labelStyle, marginBottom: '12px', display: 'flex', alignItems: 'center', gap: '6px' }}><Clock size={13} /> Section Time Limits <span style={{ color: '#475569', fontSize: '10px', textTransform: 'none', fontWeight: 400, marginLeft: '4px' }}>(minutes · 0 = no limit)</span></label>
                         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '10px' }}>
-                            {form.sections.map(sec => { const d = SEC_MAP[sec]; return (
-                                <div key={sec} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 12px', borderRadius: '10px', background: '#1e293b', border: `1px solid ${d.color}40` }}>
+                            {form.sections.map(sec => { const d = SEC_MAP[sec];
+                                const isOver = (form.section_time_limits[sec] || 0) > form.duration_minutes;
+                                return (
+                                <div key={sec} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 12px', borderRadius: '10px', background: '#1e293b', border: `1px solid ${isOver ? '#ef444460' : d.color+'40'}` }}>
                                     <span style={{ fontSize: '14px' }}>{d.icon}</span>
                                     <span style={{ fontSize: '12px', fontWeight: 700, color: d.color, flex: 1 }}>{d.label}</span>
-                                    <input type="number" min={0} max={180} value={form.section_time_limits[sec] || 0}
-                                        onChange={e => set('section_time_limits', { ...form.section_time_limits, [sec]: parseInt(e.target.value) || 0 })}
-                                        style={{ width: '52px', textAlign: 'center', background: '#0f172a', border: '1px solid #475569', borderRadius: '6px', color: '#f1f5f9', padding: '5px 6px', outline: 'none', fontSize: '13px', fontWeight: 700 }} />
+                                    <input type="number" min={0} max={form.duration_minutes} value={form.section_time_limits[sec] || 0}
+                                        onChange={e => set('section_time_limits', { ...form.section_time_limits, [sec]: Math.min(form.duration_minutes, parseInt(e.target.value) || 0) })}
+                                        style={{ width: '52px', textAlign: 'center', background: '#0f172a', border: `1px solid ${isOver ? '#ef4444' : '#475569'}`, borderRadius: '6px', color: isOver ? '#f87171' : '#f1f5f9', padding: '5px 6px', outline: 'none', fontSize: '13px', fontWeight: 700 }} />
                                     <span style={{ fontSize: '10px', color: '#475569' }}>min</span>
                                 </div>
                             ); })}
                         </div>
+                        {/* Section time summary bar */}
+                        {(() => {
+                            const total = Object.values(form.section_time_limits).reduce((a, v) => a + (v || 0), 0);
+                            if (total === 0) return null;
+                            const over = total > form.duration_minutes;
+                            const pct = Math.min(100, (total / form.duration_minutes) * 100);
+                            return (
+                                <div style={{ marginTop: '14px' }}>
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                                        <span style={{ fontSize: '11px', fontWeight: 700, color: over ? '#f87171' : '#94a3b8' }}>
+                                            {over ? <>⚠️ Section total exceeds test duration!</> : '⏱ Section time usage'}
+                                        </span>
+                                        <span style={{ fontSize: '12px', fontWeight: 800, color: over ? '#f87171' : '#4ade80' }}>
+                                            {total} min <span style={{ color: '#64748b', fontWeight: 400 }}>/ {form.duration_minutes} min total</span>
+                                        </span>
+                                    </div>
+                                    <div style={{ height: '8px', background: '#1e293b', borderRadius: '4px', overflow: 'hidden' }}>
+                                        <div style={{ height: '100%', width: `${pct}%`, background: over ? 'linear-gradient(90deg, #ef4444, #f87171)' : pct > 80 ? 'linear-gradient(90deg, #f59e0b, #fbbf24)' : 'linear-gradient(90deg, #22c55e, #4ade80)', borderRadius: '4px', transition: 'all 0.3s' }} />
+                                    </div>
+                                    {over && (
+                                        <p style={{ margin: '8px 0 0', fontSize: '11px', color: '#f87171', fontWeight: 600 }}>
+                                            Reduce section limits by {total - form.duration_minutes} min, or increase total duration to at least {total} min.
+                                        </p>
+                                    )}
+                                    {!over && (
+                                        <p style={{ margin: '6px 0 0', fontSize: '11px', color: '#64748b' }}>
+                                            Remaining {form.duration_minutes - total} min is buffer time (no section limit).
+                                        </p>
+                                    )}
+                                </div>
+                            );
+                        })()}
                     </div>
 
                     <div style={{ display: 'flex', gap: '10px', justifyContent: 'space-between' }}>
                         <button onClick={() => setStep(1)} style={{ padding: '11px 20px', background: '#1e293b', border: '1px solid #334155', borderRadius: '10px', color: '#94a3b8', cursor: 'pointer', fontWeight: 600 }}>← Back</button>
-                        <button onClick={handleCreate} disabled={creating} style={{ padding: '11px 32px', background: creating ? '#475569' : 'linear-gradient(135deg, #3b82f6, #2563eb)', border: 'none', borderRadius: '10px', color: '#fff', fontWeight: 800, fontSize: '14px', cursor: creating ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <button onClick={handleCreate} disabled={creating || Object.values(form.section_time_limits).reduce((a, v) => a + (v || 0), 0) > form.duration_minutes}
+                            style={{ padding: '11px 32px', background: creating ? '#475569' : Object.values(form.section_time_limits).reduce((a, v) => a + (v || 0), 0) > form.duration_minutes ? '#334155' : 'linear-gradient(135deg, #3b82f6, #2563eb)', border: 'none', borderRadius: '10px', color: Object.values(form.section_time_limits).reduce((a, v) => a + (v || 0), 0) > form.duration_minutes ? '#64748b' : '#fff', fontWeight: 800, fontSize: '14px', cursor: creating || Object.values(form.section_time_limits).reduce((a, v) => a + (v || 0), 0) > form.duration_minutes ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', gap: '8px' }}>
                             {creating ? <><RefreshCw size={14} className="spin" /> Creating…</> : <><Sparkles size={14} /> Create Test</>}
                         </button>
                     </div>

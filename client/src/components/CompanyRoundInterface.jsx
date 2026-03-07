@@ -427,16 +427,30 @@ export default function CompanyRoundInterface({ user }) {
             document.addEventListener('cut', handlers.cut);
         }
 
-        // Fullscreen
-        if (config.requireFullscreen && document.documentElement.requestFullscreen) {
+        // Fullscreen — always force, regardless of config flag
+        if (document.documentElement.requestFullscreen) {
             document.documentElement.requestFullscreen().catch(() => {});
         }
+
+        // Re-enter fullscreen if student exits
+        handlers.fullscreenchange = () => {
+            if (!document.fullscreenElement) {
+                addViolation('Exited fullscreen');
+                setTimeout(() => {
+                    if (document.documentElement.requestFullscreen) {
+                        document.documentElement.requestFullscreen().catch(() => {});
+                    }
+                }, 500);
+            }
+        };
+        document.addEventListener('fullscreenchange', handlers.fullscreenchange);
 
         proctoringRef.current.removeListeners = () => {
             if (handlers.visibilitychange) document.removeEventListener('visibilitychange', handlers.visibilitychange);
             if (handlers.copy) document.removeEventListener('copy', handlers.copy);
             if (handlers.paste) document.removeEventListener('paste', handlers.paste);
             if (handlers.cut) document.removeEventListener('cut', handlers.cut);
+            if (handlers.fullscreenchange) document.removeEventListener('fullscreenchange', handlers.fullscreenchange);
             if (document.exitFullscreen && document.fullscreenElement) document.exitFullscreen().catch(() => {});
         };
     }, []);
