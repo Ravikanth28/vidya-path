@@ -1,4 +1,4 @@
-import{r as i,u as qe,j as e}from"./vendor-react-BgJc_TqD.js";import{c as j,bk as Ze,ab as H,aO as ne,_,b6 as We,aj as et,bl as Ie,a9 as le,b8 as tt,b9 as nt,ba as st,bm as Ne,bn as Re,U as se,p as it,b1 as rt,X as G,bo as Be,f as Ae,bp as xe,e as Me,ah as ot,bq as at,aq as lt,br as ct,h as ce}from"./vendor-misc-BWT1_rZp.js";import{u as dt,T as xt}from"./index-BeBoBnnQ.js";const S="http://localhost:3000/api",w=()=>({headers:{Authorization:`Bearer ${localStorage.getItem("authToken")}`}}),pt=`
+import{r as i,u as qe,j as e}from"./vendor-react-BgJc_TqD.js";import{c as j,bk as Ze,ab as H,aO as ne,_,b6 as We,aj as et,bl as Ie,a9 as le,b8 as tt,b9 as nt,ba as st,bm as Ne,bn as Re,U as se,p as it,b1 as rt,X as G,bo as Be,f as Ae,bp as xe,e as Me,ah as ot,bq as at,aq as lt,br as ct,h as ce}from"./vendor-misc-BWT1_rZp.js";import{u as dt,T as xt}from"./index-CjS0AC_d.js";const S="http://localhost:3000/api",w=()=>({headers:{Authorization:`Bearer ${localStorage.getItem("authToken")}`}}),pt=`
 .alumni-page {
   --c-blue: #0a66c2; --c-blue-h: #004182; --c-blue-l: #dce6f1;
   --c-green: #057642; --c-green-l: #e2f4e8;

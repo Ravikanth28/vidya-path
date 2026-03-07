@@ -2143,16 +2143,16 @@ function AdminCRTReportModal({ submission, reportData, loading, onClose }) {
                                                 {ans.question_type === 'mcq' && (
                                                     <div style={{ marginLeft: '26px', fontSize: '0.8rem' }}>
                                                         <div style={{ color: ans.is_correct ? '#4ade80' : '#f87171' }}>
-                                                            Student answer: <strong>{ans.student_answer || 'Not answered'}</strong>
+                                                            Student answer: <strong>{typeof ans.student_answer === 'object' ? JSON.stringify(ans.student_answer) : (ans.student_answer || 'Not answered')}</strong>
                                                         </div>
                                                         {!ans.is_correct && (
                                                             <div style={{ color: '#4ade80', marginTop: '2px' }}>
-                                                                Correct answer: <strong>{ans.correct_answer}</strong>
+                                                                Correct answer: <strong>{typeof ans.correct_answer === 'object' ? JSON.stringify(ans.correct_answer) : ans.correct_answer}</strong>
                                                             </div>
                                                         )}
                                                         {ans.explanation && (
                                                             <div style={{ color: 'var(--text-muted)', marginTop: '4px', fontSize: '0.78rem', fontStyle: 'italic' }}>
-                                                                💡 {ans.explanation}
+                                                                💡 {typeof ans.explanation === 'object' ? JSON.stringify(ans.explanation) : ans.explanation}
                                                             </div>
                                                         )}
                                                     </div>
@@ -2162,7 +2162,7 @@ function AdminCRTReportModal({ submission, reportData, loading, onClose }) {
                                                         {ans.student_answer && (
                                                             <details style={{ marginTop: '4px' }}>
                                                                 <summary style={{ cursor: 'pointer', color: '#60a5fa', fontSize: '0.78rem' }}>View submitted code</summary>
-                                                                <pre style={{ marginTop: '4px', padding: '8px 10px', background: '#0f172a', borderRadius: '6px', fontFamily: 'monospace', fontSize: '0.75rem', color: '#94a3b8', maxHeight: '150px', overflow: 'auto', whiteSpace: 'pre-wrap' }}>{ans.student_answer}</pre>
+                                                                <pre style={{ marginTop: '4px', padding: '8px 10px', background: '#0f172a', borderRadius: '6px', fontFamily: 'monospace', fontSize: '0.75rem', color: '#94a3b8', maxHeight: '150px', overflow: 'auto', whiteSpace: 'pre-wrap' }}>{typeof ans.student_answer === 'object' ? JSON.stringify(ans.student_answer, null, 2) : ans.student_answer}</pre>
                                                             </details>
                                                         )}
                                                         {ans.execution_result && (
@@ -2191,7 +2191,7 @@ function AdminCRTReportModal({ submission, reportData, loading, onClose }) {
                                     <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
                                         {attempt.proctoring_violations.map((v, i) => (
                                             <span key={i} style={{ fontSize: '0.75rem', color: '#fbbf24', background: 'rgba(245,158,11,0.12)', padding: '2px 8px', borderRadius: 6 }}>
-                                                {v.type || v}
+                                                {typeof v === 'string' ? v : (v.type || v.message || JSON.stringify(v))}
                                             </span>
                                         ))}
                                     </div>
