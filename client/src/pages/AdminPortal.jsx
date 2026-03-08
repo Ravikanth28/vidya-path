@@ -2118,13 +2118,12 @@ function AdminCRTReportModal({ submission, reportData, loading, onClose }) {
                             )}
 
                             {/* Section Time Analysis */}
-                            {(() => {
+                            {sections.length > 0 && (() => {
                                 const timeSpentAdmin = {}
                                 sections.forEach(sec => { timeSpentAdmin[sec] = sectionScores[sec]?.time_spent || 0 })
                                 const totalTimeSecsAdmin = sections.reduce((s, sec) => s + (timeSpentAdmin[sec] || 0), 0)
                                 const maxTimeAdmin = Math.max(...sections.map(sec => timeSpentAdmin[sec] || 0), 1)
                                 const fmtDur = secs => { if (!secs || secs <= 0) return '—'; const m = Math.floor(secs / 60); const s = secs % 60; return m > 0 ? `${m}m ${s}s` : `${s}s` }
-                                if (totalTimeSecsAdmin <= 0) return null
                                 return (
                                     <>
                                         <h3 style={{ margin: '0 0 0.75rem', fontSize: '1rem', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -2212,6 +2211,16 @@ function AdminCRTReportModal({ submission, reportData, loading, onClose }) {
                                                                 {ans.execution_result.passedCases !== undefined && (
                                                                     <span style={{ color: ans.is_correct ? '#4ade80' : '#f59e0b' }}>
                                                                         Test cases: {ans.execution_result.passedCases}/{ans.execution_result.totalCases} passed
+                                                                    </span>
+                                                                )}
+                                                                {ans.execution_result.method === 'ai_review' && (
+                                                                    <span style={{ marginLeft: 8, fontSize: '0.72rem', background: 'rgba(99,102,241,0.15)', color: '#818cf8', padding: '1px 7px', borderRadius: 6, fontWeight: 600 }}>
+                                                                        🤖 AI evaluated — {ans.execution_result.reason}
+                                                                    </span>
+                                                                )}
+                                                                {ans.execution_result.method === 'partial_credit' && (
+                                                                    <span style={{ marginLeft: 8, fontSize: '0.72rem', background: 'rgba(245,158,11,0.1)', color: '#fbbf24', padding: '1px 7px', borderRadius: 6, fontWeight: 600 }}>
+                                                                        ⚠️ {ans.execution_result.reason}
                                                                     </span>
                                                                 )}
                                                             </>

@@ -125,12 +125,16 @@ JSON array:`
 
 Return ONLY a JSON array. Each object:
 - "question": clear problem statement. Include an Example section with the EXACT stdin lines shown (e.g. Input:\\n7\\n1 2 3 4 5\\nOutput:\\n2). Each example must match the test cases exactly.
-- "starter_code": Python function/main template that reads from stdin using input()
+- "starter_code": A COMPLETE, RUNNABLE Python starter template. Must include:
+  1. All necessary imports (sys, etc.)
+  2. The solution function stub with correct parameters and a 'pass' or placeholder return
+  3. A main block that reads ALL input from stdin correctly using sys.stdin / input(), calls the function, and prints the result
+  4. Must be valid Python that runs without errors even before the student fills in the solution
+  Example starter_code for a two-sum problem:
+  "import sys\\n\\ndef two_sum(nums, target):\\n    # Write your solution here\\n    pass\\n\\nif __name__ == '__main__':\\n    n = int(input())\\n    nums = list(map(int, input().split()))\\n    target = int(input())\\n    print(two_sum(nums, target))"
 - "language": "Python"
 - "test_cases": array of {input, expected_output} — at least 3 test cases. CRITICAL: "input" must be raw stdin string exactly as a program reads it from standard input — multiple lines separated by \\n, NOT comma-separated. Example: if program reads n on line 1 and n numbers on line 2, input must be "5\\n1 2 3 4 5" (NOT "5, 1, 2, 3, 4, 5"). The problem's Example Input shown in "question" must EXACTLY match the first test case's "input" field.
 - "explanation": approach, time complexity, and example trace
-
-JSON array:
 
 JSON array:`;
 
@@ -716,6 +720,7 @@ function registerCompanyRoundRoutes(app, pool) {
 
             let totalScore = 0;
             let totalQuestions = questions.length;
+            const sectionScoreSum = {}; // accumulate qScore per section for accurate section %
 
             for (const q of questions) {
                 const ans = (answers || {})[q.id] || {};
@@ -739,19 +744,86 @@ function registerCompanyRoundRoutes(app, pool) {
                     const lang = ans.language || safeParse(q.language, 'Python') || 'Python';
                     const testCases = safeParse(q.test_cases, []);
                     let passedCases = 0;
+                    let executionFailed = false; // true if compiler/runtime unavailable
 
                     if (code.trim() && testCases.length > 0) {
+                        const runResults = [];
                         for (const tc of testCases) {
                             try {
                                 const result = await runCodeLocally(code, lang, String(tc.input || ''));
                                 const actual = (result.output || '').trim();
                                 const expected = String(tc.expected_output || '').trim();
-                                if (actual === expected) passedCases++;
-                            } catch {}
+                                const passed = actual === expected;
+                                if (passed) passedCases++;
+                                // Detect compiler-not-found errors (ENOENT = binary missing)
+                                if (result.output && (result.output.includes('ENOENT') || result.output.includes('not found') || result.output.includes('No such file'))) {
+                                    executionFailed = true;
+                                }
+                                runResults.push({ actual, expected, passed, output: result.output });
+                            } catch (e) {
+                                executionFailed = true;
+                            }
                         }
-                        qScore = Math.round((passedCases / testCases.length) * 100);
-                        isCorrect = passedCases === testCases.length;
-                        executionResult = { passedCases, totalCases: testCases.length };
+
+                        if (!executionFailed || passedCases > 0) {
+                            // Normal scoring: test cases ran fine (fully or partially)
+                            qScore = Math.round((passedCases / testCases.length) * 100);
+                            isCorrect = passedCases === testCases.length;
+                            executionResult = { passedCases, totalCases: testCases.length, method: 'execution' };
+                        } else {
+                            // Compiler unavailable — fall back to AI code review for scoring
+                            try {
+                                const aiPrompt = `You are a code evaluator. A student submitted the following ${lang} code for a programming problem. The compiler/runtime is unavailable so you must evaluate the code logically.
+
+PROBLEM:
+${q.question}
+
+STUDENT CODE:
+\`\`\`${lang.toLowerCase()}
+${code}
+\`\`\`
+
+TEST CASES:
+${testCases.slice(0, 3).map((tc, i) => `Test ${i + 1}: Input: ${tc.input} | Expected Output: ${tc.expected_output}`).join('\n')}
+
+Evaluate the code and respond with ONLY a JSON object:
+{
+  "score": <integer 0-100 based on correctness of logic>,
+  "passed_cases": <estimated number of test cases this code would pass>,
+  "reason": "<one sentence explanation>"
+}`;
+                                const aiRaw = await callAI([{ role: 'user', content: aiPrompt }], 300);
+                                const aiResult = JSON.parse(aiRaw.match(/\{[\s\S]*\}/)?.[0] || '{}');
+                                const aiScore = Math.min(100, Math.max(0, parseInt(aiResult.score) || 0));
+                                const aiPassed = Math.min(testCases.length, Math.max(0, parseInt(aiResult.passed_cases) || 0));
+                                qScore = aiScore;
+                                isCorrect = aiScore >= 90;
+                                executionResult = {
+                                    passedCases: aiPassed,
+                                    totalCases: testCases.length,
+                                    method: 'ai_review',
+                                    reason: aiResult.reason || 'Evaluated by AI (compiler unavailable)',
+                                    aiScore
+                                };
+                            } catch {
+                                // AI also failed — give 30% credit for submitting non-empty code
+                                qScore = code.trim().length > 50 ? 30 : 0;
+                                isCorrect = false;
+                                executionResult = { passedCases: 0, totalCases: testCases.length, method: 'partial_credit', reason: 'Compiler unavailable, partial credit for submission' };
+                            }
+                        }
+                    } else if (code.trim()) {
+                        // Code submitted but no test cases — AI review
+                        try {
+                            const aiPrompt = `Rate this ${lang} code for the problem on a scale 0-100. Respond ONLY with JSON: {"score": <number>, "reason": "<one line>"}
+Problem: ${q.question}
+Code: ${code}`;
+                            const aiRaw = await callAI([{ role: 'user', content: aiPrompt }], 200);
+                            const aiResult = JSON.parse(aiRaw.match(/\{[\s\S]*\}/)?.[0] || '{}');
+                            qScore = Math.min(100, Math.max(0, parseInt(aiResult.score) || 0));
+                            isCorrect = qScore >= 90;
+                            executionResult = { method: 'ai_review', reason: aiResult.reason };
+                        } catch { qScore = 0; }
                     }
 
                 } else if (q.question_type === 'sql') {
@@ -770,6 +842,7 @@ function registerCompanyRoundRoutes(app, pool) {
                 }
 
                 if (isCorrect) sectionStats[sec].correct++;
+                sectionScoreSum[sec] = (sectionScoreSum[sec] || 0) + qScore;
                 totalScore += qScore;
 
                 // Save answer record
@@ -785,10 +858,10 @@ function registerCompanyRoundRoutes(app, pool) {
                 } catch (ansErr) { console.warn('Answer insert err:', ansErr.message); }
             }
 
-            // Compute per-section scores
+            // Compute per-section scores (use average qScore for partial credit on code/sql)
             for (const sec of Object.keys(sectionStats)) {
                 const s = sectionStats[sec];
-                s.score = s.total > 0 ? Math.round((s.correct / s.total) * 100) : 0;
+                s.score = s.total > 0 ? Math.round((sectionScoreSum[sec] || 0) / s.total) : 0;
                 s.time_spent = section_time_spent[sec] || 0;
             }
 

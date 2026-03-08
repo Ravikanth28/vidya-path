@@ -199,11 +199,11 @@ function MCQQuestion({ question, index, answer, onChange }) {
 // ─── Coding/Debug Question Component ──────────────────────────────────────────
 // ─── Per-language starter templates ─────────────────────────────────────────
 const LANG_TEMPLATES = {
-    'Python':     '# Write your Python code here\n\n',
-    'JavaScript': '// Write your JavaScript code here\n\n',
-    'Java':       '// Write your Java code here\npublic class Solution {\n    public static void main(String[] args) {\n        // Your code here\n    }\n}',
-    'C':          '// Write your C code here\n#include <stdio.h>\n\nint main() {\n    // Your code here\n    return 0;\n}',
-    'C++':        '// Write your C++ code here\n#include <iostream>\nusing namespace std;\n\nint main() {\n    // Your code here\n    return 0;\n}',
+    'Python':     'import sys\n\ndef solve():\n    # Read input\n    data = sys.stdin.read().split()\n    # Write your solution here\n    pass\n\nif __name__ == \'__main__\':\n    solve()\n',
+    'JavaScript': 'const lines = require(\'fs\').readFileSync(\'/dev/stdin\',\'utf8\').trim().split(\'\\n\');\n\nfunction solve() {\n    // Write your solution here\n}\n\nconsole.log(solve());\n',
+    'Java':       'import java.util.Scanner;\n\npublic class Solution {\n    public static void main(String[] args) {\n        Scanner sc = new Scanner(System.in);\n        // Read input and write your solution here\n    }\n}',
+    'C':          '#include <stdio.h>\n\nint main() {\n    // Read input and write your solution here\n    return 0;\n}',
+    'C++':        '#include <iostream>\n#include <vector>\nusing namespace std;\n\nint main() {\n    ios_base::sync_with_stdio(false);\n    cin.tie(NULL);\n    // Read input and write your solution here\n    return 0;\n}',
 };
 
 function CodingQuestion({ question, index, answer, onChange, attemptId, isDebug }) {
