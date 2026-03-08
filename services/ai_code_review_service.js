@@ -1,7 +1,7 @@
 /**
  * AI Code Review Service
  * Automatically reviews student code using Cerebras AI
- * and posts structured inline comments per line.
+ * and posts structured inline comments per line
  */
 
 const { v4: uuidv4 } = require('uuid');
