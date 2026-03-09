@@ -58,7 +58,7 @@ function Toast({ msg, type, onClose }) {
 }
 
 // ─── Attempt table ─────────────────────────────────────────────────────────────
-function AttemptsTable({ attempts, onClose }) {
+function AttemptsTable({ attempts, onClose, onDelete }) {
     return (
         <div style={{ marginTop: '16px', borderTop: '1px solid #334155', paddingTop: '16px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '12px' }}>
@@ -72,7 +72,7 @@ function AttemptsTable({ attempts, onClose }) {
                     <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
                         <thead>
                             <tr style={{ background: '#0f172a' }}>
-                                {['Student', 'Status', 'Score', 'Violations', 'Started', 'Completed'].map(h => (
+                                {['Student', 'Status', 'Score', 'Violations', 'Started', 'Completed', 'Actions'].map(h => (
                                     <th key={h} style={{ padding: '8px', textAlign: h === 'Student' ? 'left' : 'center', borderBottom: '1px solid #334155', color: '#64748b', fontWeight: 600 }}>{h}</th>
                                 ))}
                             </tr>
@@ -88,6 +88,11 @@ function AttemptsTable({ attempts, onClose }) {
                                     <td style={{ padding: '8px', textAlign: 'center', color: '#94a3b8' }}>{(a.proctoring_violations || []).length}</td>
                                     <td style={{ padding: '8px', textAlign: 'center', color: '#64748b' }}>{new Date(a.started_at).toLocaleDateString()}</td>
                                     <td style={{ padding: '8px', textAlign: 'center', color: '#64748b' }}>{a.completed_at ? new Date(a.completed_at).toLocaleDateString() : '—'}</td>
+                                    <td style={{ padding: '8px', textAlign: 'center' }}>
+                                        <button onClick={() => onDelete(a.id)} style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)', color: '#f87171', borderRadius: '6px', cursor: 'pointer', padding: '4px 8px', fontSize: '11px', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '4px', margin: '0 auto' }}>
+                                            <Trash2 size={12} /> Delete
+                                        </button>
+                                    </td>
                                 </tr>
                             ))}
                         </tbody>
@@ -1036,7 +1041,17 @@ export default function CompanyRoundManager() {
                                 )}
 
                                 {/* Attempts table */}
-                                {viewAttempts === test.id && <AttemptsTable attempts={attempts} onClose={() => setViewAttempts(null)} />}
+                                {viewAttempts === test.id && <AttemptsTable attempts={attempts} onClose={() => setViewAttempts(null)} onDelete={async (attemptId) => {
+                                    if (!confirm('Are you sure you want to delete this submission?')) return;
+                                    try {
+                                        await axios.delete(`${API}/api/crt/attempts/${attemptId}`, { headers: authHeader() });
+                                        showToast('Submission deleted successfully');
+                                        const { data } = await axios.get(`${API}/api/crt/tests/${test.id}/attempts`, { headers: authHeader() });
+                                        setAttempts(data);
+                                    } catch (e) {
+                                        showToast(e.response?.data?.error || e.message, 'error');
+                                    }
+                                }} />}
                             </div>
                         ))}
                     </div>

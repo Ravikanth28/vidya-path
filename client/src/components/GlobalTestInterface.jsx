@@ -1390,6 +1390,10 @@ export default function GlobalTestInterface({ test, user, onClose, onComplete })
                                         <span>Face Missing:</span>
                                         <span style={{ color: faceMissingCount > 0 ? '#f59e0b' : '#10b981', fontWeight: 700 }}>{faceMissingCount}</span>
                                     </div>
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', color: '#e2e8f0', fontWeight: 500 }}>
+                                        <span>Multiple Faces:</span>
+                                        <span style={{ color: multipleFacesCount > 0 ? '#ef4444' : '#10b981', fontWeight: 700 }}>{multipleFacesCount}</span>
+                                    </div>
                                 </div>
 
                                 <div style={{ marginTop: '1.5rem' }}>
@@ -1402,6 +1406,7 @@ export default function GlobalTestInterface({ test, user, onClose, onComplete })
                                         {proctoring.enforceFullscreen && <li>Do not exit fullscreen mode.</li>}
                                         {proctoring.detectCameraBlocking && <li>Ensure your face is always visible.</li>}
                                         {proctoring.detectPhoneUsage && <li>No mobile phones allowed.</li>}
+                                        <li>You must be alone in the room.</li>
                                     </ul>
                                 </div>
                             </div>
