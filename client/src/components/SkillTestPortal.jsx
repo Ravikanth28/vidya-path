@@ -7,6 +7,23 @@ import SkillSQLTest from './SkillSQLTest';
 import SkillAIInterview from './SkillAIInterview';
 import SkillTestReport from './SkillTestReport';
 
+let tfLib = null;
+let cocoLib = null;
+let blazeLib = null;
+const loadTFModules = async () => {
+    if (!tfLib) {
+        const [tfModule, cocoModule, blazeModule] = await Promise.all([
+            import('@tensorflow/tfjs'),
+            import('@tensorflow-models/coco-ssd'),
+            import('@tensorflow-models/blazeface')
+        ]);
+        tfLib = tfModule;
+        cocoLib = cocoModule;
+        blazeLib = blazeModule;
+    }
+    return { tfLib, cocoLib, blazeLib };
+};
+
 const API = import.meta.env.VITE_API_URL || 'http://localhost:3000';
 
 export default function SkillTestPortal({ user }) {
@@ -48,6 +65,7 @@ export default function SkillTestPortal({ user }) {
     const phoneDetectionCooldown = useRef(0); // timestamp of last phone alert
 
     const [model, setModel] = useState(null);
+    const [faceModel, setFaceModel] = useState(null);
 
     useEffect(() => {
         loadTests();
@@ -56,31 +74,17 @@ export default function SkillTestPortal({ user }) {
 
     const loadProctoringModel = async () => {
         try {
-            // Wait for scripts loaded via index.html <script defer>
-            const waitForCocoSsd = () => new Promise((resolve) => {
-                if (window.cocoSsd) return resolve();
-                // Check every 200ms for up to 30 seconds
-                let elapsed = 0;
-                const check = setInterval(() => {
-                    elapsed += 200;
-                    if (window.cocoSsd) { clearInterval(check); resolve(); }
-                    else if (elapsed > 30000) { clearInterval(check); resolve(); } // timeout
-                }, 200);
-            });
+            console.log('⏳ Loading TensorFlow.js, COCO-SSD & Blazeface...');
+            const { tfLib: tf, cocoLib: cocoSsd, blazeLib: blazeface } = await loadTFModules();
+            await tf.ready();
 
-            console.log('⏳ Waiting for TensorFlow.js & COCO-SSD scripts...');
-            await waitForCocoSsd();
-
-            if (!window.cocoSsd) {
-                console.error('❌ COCO-SSD scripts failed to load from CDN');
-                return;
-            }
-
-            console.log('📦 Scripts ready. Loading COCO-SSD model weights...');
-            const m = await window.cocoSsd.load({ base: 'mobilenet_v2' }); // More accurate model
+            console.log('📦 Scripts ready. Loading COCO-SSD & Blazeface model weights...');
+            const m = await cocoSsd.load({ base: 'mobilenet_v2' }); // More accurate model
             setModel(m);
+            const fm = await blazeface.load();
+            setFaceModel(fm);
             setModelLoaded(true);
-            console.log('✅ AI Proctoring Model loaded successfully!');
+            console.log('✅ AI Proctoring Models loaded successfully!');
 
             // Warm-up detection
             try {
@@ -88,9 +92,11 @@ export default function SkillTestPortal({ user }) {
                 warmupCanvas.width = 64;
                 warmupCanvas.height = 64;
                 await m.detect(warmupCanvas);
-                console.log('🔥 Model warmed up and ready for real-time detection');
+                console.log('🔥 Models warmed up and ready for real-time detection');
             } catch (e) { }
-        } catch (e) { console.error("Model load error:", e); }
+        } catch (e) {
+            console.error("Model load error:", e);
+        }
     };
 
 
@@ -143,6 +149,7 @@ export default function SkillTestPortal({ user }) {
                 'fullscreen_exit': { title: '⚠️ Fullscreen Exited!', msg: 'You must stay in fullscreen mode. Please re-enter fullscreen.' },
                 'camera_blocked': { title: '📷 Camera Blocked!', msg: 'Your camera appears to be covered or blocked. Please uncover it.' },
                 'phone_detected': { title: '📱 Suspicious Activity!', msg: 'Device or object detected near camera. Keep your area clear.' },
+                'multiple_faces': { title: '👥 Multiple Faces Detected!', msg: 'Multiple people detected in frame. You must be alone.' },
             };
             const wm = warningMessages[eventType] || { title: '⚠️ Violation!', msg: details };
             showViolationWarning(wm.title, wm.msg, severity);
@@ -280,14 +287,20 @@ export default function SkillTestPortal({ user }) {
                                 logProctoringRef.current?.('phone_detected', `${suspiciousObjects[0].class} detected`, 'medium');
                             }
                         }
+                    } catch (e) {
+                        console.warn("Object Detection error:", e.message);
+                    }
+                }
 
-                        // Multiple people detection
-                        const persons = predictions.filter(p => p.class === 'person' && p.score > 0.35);
-                        if (persons.length > 1) {
-                            logProctoringRef.current?.('phone_detected', `Multiple people detected (${persons.length} persons)`, 'high');
+                if (faceModel && monitorVideo.readyState >= 2) {
+                    try {
+                        // Multiple faces detection
+                        const facePredictions = await faceModel.estimateFaces(monitorVideo, false);
+                        if (facePredictions.length > 1) {
+                            logProctoringRef.current?.('multiple_faces', `Multiple faces detected (${facePredictions.length} faces)`, 'high');
                         }
                     } catch (e) {
-                        console.warn("Detection error:", e.message);
+                        console.warn("Face Detection error:", e.message);
                     }
                 }
 

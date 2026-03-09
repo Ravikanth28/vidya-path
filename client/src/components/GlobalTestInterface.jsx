@@ -8,16 +8,19 @@ import TestAIReviewSection from '@/components/TestAIReviewSection'
 // TensorFlow.js loaded dynamically to reduce initial bundle size
 let tf = null
 let cocoSsd = null
+let blazeface = null
 const loadTFModules = async () => {
     if (!tf) {
-        const [tfModule, cocoModule] = await Promise.all([
+        const [tfModule, cocoModule, blazeModule] = await Promise.all([
             import('@tensorflow/tfjs'),
-            import('@tensorflow-models/coco-ssd')
+            import('@tensorflow-models/coco-ssd'),
+            import('@tensorflow-models/blazeface')
         ])
         tf = tfModule
         cocoSsd = cocoModule
+        blazeface = blazeModule
     }
-    return { tf, cocoSsd }
+    return { tf, cocoSsd, blazeface }
 }
 import SQLValidator from '@/components/SQLValidator'
 import SQLVisualizer from '@/components/SQLVisualizer'
@@ -128,12 +131,15 @@ export default function GlobalTestInterface({ test, user, onClose, onComplete })
     const canvasRef = useRef(null)
     const cameraCheckIntervalRef = useRef(null)
     const objectDetectorRef = useRef(null)
+    const faceDetectorRef = useRef(null)
     const phoneCheckIntervalRef = useRef(null)
     const cameraBlockedCountRef = useRef(0)
     const phoneDetectionCountRef = useRef(0)
     const copyPasteAttemptsRef = useRef(0)
     const [faceMissingCount, setFaceMissingCount] = useState(0)
     const faceMissingCountRef = useRef(0)
+    const [multipleFacesCount, setMultipleFacesCount] = useState(0)
+    const multipleFacesCountRef = useRef(0)
     const cameraBlockedRef = useRef(false)
 
     const sectionsWithQuestions = useMemo(() => {
@@ -280,16 +286,21 @@ export default function GlobalTestInterface({ test, user, onClose, onComplete })
                 cameraCheckIntervalRef.current = setInterval(checkCameraObstruction, 1500) // Check more frequently
             }
 
-            // Load Object Detection Model
-            if (proctoring.detectPhoneUsage || proctoring.detectCameraBlocking) {
+            // Load Object Detection and Face Detection Models
+            if (proctoring.detectPhoneUsage || proctoring.detectCameraBlocking || proctoring.detectMultipleFaces !== false) {
                 try {
-                    const { tf: tfLib, cocoSsd: cocoLib } = await loadTFModules()
+                    const { tf: tfLib, cocoSsd: cocoLib, blazeface: blazeLib } = await loadTFModules()
                     await tfLib.ready()
-                    const model = await cocoLib.load()
-                    objectDetectorRef.current = model
+                    if (proctoring.detectPhoneUsage || proctoring.detectCameraBlocking) {
+                        const model = await cocoLib.load()
+                        objectDetectorRef.current = model
+                    }
+                    const faceModel = await blazeLib.load()
+                    faceDetectorRef.current = faceModel
+
                     phoneCheckIntervalRef.current = setInterval(detectObjects, 3000)
                 } catch (e) {
-                    console.warn('Failed to load object detector:', e)
+                    console.warn('Failed to load AI detectors:', e)
                 }
             }
             return true
@@ -325,55 +336,79 @@ export default function GlobalTestInterface({ test, user, onClose, onComplete })
     useEffect(() => { cameraBlockedRef.current = cameraBlocked }, [cameraBlocked])
 
     const detectObjects = useCallback(async () => {
-        if (!objectDetectorRef.current || !videoRef.current || videoRef.current.readyState !== 4) return
+        if (!videoRef.current || videoRef.current.readyState !== 4) return
 
         try {
-            const predictions = await objectDetectorRef.current.detect(videoRef.current)
+            if (objectDetectorRef.current) {
+                const predictions = await objectDetectorRef.current.detect(videoRef.current)
 
-            // Phone Detection
-            if (proctoring.detectPhoneUsage) {
-                const phone = predictions.find(p => p.class === 'cell phone' && p.score > 0.6)
-                if (phone) {
-                    setPhoneDetected(true)
-                    setPhoneDetectionCount(prev => {
+                // Phone Detection
+                if (proctoring.detectPhoneUsage) {
+                    const phone = predictions.find(p => p.class === 'cell phone' && p.score > 0.6)
+                    if (phone) {
+                        setPhoneDetected(true)
+                        setPhoneDetectionCount(prev => {
+                            const next = prev + 1
+                            phoneDetectionCountRef.current = next
+                            setWarningMessage(`📵 Mobile Phone Detected! (${next})`)
+                            setShowWarning(true)
+                            setTimeout(() => setShowWarning(false), 3000)
+                            // Emit proctoring violation to server for admin monitoring
+                            socketService.emitProctoringViolation(
+                                user.id,
+                                user.name || user.email,
+                                'phone_detected',
+                                next >= 3 ? 'critical' : 'warning',
+                                null // mentorId for global test
+                            )
+                            return next
+                        })
+                    } else {
+                        setPhoneDetected(false)
+                    }
+                }
+
+                // Face/Person Detection (Fallback for missing face)
+                const person = predictions.find(p => p.class === 'person' && p.score > 0.5)
+                if (!person && !cameraBlockedRef.current) {
+                    setFaceMissingCount(prev => {
                         const next = prev + 1
-                        phoneDetectionCountRef.current = next
-                        setWarningMessage(`📵 Mobile Phone Detected! (${next})`)
-                        setShowWarning(true)
-                        setTimeout(() => setShowWarning(false), 3000)
-                        // Emit proctoring violation to server for admin monitoring
-                        socketService.emitProctoringViolation(
-                            user.id,
-                            user.name || user.email,
-                            'phone_detected',
-                            next >= 3 ? 'critical' : 'warning',
-                            null // mentorId for global test
-                        )
+                        faceMissingCountRef.current = next
+                        // Emit proctoring violation to server for admin monitoring (only every 3rd occurrence to reduce spam)
+                        if (next % 3 === 0) {
+                            socketService.emitProctoringViolation(
+                                user.id,
+                                user.name || user.email,
+                                'face_not_detected',
+                                next >= 9 ? 'critical' : 'warning',
+                                null // mentorId for global test
+                            )
+                        }
                         return next
                     })
-                } else {
-                    setPhoneDetected(false)
                 }
             }
 
-            // Face/Person Detection
-            const person = predictions.find(p => p.class === 'person' && p.score > 0.5)
-            if (!person && !cameraBlockedRef.current) {
-                setFaceMissingCount(prev => {
-                    const next = prev + 1
-                    faceMissingCountRef.current = next
-                    // Emit proctoring violation to server for admin monitoring (only every 3rd occurrence to reduce spam)
-                    if (next % 3 === 0) {
+            // Blazeface - Multiple Face Detection
+            if (faceDetectorRef.current) {
+                const facePredictions = await faceDetectorRef.current.estimateFaces(videoRef.current, false)
+                if (facePredictions.length > 1) {
+                    setMultipleFacesCount(prev => {
+                        const next = prev + 1
+                        multipleFacesCountRef.current = next
+                        setWarningMessage(`👥 Multiple Faces Detected! (${next})`)
+                        setShowWarning(true)
+                        setTimeout(() => setShowWarning(false), 3000)
                         socketService.emitProctoringViolation(
                             user.id,
                             user.name || user.email,
-                            'face_not_detected',
-                            next >= 9 ? 'critical' : 'warning',
-                            null // mentorId for global test
+                            'multiple_faces',
+                            'critical',
+                            null
                         )
-                    }
-                    return next
-                })
+                        return next
+                    })
+                }
             }
 
         } catch (e) {
@@ -491,6 +526,7 @@ export default function GlobalTestInterface({ test, user, onClose, onComplete })
     useEffect(() => { phoneDetectionCountRef.current = phoneDetectionCount }, [phoneDetectionCount])
     useEffect(() => { copyPasteAttemptsRef.current = copyPasteAttempts }, [copyPasteAttempts])
     useEffect(() => { faceMissingCountRef.current = faceMissingCount }, [faceMissingCount])
+    useEffect(() => { multipleFacesCountRef.current = multipleFacesCount }, [multipleFacesCount])
 
     const handleAnswerSelect = (questionId, answer) => {
         setAnswers(prev => ({ ...prev, [questionId]: answer }))
@@ -624,6 +660,7 @@ export default function GlobalTestInterface({ test, user, onClose, onComplete })
                 cameraBlockedCount: cameraBlockedCountRef.current,
                 phoneDetectionCount: phoneDetectionCountRef.current,
                 faceMissingCount: faceMissingCountRef.current,
+                multipleFacesCount: multipleFacesCountRef.current,
                 proctoringEnabled: proctoring.enabled || false
             })
             console.log('[Submit] Response received:', JSON.stringify(res.data).substring(0, 500))
