@@ -5,6 +5,8 @@
   "main": "index.js",
   "scripts": {
     "start": "node server.js",
+    "start:prod": "node --max-old-space-size=450 server.js",
+    "install:prod": "npm install --omit=dev --omit=optional",
     "dev": "node server.js --env development",
     "test": "jest --detectOpenHandles --maxWorkers=1",
     "test:watch": "jest --watch",
@@ -25,7 +27,6 @@
     "axios-retry": "^4.5.0",
     "bcryptjs": "^3.0.3",
     "body-parser": "^2.2.2",
-    "bull": "^4.16.5",
     "cors": "^2.8.6",
     "dotenv": "^17.2.3",
     "express": "^5.2.1",
@@ -36,17 +37,19 @@
     "multer": "^2.0.2",
     "mysql2": "^3.16.3",
     "pdfkit": "^0.17.2",
-    "redis": "^5.10.0",
     "socket.io": "^4.7.2",
     "sql.js": "^1.13.0",
-    "swagger-jsdoc": "^6.2.8",
-    "swagger-ui-express": "^5.0.1",
     "uuid": "^13.0.0",
-    "vite": "^7.3.1",
     "zod": "^4.3.6"
   },
   "devDependencies": {
     "jest": "^29.7.0",
     "supertest": "^6.3.3"
+  },
+  "optionalDependencies": {
+    "bull": "^4.16.5",
+    "redis": "^5.10.0",
+    "swagger-jsdoc": "^6.2.8",
+    "swagger-ui-express": "^5.0.1"
   }
 }

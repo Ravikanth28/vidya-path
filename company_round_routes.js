@@ -411,6 +411,16 @@ function registerCompanyRoundRoutes(app, pool) {
         } catch (err) { res.status(500).json({ error: err.message }); }
     });
 
+    // ─── ADMIN: Delete single attempt ────────────────────────────────────────
+    app.delete('/api/crt/attempts/:id', async (req, res) => {
+        try {
+            const { id } = req.params;
+            await pool.query('DELETE FROM crt_answers WHERE attempt_id = ?', [id]);
+            await pool.query('DELETE FROM crt_attempts WHERE id = ?', [id]);
+            res.json({ success: true, message: 'Attempt deleted successfully' });
+        } catch (err) { res.status(500).json({ error: err.message }); }
+    });
+
     // ─── ADMIN: Assign students ──────────────────────────────────────────────
     app.put('/api/crt/tests/:id/assign', async (req, res) => {
         try {
@@ -418,6 +428,28 @@ function registerCompanyRoundRoutes(app, pool) {
             await pool.query('UPDATE crt_tests SET assigned_students = ? WHERE id = ?',
                 [JSON.stringify(Array.isArray(student_ids) ? student_ids : []), req.params.id]);
             res.json({ success: true });
+        } catch (err) { res.status(500).json({ error: err.message }); }
+    });
+
+    // ─── ADMIN: Delete ONLY ALL CRT submissions ────────────────────────────────
+    app.delete('/api/crt-submissions/reset', async (req, res) => {
+        try {
+            // Get all complete CRT attempt ids to delete corresponding answers
+            const [completedAttempts] = await pool.query(`SELECT id FROM crt_attempts WHERE status = 'completed'`);
+            const attemptIds = completedAttempts.map(a => a.id);
+
+            let deletedAnswers = 0;
+            if (attemptIds.length > 0) {
+                // Delete answers for completed attempts
+                const [resultAnswers] = await pool.query(`DELETE FROM crt_answers WHERE attempt_id IN (?)`, [attemptIds]);
+                deletedAnswers = resultAnswers.affectedRows;
+            }
+
+            // Delete completed attempts
+            const [resultAttempts] = await pool.query(`DELETE FROM crt_attempts WHERE status = 'completed'`);
+            const deletedAttempts = resultAttempts.affectedRows;
+
+            res.json({ success: true, deletedAttempts, deletedAnswers });
         } catch (err) { res.status(500).json({ error: err.message }); }
     });
 
@@ -657,6 +689,15 @@ function registerCompanyRoundRoutes(app, pool) {
                 });
             }
 
+            // Shuffle questions per section
+            for (const sec in questionsBySection) {
+                const arr = questionsBySection[sec];
+                for (let i = arr.length - 1; i > 0; i--) {
+                    const j = Math.floor(Math.random() * (i + 1));
+                    [arr[i], arr[j]] = [arr[j], arr[i]];
+                }
+            }
+
             res.json({
                 success: true,
                 attemptId: attempt.insertId,
@@ -893,7 +934,7 @@ Code: ${code}`;
     app.get('/api/crt/attempt/:aid/report', async (req, res) => {
         try {
             const [attempts] = await pool.query(
-                `SELECT a.*, t.company_name, t.title, t.sections, t.pass_percentage, t.difficulty, t.duration_minutes
+                `SELECT a.*, t.company_name, t.title, t.sections, t.pass_percentage, t.difficulty, t.duration_minutes, t.section_time_limits
                  FROM crt_attempts a JOIN crt_tests t ON a.test_id = t.id WHERE a.id = ?`,
                 [req.params.aid]
             );
@@ -909,12 +950,42 @@ Code: ${code}`;
                 [req.params.aid]
             );
 
+            // Get rank and class average
+            const [allAttempts] = await pool.query(
+                `SELECT id, student_id, overall_score FROM crt_attempts WHERE test_id = ? AND status = 'completed'`,
+                [attempt.test_id]
+            );
+
+            let classAverage = 0;
+            let rank = 1;
+            let totalParticipants = allAttempts.length;
+            let percentile = 100;
+
+            if (totalParticipants > 0) {
+                const totalScore = allAttempts.reduce((sum, s) => sum + (s.overall_score || 0), 0);
+                classAverage = Math.round(totalScore / totalParticipants);
+
+                allAttempts.sort((a, b) => (b.overall_score || 0) - (a.overall_score || 0));
+                
+                const myIndex = allAttempts.findIndex(s => s.id === attempt.id);
+                if (myIndex !== -1) rank = myIndex + 1;
+                
+                if (totalParticipants > 1) {
+                    percentile = Math.round(((totalParticipants - rank) / (totalParticipants - 1)) * 10000) / 100;
+                }
+            }
+
             res.json({
                 attempt: {
                     ...attempt,
                     sections: safeParse(attempt.sections, []),
                     section_scores: safeParse(attempt.section_scores, {}),
-                    proctoring_violations: safeParse(attempt.proctoring_violations, [])
+                    section_time_limits: safeParse(attempt.section_time_limits, {}),
+                    proctoring_violations: safeParse(attempt.proctoring_violations, []),
+                    class_average: classAverage,
+                    rank: rank,
+                    total_participants: totalParticipants,
+                    percentile: percentile
                 },
                 answers: answers.map(a => ({
                     ...a,

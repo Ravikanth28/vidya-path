@@ -1,6 +1,7 @@
 node_modules
 .env
 .venv
+client/dist
 __pycache__/
 
 # Logs

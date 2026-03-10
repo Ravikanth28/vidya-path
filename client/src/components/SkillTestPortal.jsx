@@ -7,6 +7,23 @@ import SkillSQLTest from './SkillSQLTest';
 import SkillAIInterview from './SkillAIInterview';
 import SkillTestReport from './SkillTestReport';
 
+let tfLib = null;
+let cocoLib = null;
+let blazeLib = null;
+const loadTFModules = async () => {
+    if (!tfLib) {
+        const [tfModule, cocoModule, blazeModule] = await Promise.all([
+            import('@tensorflow/tfjs'),
+            import('@tensorflow-models/coco-ssd'),
+            import('@tensorflow-models/blazeface')
+        ]);
+        tfLib = tfModule;
+        cocoLib = cocoModule;
+        blazeLib = blazeModule;
+    }
+    return { tfLib, cocoLib, blazeLib };
+};
+
 const API = import.meta.env.VITE_API_URL || 'http://localhost:3000';
 
 export default function SkillTestPortal({ user }) {
@@ -33,6 +50,7 @@ export default function SkillTestPortal({ user }) {
         tabSwitchCount: 0,
         cameraBlocks: 0,
         phoneDetections: 0,
+        multipleFaces: 0,
         fullscreenExits: 0,
         cameraActive: false
     });
@@ -48,6 +66,7 @@ export default function SkillTestPortal({ user }) {
     const phoneDetectionCooldown = useRef(0); // timestamp of last phone alert
 
     const [model, setModel] = useState(null);
+    const [faceModel, setFaceModel] = useState(null);
 
     useEffect(() => {
         loadTests();
@@ -56,31 +75,17 @@ export default function SkillTestPortal({ user }) {
 
     const loadProctoringModel = async () => {
         try {
-            // Wait for scripts loaded via index.html <script defer>
-            const waitForCocoSsd = () => new Promise((resolve) => {
-                if (window.cocoSsd) return resolve();
-                // Check every 200ms for up to 30 seconds
-                let elapsed = 0;
-                const check = setInterval(() => {
-                    elapsed += 200;
-                    if (window.cocoSsd) { clearInterval(check); resolve(); }
-                    else if (elapsed > 30000) { clearInterval(check); resolve(); } // timeout
-                }, 200);
-            });
+            console.log('⏳ Loading TensorFlow.js, COCO-SSD & Blazeface...');
+            const { tfLib: tf, cocoLib: cocoSsd, blazeLib: blazeface } = await loadTFModules();
+            await tf.ready();
 
-            console.log('⏳ Waiting for TensorFlow.js & COCO-SSD scripts...');
-            await waitForCocoSsd();
-
-            if (!window.cocoSsd) {
-                console.error('❌ COCO-SSD scripts failed to load from CDN');
-                return;
-            }
-
-            console.log('📦 Scripts ready. Loading COCO-SSD model weights...');
-            const m = await window.cocoSsd.load({ base: 'mobilenet_v2' }); // More accurate model
+            console.log('📦 Scripts ready. Loading COCO-SSD & Blazeface model weights...');
+            const m = await cocoSsd.load({ base: 'mobilenet_v2' }); // More accurate model
             setModel(m);
+            const fm = await blazeface.load();
+            setFaceModel(fm);
             setModelLoaded(true);
-            console.log('✅ AI Proctoring Model loaded successfully!');
+            console.log('✅ AI Proctoring Models loaded successfully!');
 
             // Warm-up detection
             try {
@@ -88,9 +93,11 @@ export default function SkillTestPortal({ user }) {
                 warmupCanvas.width = 64;
                 warmupCanvas.height = 64;
                 await m.detect(warmupCanvas);
-                console.log('🔥 Model warmed up and ready for real-time detection');
+                console.log('🔥 Models warmed up and ready for real-time detection');
             } catch (e) { }
-        } catch (e) { console.error("Model load error:", e); }
+        } catch (e) {
+            console.error("Model load error:", e);
+        }
     };
 
 
@@ -136,6 +143,7 @@ export default function SkillTestPortal({ user }) {
                 tabSwitchCount: eventType === 'tab_switch' ? prev.tabSwitchCount + 1 : prev.tabSwitchCount,
                 fullscreenExits: eventType === 'fullscreen_exit' ? prev.fullscreenExits + 1 : prev.fullscreenExits,
                 phoneDetections: eventType === 'phone_detected' ? prev.phoneDetections + 1 : prev.phoneDetections,
+                multipleFaces: eventType === 'multiple_faces' ? prev.multipleFaces + 1 : prev.multipleFaces,
                 cameraBlocks: eventType === 'camera_blocked' ? prev.cameraBlocks + 1 : prev.cameraBlocks,
             }));
             const warningMessages = {
@@ -143,6 +151,7 @@ export default function SkillTestPortal({ user }) {
                 'fullscreen_exit': { title: '⚠️ Fullscreen Exited!', msg: 'You must stay in fullscreen mode. Please re-enter fullscreen.' },
                 'camera_blocked': { title: '📷 Camera Blocked!', msg: 'Your camera appears to be covered or blocked. Please uncover it.' },
                 'phone_detected': { title: '📱 Suspicious Activity!', msg: 'Device or object detected near camera. Keep your area clear.' },
+                'multiple_faces': { title: '👥 Multiple Faces Detected!', msg: 'Multiple people detected in frame. You must be alone.' },
             };
             const wm = warningMessages[eventType] || { title: '⚠️ Violation!', msg: details };
             showViolationWarning(wm.title, wm.msg, severity);
@@ -280,14 +289,20 @@ export default function SkillTestPortal({ user }) {
                                 logProctoringRef.current?.('phone_detected', `${suspiciousObjects[0].class} detected`, 'medium');
                             }
                         }
+                    } catch (e) {
+                        console.warn("Object Detection error:", e.message);
+                    }
+                }
 
-                        // Multiple people detection
-                        const persons = predictions.filter(p => p.class === 'person' && p.score > 0.35);
-                        if (persons.length > 1) {
-                            logProctoringRef.current?.('phone_detected', `Multiple people detected (${persons.length} persons)`, 'high');
+                if (faceModel && monitorVideo.readyState >= 2) {
+                    try {
+                        // Multiple faces detection
+                        const facePredictions = await faceModel.estimateFaces(monitorVideo, false);
+                        if (facePredictions.length > 1) {
+                            logProctoringRef.current?.('multiple_faces', `Multiple faces detected (${facePredictions.length} faces)`, 'high');
                         }
                     } catch (e) {
-                        console.warn("Detection error:", e.message);
+                        console.warn("Face Detection error:", e.message);
                     }
                 }
 
@@ -415,6 +430,7 @@ export default function SkillTestPortal({ user }) {
                 tabSwitchCount: 0,
                 cameraBlocks: 0,
                 phoneDetections: 0,
+                multipleFaces: 0,
                 fullscreenExits: 0,
                 cameraActive: !!cameraStream
             });
@@ -438,6 +454,7 @@ export default function SkillTestPortal({ user }) {
                 tabSwitchCount: 0,
                 cameraBlocks: 0,
                 phoneDetections: 0,
+                multipleFaces: 0,
                 fullscreenExits: 0,
                 cameraActive: !!cameraStream
             });
@@ -503,6 +520,7 @@ export default function SkillTestPortal({ user }) {
             tabSwitchCount: 0,
             cameraBlocks: 0,
             phoneDetections: 0,
+            multipleFaces: 0,
             fullscreenExits: 0,
             cameraActive: false
         });
@@ -701,6 +719,14 @@ export default function SkillTestPortal({ user }) {
                                 </div>
                                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '3px 0' }}>
                                     <span style={{ fontSize: '11px', color: '#94a3b8', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                        👥 Faces
+                                    </span>
+                                    <span style={{ fontSize: '12px', fontWeight: 700, color: proctoringStats.multipleFaces > 0 ? '#fbbf24' : '#64748b' }}>
+                                        {proctoringStats.multipleFaces}
+                                    </span>
+                                </div>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '3px 0' }}>
+                                    <span style={{ fontSize: '11px', color: '#94a3b8', display: 'flex', alignItems: 'center', gap: '4px' }}>
                                         <Maximize size={10} /> FS Exits
                                     </span>
                                     <span style={{ fontSize: '12px', fontWeight: 700, color: proctoringStats.fullscreenExits > 0 ? '#fbbf24' : '#64748b' }}>
@@ -785,6 +811,9 @@ export default function SkillTestPortal({ user }) {
                                         </div>
                                         <div style={{ fontSize: '10px', color: '#64748b', display: 'flex', alignItems: 'center', gap: '3px', background: '#0f172a', padding: '3px 7px', borderRadius: '6px', border: '1px solid #334155' }}>
                                             <Smartphone size={9} /> Phone: <span style={{ color: proctoringStats.phoneDetections > 0 ? '#fbbf24' : '#94a3b8' }}>{proctoringStats.phoneDetections}</span>
+                                        </div>
+                                        <div style={{ fontSize: '10px', color: '#64748b', display: 'flex', alignItems: 'center', gap: '3px', background: '#0f172a', padding: '3px 7px', borderRadius: '6px', border: '1px solid #334155' }}>
+                                            👥 Faces: <span style={{ color: proctoringStats.multipleFaces > 0 ? '#fbbf24' : '#94a3b8' }}>{proctoringStats.multipleFaces}</span>
                                         </div>
                                         <div style={{ fontSize: '10px', color: '#64748b', display: 'flex', alignItems: 'center', gap: '3px', background: '#0f172a', padding: '3px 7px', borderRadius: '6px', border: '1px solid #334155' }}>
                                             <Maximize size={9} /> FS: <span style={{ color: proctoringStats.fullscreenExits > 0 ? '#fbbf24' : '#94a3b8' }}>{proctoringStats.fullscreenExits}</span>

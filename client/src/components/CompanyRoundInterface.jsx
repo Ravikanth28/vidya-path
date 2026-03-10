@@ -1,4 +1,4 @@
-﻿/**
+/**
  * CompanyRoundInterface.jsx — Student view for Company Round Tests
  * Supports: MCQ, Coding, Debugging, SQL sections with proctoring
  */
@@ -746,9 +746,12 @@ function SQLQuestion({ question, index, answer, onChange, attemptId }) {
 // ─── Report view ─────────────────────────────────────────────────────────────
 // Format seconds → "Xm Ys" display
 function fmtDuration(secs) {
-    if (!secs || secs <= 0) return '—';
-    const m = Math.floor(secs / 60);
+    if (secs === undefined || secs === null) return '—';
+    if (secs <= 0) return '0s';
+    const h = Math.floor(secs / 3600);
+    const m = Math.floor((secs % 3600) / 60);
     const s = secs % 60;
+    if (h > 0) return `${h}h ${m}m`;
     return m > 0 ? `${m}m ${s}s` : `${s}s`;
 }
 
