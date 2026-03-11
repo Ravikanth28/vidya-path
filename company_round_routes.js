@@ -1,5 +1,5 @@
 /**
- * Company Round Test Routes
+ * Company Round Test Route
  * Admin creates company-specific first-round tests with configurable sections:
  *   aptitude | verbal | logical | reasoning | technical_mcq | pseudocode | debug | coding | sql
  *
