@@ -1,6 +1,6 @@
-import React, { useState, useEffect, useRef } from 'react'
+﻿import React, { useState, useEffect, useRef } from 'react'
 import { Routes, Route, useLocation } from 'react-router-dom'
-import { LayoutDashboard, ClipboardList, Code, Send, Trophy, Clock, CheckCircle, XCircle, ChevronRight, Play, Upload, FileText, Trash2, Eye, AlertTriangle, Download, Lightbulb, HelpCircle, Sparkles, Target, Zap, BookOpen, Brain, Award, X, Video, Shield, Search, BarChart2, BarChart3, Flame, Layers, Database, RefreshCw, TrendingUp, Radar, Users, ArrowUpRight, ArrowDownRight, Minus, PieChart, MessageSquare, Github, ExternalLink, Link2, Calendar, Map, Building2 } from 'lucide-react'
+import { LayoutDashboard, ClipboardList, Code, Send, Trophy, Clock, CheckCircle, XCircle, ChevronRight, Play, Upload, FileText, Trash2, Eye, AlertTriangle, Download, Lightbulb, HelpCircle, Sparkles, Target, Zap, BookOpen, Brain, Award, X, Video, Shield, Search, BarChart2, BarChart3, Flame, Layers, Database, RefreshCw, TrendingUp, Radar, Users, ArrowUpRight, ArrowDownRight, Minus, PieChart, MessageSquare, Github, ExternalLink, Link2, Calendar, Map, Building2, Mic } from 'lucide-react'
 import DashboardLayout from '@/components/DashboardLayout'
 import AptitudeTestInterface from '@/components/AptitudeTestInterface'
 import GlobalTestInterface from '@/components/GlobalTestInterface'
@@ -31,6 +31,7 @@ import { RiskScoreCard, RecommendationsPanel } from '@/components/AnalyticsCompo
 // New Features
 import StudentResourceLinks from '@/components/StudentResourceLinks'
 import StudentMCQ from '@/components/StudentMCQ'
+import CommunicationTest from '@/components/CommunicationTest'
 import CertificatePortal from '@/components/CertificatePortal'
 import { StudentAIReviewDashboard } from '@/components/AICodeReview'
 import { CompanyRoadmap, CompanyPrep } from '@/components/CompanyFeatures'
@@ -51,7 +52,8 @@ const LANGUAGE_CONFIG = {
 }
 
 function StudentPortal() {
-    const { user } = useAuth()
+    const auth = useAuth()
+    const user = auth?.user ?? null
     const { t } = useI18n()
     const location = useLocation()
     const [title, setTitle] = useState('')
@@ -154,6 +156,10 @@ function StudentPortal() {
                 setTitle('MCQ Tests')
                 setSubtitle('Take tests and get instant AI-powered evaluation')
                 break
+            case 'comm-test':
+                setTitle('Communication Test')
+                setSubtitle('AI-powered English speaking & grammar assessment')
+                break
             default:
                 setTitle(t('dashboard'))
                 setSubtitle(t('welcome_back_name', { name: user?.name || '' }))
@@ -177,7 +183,8 @@ function StudentPortal() {
                 { path: '/student/company-round-tests', label: 'Round Tests', icon: <Target size={20} /> },
                 { path: '/student/youtube', label: 'YouTube Resources', icon: <BookOpen size={20} /> },
                 { path: '/student/resource-links', label: 'Resource Links', icon: <Link2 size={20} /> },
-                { path: '/student/mcq', label: 'MCQ Tests', icon: <Brain size={20} /> }
+                { path: '/student/mcq', label: 'MCQ Tests', icon: <Brain size={20} /> },
+                { path: '/student/comm-test', label: 'Comm Test', icon: <Mic size={20} /> }
             ]
         },
         {
@@ -244,6 +251,7 @@ function StudentPortal() {
                 <Route path="/youtube" element={<YouTubeRecommendations user={user} />} />
                 <Route path="/resource-links" element={<StudentResourceLinks user={user} />} />
                 <Route path="/mcq" element={<StudentMCQ user={user} />} />
+                <Route path="/comm-test" element={<CommunicationTest user={user} />} />
             </Routes>
         </DashboardLayout>
     )
@@ -390,7 +398,7 @@ function Dashboard({ user }) {
                     { label: 'Problems', done: stats.completedProblems, total: stats.totalProblems, icon: <Code size={20} />, color: '#10b981', gradient: 'linear-gradient(135deg, #047857, #10b981)' },
                     { label: 'Aptitude', done: stats.completedAptitude, total: stats.totalAptitude, icon: <Brain size={20} />, color: '#a78bfa', gradient: 'linear-gradient(135deg, #6d28d9, #a78bfa)' },
                     { label: 'Task Score', done: stats.avgTaskScore, total: 100, icon: <Award size={20} />, color: '#f472b6', gradient: 'linear-gradient(135deg, #be185d, #f472b6)', suffix: '%' },
-                    { label: 'Code Score', done: stats.avgProblemScore, total: 100, icon: <Target size={20} />, color: '#fbbf24', gradient: 'linear-gradient(135deg, #d97706, #fbbf24)', suffix: '%' },
+                    { label: 'Code Score', done: stats.avgProblemScore, total: 100, icon: <Target size={20} />, color: '#fbbf24', gradient: 'linear-gradient(135deg, #4f46e5, #fbbf24)', suffix: '%' },
                     { label: 'Overall', done: overallPct, total: 100, icon: <TrendingUp size={20} />, color: '#06b6d4', gradient: 'linear-gradient(135deg, #0e7490, #06b6d4)', suffix: '%' }
                 ].map((s, i) => {
                     const pct = s.total > 0 ? Math.round((s.done / s.total) * 100) : 0
@@ -2244,7 +2252,7 @@ function CodeEditorModal({ problem, user, onClose, onSubmissionComplete }) {
                                                     fontSize: '0.7rem',
                                                     fontWeight: 600,
                                                     background: testResults.passed === testResults.total ? 'rgba(16, 185, 129, 0.2)' : 'rgba(249, 115, 22, 0.2)',
-                                                    color: testResults.passed === testResults.total ? '#10b981' : '#f97316'
+                                                    color: testResults.passed === testResults.total ? '#10b981' : '#3b82f6'
                                                 }}>
                                                     {testResults.passed}/{testResults.total}
                                                 </span>
@@ -2838,12 +2846,15 @@ function Submissions({ user }) {
 
 // ==================== CRT REPORT MODAL ====================
 function CRTReportModal({ submission, reportData, loading, onClose }) {
+    const [activeReportTab, setActiveReportTab] = useState('overview')
+    const [selectedSection, setSelectedSection] = useState(null)
+
     const SECTION_DEFS = {
         aptitude: { label: 'Aptitude', icon: '🧮', color: '#f59e0b' },
         verbal: { label: 'Verbal', icon: '📝', color: '#06b6d4' },
         logical: { label: 'Logical', icon: '🧠', color: '#8b5cf6' },
         reasoning: { label: 'Reasoning', icon: '🔍', color: '#ec4899' },
-        technical_mcq: { label: 'Technical MCQ', icon: '💻', color: '#3b82f6' },
+        technical_mcq: { label: 'Technical MCQ', icon: '💻', color: '#a855f7' },
         pseudocode: { label: 'Pseudo Code', icon: '📋', color: '#10b981' },
         debug: { label: 'Debugging', icon: '🐛', color: '#ef4444' },
         coding: { label: 'Coding', icon: '⌨️', color: '#6366f1' },
@@ -2858,203 +2869,402 @@ function CRTReportModal({ submission, reportData, loading, onClose }) {
     const passPercentage = attempt?.pass_percentage || submission?.pass_percentage || 60
     const passed = overallScore >= passPercentage
 
-    // Group answers by section
     const answersBySection = {}
     answers.forEach(a => {
         if (!answersBySection[a.section]) answersBySection[a.section] = []
         answersBySection[a.section].push(a)
     })
 
+    const fmtDur = secs => {
+        if (secs === undefined || secs === null) return '—'
+        if (secs <= 0) return '0s'
+        const h = Math.floor(secs / 3600)
+        const m = Math.floor((secs % 3600) / 60)
+        const s = secs % 60
+        if (h > 0) return `${h}h ${m}m`
+        return m > 0 ? `${m}m ${s}s` : `${s}s`
+    }
+
+    const reportTabs = [
+        { id: 'overview', label: 'Overview', icon: <BarChart2 size={15} /> },
+        { id: 'section', label: 'Section Analysis', icon: <Layers size={15} /> },
+        { id: 'time', label: 'Time Analysis', icon: <Clock size={15} /> },
+    ]
+
     return (
-        <div className="modal-overlay" onClick={onClose}>
-            <div className="modal-content" onClick={e => e.stopPropagation()} style={{ maxWidth: '900px', maxHeight: '90vh', overflowY: 'auto' }}>
-                <div className="modal-header" style={{ background: passed ? 'linear-gradient(135deg, rgba(16,185,129,0.15), rgba(6,182,212,0.1))' : 'linear-gradient(135deg, rgba(239,68,68,0.15), rgba(251,146,60,0.1))' }}>
-                    <div className="modal-title-with-icon">
-                        <div style={{ width: '40px', height: '40px', borderRadius: '10px', background: passed ? 'linear-gradient(135deg, #10b981, #06b6d4)' : 'linear-gradient(135deg, #ef4444, #f97316)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                            {passed ? <CheckCircle size={20} color="white" /> : <XCircle size={20} color="white" />}
-                        </div>
-                        <div>
-                            <span style={{ fontSize: '0.7rem', color: '#f59e0b', textTransform: 'uppercase', fontWeight: 600 }}>Round Test Report</span>
-                            <h2 style={{ margin: 0, fontSize: '1.1rem' }}>{attempt?.title || submission?.itemTitle || 'Round Test'}</h2>
-                        </div>
+        <div className="modal-overlay" onClick={onClose} style={{ zIndex: 1000, display: 'flex', alignItems: 'flex-start', justifyContent: 'center', background: 'rgba(0,0,0,0.7)', padding: '20px 16px', overflowY: 'auto' }}>
+            <div className="modal-content p-0" onClick={e => e.stopPropagation()} style={{ width: '100%', maxWidth: '920px', background: '#111827', borderRadius: '16px', boxShadow: '0 25px 50px -12px rgba(0,0,0,0.7)', display: 'flex', flexDirection: 'column', margin: 'auto' }}>
+                {/* Header */}
+                <div style={{ background: '#1f2937', color: 'white', padding: '16px 24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0, borderBottom: '2px solid #7c3aed' }}>
+                    <h2 style={{ margin: 0, fontSize: '1.2rem', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '1px' }}>CRT REPORT</h2>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.85rem', fontWeight: 600, opacity: 0.9, minWidth: 0, overflow: 'hidden' }}>
+                        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                            {attempt?.company_name || submission?.itemTitle || 'Round Test'}{attempt?.student_id ? ` | ID: ${attempt.student_id}` : ''}
+                        </span>
+                        <button onClick={onClose} style={{ background: 'transparent', border: 'none', color: 'white', cursor: 'pointer', marginLeft: '8px', padding: 0, opacity: 0.8, flexShrink: 0 }} onMouseOver={e => e.currentTarget.style.opacity = 1} onMouseOut={e => e.currentTarget.style.opacity = 0.8}>
+                            <X size={24} />
+                        </button>
                     </div>
-                    <button onClick={onClose} className="modal-close"><XCircle size={20} /></button>
                 </div>
 
-                <div className="modal-body" style={{ padding: '1.5rem' }}>
+                <div style={{ padding: '0 24px 24px', flex: 1, overflowY: 'auto' }}>
                     {loading ? (
-                        <div style={{ textAlign: 'center', padding: '3rem', color: 'var(--text-muted)' }}>
-                            <div className="loading-spinner" style={{ margin: '0 auto 1rem' }}></div>
-                            Loading report...
+                        <div style={{ textAlign: 'center', padding: '4rem', color: '#7c3aed' }}>
+                            <div className="loading-spinner" style={{ margin: '0 auto 1rem', borderColor: '#7c3aed', borderTopColor: 'transparent' }}></div>
+                            <span style={{ fontWeight: 600, color: '#a855f7' }}>Loading report details...</span>
                         </div>
                     ) : !reportData ? (
-                        <div style={{ textAlign: 'center', padding: '2rem' }}>
-                            {/* Fallback: show basic info from the submission itself */}
-                            <div style={{ display: 'flex', gap: '1rem', justifyContent: 'center', marginBottom: '1.5rem', flexWrap: 'wrap' }}>
-                                <div style={{ padding: '1.25rem 2rem', background: passed ? 'rgba(16,185,129,0.1)' : 'rgba(239,68,68,0.1)', borderRadius: '16px', border: `2px solid ${passed ? 'rgba(16,185,129,0.3)' : 'rgba(239,68,68,0.3)'}`, textAlign: 'center', minWidth: 140 }}>
-                                    <div style={{ fontSize: '2.5rem', fontWeight: 900, color: passed ? '#10b981' : '#ef4444', lineHeight: 1 }}>{Math.round(overallScore)}%</div>
-                                    <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: 6, textTransform: 'uppercase', letterSpacing: '1.5px', fontWeight: 600 }}>Overall Score</div>
-                                </div>
-                                <div style={{ padding: '1.25rem 2rem', background: passed ? 'rgba(34,197,94,0.08)' : 'rgba(239,68,68,0.08)', borderRadius: '16px', border: `1px solid ${passed ? 'rgba(34,197,94,0.25)' : 'rgba(239,68,68,0.25)'}`, textAlign: 'center', minWidth: 140 }}>
-                                    <div style={{ fontSize: '1.5rem', fontWeight: 800, color: passed ? '#4ade80' : '#f87171', lineHeight: 1 }}>{passed ? '✅ PASSED' : '❌ FAILED'}</div>
-                                    <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: 6, textTransform: 'uppercase', letterSpacing: '1.5px', fontWeight: 600 }}>Pass mark: {passPercentage}%</div>
-                                </div>
-                            </div>
-                            {/* Show section scores from submission if available */}
-                            {submission?.section_scores && Object.keys(submission.section_scores).length > 0 && (
-                                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))', gap: '0.6rem' }}>
-                                    {Object.entries(submission.section_scores).map(([sec, data]) => {
-                                        const def = SECTION_DEFS[sec]
-                                        const pct = Math.round(data?.score || 0)
-                                        const scoreColor = pct >= 70 ? '#10b981' : pct >= 50 ? '#f59e0b' : '#ef4444'
-                                        return (
-                                            <div key={sec} style={{ padding: '0.9rem 1rem', background: 'var(--bg-tertiary)', borderRadius: 12, border: '1px solid var(--border-color)', textAlign: 'center' }}>
-                                                <div style={{ fontSize: '1.5rem', marginBottom: 3 }}>{def?.icon || '📊'}</div>
-                                                <div style={{ fontSize: '1.4rem', fontWeight: 800, color: scoreColor, lineHeight: 1 }}>{pct}%</div>
-                                                <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: 3, textTransform: 'capitalize' }}>{def?.label || sec}</div>
-                                                <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginTop: 2 }}>{data?.correct || 0}/{data?.total || 0} correct</div>
-                                                <div style={{ marginTop: 6, height: 4, background: 'rgba(255,255,255,0.08)', borderRadius: 2, overflow: 'hidden' }}>
-                                                    <div style={{ height: '100%', width: `${pct}%`, background: scoreColor, borderRadius: 2, transition: 'width 0.8s ease' }} />
-                                                </div>
-                                            </div>
-                                        )
-                                    })}
-                                </div>
-                            )}
-                        </div>
+                        <div style={{ textAlign: 'center', padding: '3rem', color: '#a855f7', fontWeight: 700 }}>No report data available.</div>
                     ) : (
                         <>
-                            {/* Company & Test info */}
-                            <div style={{ marginBottom: '1.5rem', padding: '1rem', background: 'var(--bg-tertiary)', borderRadius: '0.5rem', border: '1px solid var(--border-color)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '1rem' }}>
-                                <div>
-                                    <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Company</span>
-                                    <div style={{ fontWeight: 600, fontSize: '1rem' }}>{attempt?.company_name || 'N/A'}</div>
-                                </div>
-                                <div>
-                                    <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Difficulty</span>
-                                    <div style={{ fontWeight: 500 }}>{attempt?.difficulty || 'N/A'}</div>
-                                </div>
-                                <div style={{ textAlign: 'right' }}>
-                                    <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Completed</span>
-                                    <div style={{ fontWeight: 500 }}>{attempt?.completed_at ? new Date(attempt.completed_at).toLocaleString() : 'N/A'}</div>
+                            {/* HERO CARD */}
+                            {(() => {
+                                const totalCorrectH = sections.reduce((s, sec) => s + (sectionScores[sec]?.correct || 0), 0)
+                                const totalQsH = sections.reduce((s, sec) => s + (sectionScores[sec]?.total || 0), 0)
+                                const pctH = Math.round(overallScore)
+                                const testDate = attempt?.completed_at ? new Date(attempt.completed_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : ''
+                                const classAvg = attempt?.class_average ?? '—'
+                                const rank = attempt?.rank ?? '—'
+                                const totalP = attempt?.total_participants ?? '—'
+                                const percentile = attempt?.percentile ?? '—'
+                                const sectionLabels = sections.map(s => SECTION_DEFS[s]?.label || s).join(', ')
+                                const truncSections = sectionLabels.length > 28 ? sectionLabels.slice(0, 28) + '...' : sectionLabels
+                                return (
+                                    <div style={{ background: 'linear-gradient(135deg, #170032 0%, #5b21b6 50%, #7c3aed 100%)', borderRadius: '18px', padding: '28px 32px 24px', margin: '20px 0 0', color: 'white' }}>
+                                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '24px' }}>
+                                            <div>
+                                                <h2 style={{ margin: 0, fontSize: '1.4rem', fontWeight: 900, textTransform: 'uppercase', letterSpacing: '1px' }}>{attempt?.title || 'ROUND TEST'}</h2>
+                                                <div style={{ fontSize: '0.85rem', opacity: 0.85, fontWeight: 500, marginTop: 6 }}>
+                                                    {testDate}{attempt?.difficulty ? ` · ${attempt.difficulty}` : ''}{attempt?.duration_minutes ? ` · ${attempt.duration_minutes} min` : ''}
+                                                </div>
+                                            </div>
+                                            <div style={{ background: 'rgba(255,255,255,0.18)', backdropFilter: 'blur(6px)', borderRadius: '24px', padding: '8px 20px', fontWeight: 800, fontSize: '0.8rem', textTransform: 'uppercase', letterSpacing: '0.5px', border: '1px solid rgba(255,255,255,0.25)' }}>
+                                                {attempt?.company_name || 'Round Test'}
+                                            </div>
+                                        </div>
+                                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', marginBottom: '20px' }}>
+                                            <div style={{ width: 150, height: 150, position: 'relative' }}>
+                                                <svg viewBox="0 0 36 36" style={{ width: '100%', height: '100%', transform: 'rotate(-90deg)' }}>
+                                                    <circle cx="18" cy="18" r="15.9" fill="none" stroke="rgba(255,255,255,0.2)" strokeWidth="3" />
+                                                    <circle cx="18" cy="18" r="15.9" fill="none" stroke="white" strokeWidth="3" strokeDasharray={`${pctH}, 100`} strokeLinecap="round" style={{ transition: 'stroke-dasharray 1.5s ease' }} />
+                                                </svg>
+                                                <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column' }}>
+                                                    <div style={{ fontSize: '2.6rem', fontWeight: 900, lineHeight: 1 }}>{pctH}</div>
+                                                    <div style={{ width: 30, height: 2, background: 'rgba(255,255,255,0.5)', margin: '4px 0' }}></div>
+                                                    <div style={{ fontSize: '1.1rem', fontWeight: 700, opacity: 0.85 }}>100</div>
+                                                </div>
+                                            </div>
+                                            <div style={{ fontSize: '0.95rem', fontWeight: 600, opacity: 0.85, marginTop: 8 }}>Class average : {classAvg}</div>
+                                        </div>
+                                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '14px' }}>
+                                            <div style={{ background: 'rgba(255,255,255,0.12)', backdropFilter: 'blur(6px)', borderRadius: '14px', padding: '16px 18px', border: '1px solid rgba(255,255,255,0.12)' }}>
+                                                <div style={{ fontSize: '0.8rem', fontWeight: 700, opacity: 0.85, marginBottom: 6 }}>🏆 Rank</div>
+                                                <div style={{ fontSize: '1.8rem', fontWeight: 900, lineHeight: 1 }}>{rank}<span style={{ fontSize: '1rem', fontWeight: 600, opacity: 0.7 }}>/{totalP}</span></div>
+                                                <div style={{ fontSize: '0.78rem', fontWeight: 500, opacity: 0.75, marginTop: 4 }}>{percentile} percentile</div>
+                                            </div>
+                                            <div style={{ background: 'rgba(255,255,255,0.12)', backdropFilter: 'blur(6px)', borderRadius: '14px', padding: '16px 18px', border: '1px solid rgba(255,255,255,0.12)' }}>
+                                                <div style={{ fontSize: '0.8rem', fontWeight: 700, opacity: 0.85, marginBottom: 6 }}>📄 Questions</div>
+                                                <div style={{ fontSize: '1.8rem', fontWeight: 900, lineHeight: 1 }}>{totalCorrectH}<span style={{ fontSize: '1rem', fontWeight: 600, opacity: 0.7 }}>/{totalQsH}</span></div>
+                                                <div style={{ fontSize: '0.78rem', fontWeight: 500, opacity: 0.75, marginTop: 4 }}>Correct answers</div>
+                                            </div>
+                                            <div style={{ background: 'rgba(255,255,255,0.12)', backdropFilter: 'blur(6px)', borderRadius: '14px', padding: '16px 18px', border: '1px solid rgba(255,255,255,0.12)' }}>
+                                                <div style={{ fontSize: '0.8rem', fontWeight: 700, opacity: 0.85, marginBottom: 6 }}>📊 Sections</div>
+                                                <div style={{ fontSize: '1.8rem', fontWeight: 900, lineHeight: 1 }}>{sections.length}</div>
+                                                <div style={{ fontSize: '0.78rem', fontWeight: 500, opacity: 0.75, marginTop: 4 }}>{truncSections}</div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                )
+                            })()}
+
+                            {/* Tabs */}
+                            <div style={{ display: 'flex', justifyContent: 'center', margin: '20px 0' }}>
+                                <div style={{ background: '#1e293b', border: '1px solid #374151', borderRadius: '30px', display: 'flex', padding: '4px', boxShadow: '0 4px 6px rgba(0,0,0,0.2)', overflow: 'hidden' }}>
+                                    {reportTabs.map(tab => (
+                                        <button key={tab.id} onClick={() => { setActiveReportTab(tab.id); if (tab.id !== 'section') setSelectedSection(null) }}
+                                            style={{
+                                                padding: '10px 20px', border: 'none', cursor: 'pointer',
+                                                background: activeReportTab === tab.id ? 'linear-gradient(135deg, #5b21b6, #a855f7)' : 'transparent',
+                                                color: activeReportTab === tab.id ? 'white' : '#9ca3af',
+                                                fontSize: '0.85rem', fontWeight: 800,
+                                                display: 'flex', alignItems: 'center', gap: '8px',
+                                                borderRadius: '30px',
+                                                boxShadow: activeReportTab === tab.id ? '0 4px 12px rgba(124,58,237,0.3)' : 'none',
+                                                transition: 'all 0.2s', textTransform: 'uppercase'
+                                            }}>
+                                            {tab.icon} {tab.label}
+                                        </button>
+                                    ))}
                                 </div>
                             </div>
 
-                            {/* Score Cards */}
-                            <div style={{ display: 'flex', gap: '1rem', marginBottom: '1.5rem', flexWrap: 'wrap', justifyContent: 'center' }}>
-                                <div style={{ padding: '1.25rem 2rem', background: passed ? 'rgba(16,185,129,0.1)' : 'rgba(239,68,68,0.1)', borderRadius: '16px', border: `2px solid ${passed ? 'rgba(16,185,129,0.3)' : 'rgba(239,68,68,0.3)'}`, textAlign: 'center', minWidth: 150 }}>
-                                    <div style={{ fontSize: '3rem', fontWeight: 900, color: passed ? '#10b981' : '#ef4444', lineHeight: 1 }}>{Math.round(overallScore)}%</div>
-                                    <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: 6, textTransform: 'uppercase', letterSpacing: '1.5px', fontWeight: 600 }}>Overall Score</div>
-                                </div>
-                                <div style={{ padding: '1.25rem 2rem', background: passed ? 'rgba(34,197,94,0.08)' : 'rgba(239,68,68,0.08)', borderRadius: '16px', border: `1px solid ${passed ? 'rgba(34,197,94,0.25)' : 'rgba(239,68,68,0.25)'}`, textAlign: 'center', minWidth: 150 }}>
-                                    <div style={{ fontSize: '1.5rem', fontWeight: 800, color: passed ? '#4ade80' : '#f87171', lineHeight: 1 }}>{passed ? '✅ PASSED' : '❌ FAILED'}</div>
-                                    <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: 6, textTransform: 'uppercase', letterSpacing: '1.5px', fontWeight: 600 }}>Pass mark: {passPercentage}%</div>
-                                </div>
-                            </div>
+                            {/* TAB: Overview */}
+                            {activeReportTab === 'overview' && sections.length > 0 && (() => {
+                                const totalCorrect = sections.reduce((s, sec) => s + (sectionScores[sec]?.correct || 0), 0)
+                                const totalQs = sections.reduce((s, sec) => s + (sectionScores[sec]?.total || 0), 0)
+                                const pct = Math.round(overallScore)
+                                const grade = pct >= 90 ? 'A+' : pct >= 80 ? 'A' : pct >= 70 ? 'B+' : pct >= 60 ? 'B' : 'C'
+                                return (
+                                    <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: '20px', alignItems: 'start' }}>
+                                        <div style={{ background: '#1e293b', borderRadius: '16px', border: '1px solid #374151', padding: '24px', boxShadow: '0 4px 12px rgba(0,0,0,0.15)' }}>
+                                            <h3 style={{ margin: '0 0 20px', fontSize: '1.05rem', fontWeight: 800, color: '#a855f7', textTransform: 'uppercase', display: 'flex', alignItems: 'center', gap: 10 }}><BarChart2 size={18} color="#a855f7" /> Overall Performance</h3>
+                                            <div style={{ display: 'flex', gap: '20px', alignItems: 'center', marginBottom: '24px' }}>
+                                                <div style={{ background: 'linear-gradient(135deg, #374151, #1f2937)', borderRadius: '16px', padding: '24px 20px', flex: 1, border: '1px solid #4b5563' }}>
+                                                    <div style={{ fontSize: '3.6rem', fontWeight: 900, color: '#a855f7', lineHeight: 1 }}>{pct}%</div>
+                                                    <div style={{ fontSize: '1.1rem', fontWeight: 800, color: '#a855f7', marginTop: '8px' }}>Grade: {grade}</div>
+                                                    <div style={{ fontSize: '0.85rem', color: '#d1d5db', fontWeight: 600, marginTop: 4 }}>{totalCorrect} of {totalQs} correct</div>
+                                                </div>
+                                                <div style={{ width: '130px', height: '130px', position: 'relative', flexShrink: 0 }}>
+                                                    <svg viewBox="0 0 36 36" style={{ width: '100%', height: '100%', transform: 'rotate(-90deg)' }}>
+                                                        <circle cx="18" cy="18" r="15.9" fill="none" stroke="#374151" strokeWidth="3.5" />
+                                                        <circle cx="18" cy="18" r="15.9" fill="none" stroke="#7c3aed" strokeWidth="3.5" strokeDasharray={`${pct}, 100`} strokeLinecap="round" style={{ transition: 'stroke-dasharray 1.2s ease' }} />
+                                                    </svg>
+                                                    <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column' }}>
+                                                        <div style={{ fontSize: '1.6rem', fontWeight: 900, color: '#7c3aed' }}>{totalCorrect}</div>
+                                                        <div style={{ fontSize: '0.6rem', fontWeight: 700, color: '#9ca3af', textTransform: 'uppercase' }}>Correct</div>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                            <h4 style={{ margin: '0 0 14px', fontSize: '0.95rem', fontWeight: 800, color: '#a855f7' }}>Performance Breakdown</h4>
+                                            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                                                {[
+                                                    { label: 'Proficient (≥80%)', color: '#10b981', count: sections.filter(s => (sectionScores[s]?.score || 0) >= 80).length },
+                                                    { label: 'Above Avg (60-79%)', color: '#a855f7', count: sections.filter(s => { const sc = sectionScores[s]?.score || 0; return sc >= 60 && sc < 80 }).length },
+                                                    { label: 'Needs Work (<60%)', color: '#ef4444', count: sections.filter(s => (sectionScores[s]?.score || 0) < 60).length },
+                                                ].map((item, i) => (
+                                                    <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px', borderRadius: 10, background: '#374151' }}>
+                                                        <div style={{ background: item.color, borderRadius: '50%', width: 12, height: 12, flexShrink: 0 }}></div>
+                                                        <span style={{ flex: 1, fontWeight: 700, fontSize: '0.85rem', color: '#e5e7eb' }}>{item.label}</span>
+                                                        <span style={{ fontWeight: 800, fontSize: '0.9rem', color: item.color }}>{item.count}/{sections.length}</span>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        </div>
+                                        <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                                            <div style={{ background: '#1e293b', borderRadius: '16px', border: '1px solid #374151', padding: '24px', boxShadow: '0 4px 12px rgba(0,0,0,0.15)' }}>
+                                                <h3 style={{ margin: '0 0 20px', fontSize: '1.05rem', fontWeight: 800, color: '#a855f7', textTransform: 'uppercase', display: 'flex', alignItems: 'center', gap: 10 }}><Layers size={18} color="#a855f7" /> Section Scores</h3>
+                                                <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                                                    {sections.map(sec => {
+                                                        const def = SECTION_DEFS[sec]; const ss = sectionScores[sec] || {}; const secPct = Math.round(ss.score || 0)
+                                                        const barColor = secPct >= 80 ? '#10b981' : secPct >= 60 ? '#a855f7' : '#ef4444'
+                                                        return (
+                                                            <div key={sec} onClick={() => { setActiveReportTab('section'); setSelectedSection(sec) }} style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer', padding: '4px 0' }}>
+                                                                <span style={{ width: 26, fontSize: '1rem', textAlign: 'center', flexShrink: 0 }}>{def?.icon || '📊'}</span>
+                                                                <span style={{ width: 85, fontSize: '0.8rem', fontWeight: 700, color: '#d1d5db', flexShrink: 0 }}>{def?.label || sec}</span>
+                                                                <div style={{ flex: 1, height: 18, background: '#374151', borderRadius: 9, overflow: 'hidden' }}>
+                                                                    <div style={{ height: '100%', width: `${secPct}%`, background: `linear-gradient(90deg, ${barColor}, ${barColor}bb)`, borderRadius: 9, transition: 'width 1s ease', display: 'flex', alignItems: 'center', justifyContent: 'flex-end', paddingRight: 8, minWidth: secPct > 12 ? 'auto' : 0 }}>
+                                                                        {secPct > 12 && <span style={{ fontSize: '0.62rem', fontWeight: 800, color: 'white' }}>{secPct}%</span>}
+                                                                    </div>
+                                                                </div>
+                                                                {secPct <= 12 && <span style={{ fontSize: '0.75rem', fontWeight: 800, color: barColor }}>{secPct}%</span>}
+                                                                <span style={{ fontSize: '0.7rem', fontWeight: 600, color: '#9ca3af', flexShrink: 0, width: 40, textAlign: 'right' }}>{ss.correct || 0}/{ss.total || 0}</span>
+                                                            </div>
+                                                        )
+                                                    })}
+                                                </div>
+                                            </div>
+                                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                                                <div style={{ background: '#1e293b', borderRadius: '14px', border: '1px solid #374151', padding: '18px', textAlign: 'center', color: 'white' }}>
+                                                    <div style={{ fontSize: '2rem', fontWeight: 900, color: '#a855f7' }}>{sections.length}</div>
+                                                    <div style={{ fontSize: '0.75rem', fontWeight: 700, color: '#9ca3af', textTransform: 'uppercase' }}>Sections</div>
+                                                </div>
+                                                <div style={{ background: '#1e293b', borderRadius: '14px', border: '1px solid #374151', padding: '18px', textAlign: 'center', color: 'white' }}>
+                                                    <div style={{ fontSize: '1.5rem', fontWeight: 900 }}>{passed ? '✓ PASS' : '✗ FAIL'}</div>
+                                                    <div style={{ fontSize: '0.75rem', fontWeight: 700, color: '#9ca3af', textTransform: 'uppercase' }}>Cutoff: {passPercentage}%</div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                )
+                            })()}
 
-                            {/* Section-wise Performance */}
-                            {sections.length > 0 && (
-                                <>
-                                    <h3 style={{ margin: '0 0 0.75rem', fontSize: '1rem', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                        <BarChart2 size={17} color="#8b5cf6" /> Section-wise Performance
+                            {/* TAB: Section Analysis */}
+                            {activeReportTab === 'section' && sections.length > 0 && (
+                                <div style={{ background: '#1e293b', borderRadius: '16px', border: '1px solid #374151', padding: '24px', boxShadow: '0 4px 12px rgba(0,0,0,0.15)' }}>
+                                    <h3 style={{ margin: '0 0 20px', fontSize: '1.05rem', fontWeight: 800, color: '#a855f7', textTransform: 'uppercase', display: 'flex', alignItems: 'center', gap: '10px' }}>
+                                        <Layers size={18} color="#a855f7" /> Choose a Section to Review
                                     </h3>
-                                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))', gap: '0.6rem', marginBottom: '1.5rem' }}>
+                                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: '16px', marginBottom: '24px' }}>
                                         {sections.map(sec => {
                                             const def = SECTION_DEFS[sec]
                                             const ss = sectionScores[sec] || {}
                                             const pct = Math.round(ss.score || 0)
-                                            const scoreColor = pct >= 70 ? '#10b981' : pct >= 50 ? '#f59e0b' : '#ef4444'
+                                            const isActive = selectedSection === sec
                                             return (
-                                                <div key={sec} style={{ padding: '0.9rem 1rem', background: 'var(--bg-tertiary)', borderRadius: 12, border: '1px solid var(--border-color)', textAlign: 'center' }}>
-                                                    <div style={{ fontSize: '1.5rem', marginBottom: 3 }}>{def?.icon || '📊'}</div>
-                                                    <div style={{ fontSize: '1.4rem', fontWeight: 800, color: scoreColor, lineHeight: 1 }}>{pct}%</div>
-                                                    <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: 3, textTransform: 'capitalize' }}>{def?.label || sec}</div>
-                                                    <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginTop: 2 }}>{ss.correct || 0}/{ss.total || 0} correct</div>
-                                                    <div style={{ marginTop: 6, height: 4, background: 'rgba(255,255,255,0.08)', borderRadius: 2, overflow: 'hidden' }}>
-                                                        <div style={{ height: '100%', width: `${pct}%`, background: scoreColor, borderRadius: 2, transition: 'width 0.8s ease' }} />
+                                                <button key={sec} onClick={() => setSelectedSection(isActive ? null : sec)}
+                                                    style={{
+                                                        padding: '16px', border: isActive ? '2px solid #7c3aed' : '1px solid #374151',
+                                                        borderRadius: '16px', cursor: 'pointer', textAlign: 'left',
+                                                        background: isActive ? 'rgba(124,58,237,0.15)' : '#111827',
+                                                        transition: 'all 0.2s', display: 'flex', alignItems: 'center', gap: '12px',
+                                                        boxShadow: isActive ? '0 4px 12px rgba(124,58,237,0.2)' : '0 2px 4px rgba(0,0,0,0.1)'
+                                                    }}>
+                                                    <span style={{ fontSize: '1.8rem' }}>{def?.icon || '📊'}</span>
+                                                    <div style={{ flex: 1 }}>
+                                                        <div style={{ fontSize: '1rem', fontWeight: 800, color: isActive ? '#a855f7' : '#e5e7eb' }}>{def?.label || sec}</div>
+                                                        <div style={{ fontSize: '0.8rem', fontWeight: 600, color: '#9ca3af', marginTop: 4 }}>{ss.correct || 0} Correct · {pct}%</div>
                                                     </div>
-                                                </div>
+                                                </button>
                                             )
                                         })}
                                     </div>
-                                </>
-                            )}
-
-                            {/* Detailed Answers */}
-                            {sections.map(sec => {
-                                const secAnswers = answersBySection[sec] || []
-                                if (secAnswers.length === 0) return null
-                                const def = SECTION_DEFS[sec]
-                                return (
-                                    <div key={sec} style={{ marginBottom: '1.5rem' }}>
-                                        <h4 style={{ margin: '0 0 0.6rem', fontSize: '0.9rem', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '6px', color: def?.color || 'var(--text-primary)' }}>
-                                            {def?.icon} {def?.label || sec}
-                                        </h4>
-                                        {secAnswers.map((ans, idx) => (
-                                            <div key={ans.id || idx} style={{ marginBottom: '0.6rem', padding: '0.85rem 1rem', background: 'var(--bg-tertiary)', border: `1px solid ${ans.is_correct ? 'rgba(16,185,129,0.3)' : 'rgba(239,68,68,0.3)'}`, borderRadius: '10px' }}>
-                                                <div style={{ display: 'flex', alignItems: 'flex-start', gap: '8px', marginBottom: '0.4rem' }}>
-                                                    <span style={{ fontSize: '0.85rem', flexShrink: 0 }}>{ans.is_correct ? '✅' : '❌'}</span>
-                                                    <div style={{ flex: 1 }}>
-                                                        <div style={{ fontSize: '0.85rem', fontWeight: 600, lineHeight: 1.5 }}>Q{idx + 1}: {ans.question}</div>
-                                                    </div>
-                                                    <span style={{
-                                                        fontSize: '0.7rem', padding: '2px 8px', borderRadius: '6px', fontWeight: 700, flexShrink: 0,
-                                                        background: ans.is_correct ? 'rgba(16,185,129,0.1)' : 'rgba(239,68,68,0.1)',
-                                                        color: ans.is_correct ? '#10b981' : '#ef4444'
-                                                    }}>{Math.round(ans.score || 0)}%</span>
+                                    {selectedSection && (() => {
+                                        const secAnswers = answersBySection[selectedSection] || []
+                                        const def = SECTION_DEFS[selectedSection]
+                                        if (secAnswers.length === 0) return (
+                                            <div style={{ textAlign: 'center', padding: '3rem', color: '#a855f7', background: '#111827', borderRadius: '16px', fontWeight: 700 }}>No answers recorded for this section.</div>
+                                        )
+                                        return (
+                                            <div style={{ marginTop: '24px', paddingTop: '24px', borderTop: '2px dashed #4b5563' }}>
+                                                <h4 style={{ margin: '0 0 20px', fontSize: '1.05rem', fontWeight: 800, display: 'flex', alignItems: 'center', gap: '12px', color: '#a855f7' }}>
+                                                    {def?.icon} {def?.label || selectedSection} — Question Review
+                                                </h4>
+                                                <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                                                    {secAnswers.map((ans, idx) => {
+                                                        const isCode = ans.question_type === 'code' || ['coding', 'debug', 'pseudocode'].includes(ans.section)
+                                                        const isSql = ans.question_type === 'sql' || ans.section === 'sql'
+                                                        const submittedCode = ans.student_answer || ''
+                                                        const execResult = ans.execution_result
+                                                        return (
+                                                            <div key={ans.id || idx} style={{ padding: '16px 20px', background: ans.is_correct ? 'rgba(16,185,129,0.05)' : 'rgba(239,68,68,0.05)', border: `1px solid ${ans.is_correct ? 'rgba(16,185,129,0.4)' : 'rgba(239,68,68,0.4)'}`, borderRadius: '12px' }}>
+                                                                <div style={{ display: 'flex', alignItems: 'flex-start', gap: '12px', marginBottom: '8px' }}>
+                                                                    <span style={{ fontSize: '1.1rem', flexShrink: 0, marginTop: '2px' }}>{ans.is_correct ? '✅' : '❌'}</span>
+                                                                    <div style={{ flex: 1 }}>
+                                                                        <div style={{ fontSize: '0.95rem', fontWeight: 700, color: '#f3f4f6', lineHeight: 1.5 }}>Q{idx + 1}: {ans.question}</div>
+                                                                    </div>
+                                                                    <span style={{ fontSize: '0.85rem', padding: '4px 12px', borderRadius: '20px', fontWeight: 800, flexShrink: 0, background: ans.is_correct ? 'rgba(16,185,129,0.15)' : 'rgba(239,68,68,0.15)', color: ans.is_correct ? '#34d399' : '#f87171' }}>{Math.round(ans.score || 0)}% Score</span>
+                                                                </div>
+                                                                {ans.question_type === 'mcq' && (
+                                                                    <div style={{ marginLeft: '36px', fontSize: '0.9rem', display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '12px' }}>
+                                                                        <div style={{ color: ans.is_correct ? '#34d399' : '#f87171', background: ans.is_correct ? 'rgba(16,185,129,0.1)' : 'rgba(239,68,68,0.1)', padding: '10px 14px', borderRadius: '8px', fontWeight: 600 }}>
+                                                                            Your answer: <span style={{ fontWeight: 800, color: '#e5e7eb' }}>{typeof ans.student_answer === 'object' ? JSON.stringify(ans.student_answer) : (ans.student_answer || 'Not answered')}</span>
+                                                                        </div>
+                                                                        {!ans.is_correct && (
+                                                                            <div style={{ color: '#34d399', background: 'rgba(16,185,129,0.1)', padding: '10px 14px', borderRadius: '8px', fontWeight: 600 }}>
+                                                                                Correct answer: <span style={{ fontWeight: 800, color: '#e5e7eb' }}>{typeof ans.correct_answer === 'object' ? JSON.stringify(ans.correct_answer) : ans.correct_answer}</span>
+                                                                            </div>
+                                                                        )}
+                                                                    </div>
+                                                                )}
+                                                                {(isCode || isSql) && (
+                                                                    <div style={{ marginLeft: '36px', marginTop: '14px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                                                                        <div style={{ fontSize: '0.8rem', fontWeight: 700, color: isSql ? '#14b8a6' : '#6366f1', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                                                                            {isSql ? '🗄️' : '⌨️'} Your Submission
+                                                                        </div>
+                                                                        <pre style={{ margin: 0, padding: '14px 16px', background: '#0d1117', border: `1px solid ${isSql ? 'rgba(20,184,166,0.3)' : 'rgba(99,102,241,0.3)'}`, borderRadius: '10px', fontSize: '0.78rem', color: '#e2e8f0', fontFamily: 'ui-monospace,"Cascadia Code",Consolas,monospace', lineHeight: 1.6, overflowX: 'auto', whiteSpace: 'pre-wrap', wordBreak: 'break-word', maxHeight: '220px', overflowY: 'auto' }}>
+                                                                            {submittedCode.trim() || <span style={{ color: '#6b7280', fontStyle: 'italic' }}>No code submitted</span>}
+                                                                        </pre>
+                                                                        {execResult && (
+                                                                            <div style={{ background: '#0f172a', border: '1px solid #334155', borderRadius: '10px', padding: '12px 14px' }}>
+                                                                                <div style={{ fontSize: '0.78rem', fontWeight: 700, color: '#94a3b8', marginBottom: '8px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Execution Result</div>
+                                                                                {typeof execResult === 'object' && execResult.test_results ? (
+                                                                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                                                                                        {execResult.test_results.slice(0, 6).map((tc, ti) => (
+                                                                                            <div key={ti} style={{ display: 'flex', alignItems: 'flex-start', gap: '8px', padding: '6px 10px', background: tc.passed ? 'rgba(16,185,129,0.07)' : 'rgba(239,68,68,0.07)', borderRadius: '8px', border: `1px solid ${tc.passed ? 'rgba(16,185,129,0.2)' : 'rgba(239,68,68,0.2)'}`, fontSize: '0.75rem' }}>
+                                                                                                <span style={{ flexShrink: 0 }}>{tc.passed ? '✅' : '❌'}</span>
+                                                                                                <span style={{ color: '#94a3b8' }}>Test {ti + 1}:</span>
+                                                                                                {tc.input !== undefined && <span style={{ color: '#64748b' }}>in: <code style={{ color: '#67e8f9' }}>{String(tc.input).slice(0, 40)}</code></span>}
+                                                                                                <span style={{ color: '#64748b' }}>exp: <code style={{ color: '#4ade80' }}>{String(tc.expected || tc.expected_output || '').slice(0, 40)}</code></span>
+                                                                                                {!tc.passed && <span style={{ color: '#64748b' }}>got: <code style={{ color: '#f87171' }}>{String(tc.actual || tc.output || '').slice(0, 40)}</code></span>}
+                                                                                            </div>
+                                                                                        ))}
+                                                                                        {execResult.test_results.length > 6 && <div style={{ fontSize: '0.72rem', color: '#6b7280', textAlign: 'center' }}>+{execResult.test_results.length - 6} more test cases</div>}
+                                                                                    </div>
+                                                                                ) : (
+                                                                                    <pre style={{ margin: 0, fontSize: '0.75rem', color: '#94a3b8', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{typeof execResult === 'string' ? execResult : JSON.stringify(execResult, null, 2)}</pre>
+                                                                                )}
+                                                                            </div>
+                                                                        )}
+                                                                        {isCode && ans.expected_output && !ans.is_correct && (
+                                                                            <div style={{ background: 'rgba(16,185,129,0.05)', border: '1px solid rgba(16,185,129,0.25)', borderRadius: '10px', padding: '10px 14px' }}>
+                                                                                <div style={{ fontSize: '0.75rem', fontWeight: 700, color: '#34d399', marginBottom: '6px' }}>Expected Output</div>
+                                                                                <pre style={{ margin: 0, fontSize: '0.78rem', color: '#a7f3d0', fontFamily: 'ui-monospace,monospace', whiteSpace: 'pre-wrap' }}>{ans.expected_output}</pre>
+                                                                            </div>
+                                                                        )}
+                                                                    </div>
+                                                                )}
+                                                            </div>
+                                                        )
+                                                    })}
                                                 </div>
-                                                {ans.question_type === 'mcq' && (
-                                                    <div style={{ marginLeft: '26px', fontSize: '0.8rem' }}>
-                                                        <div style={{ color: ans.is_correct ? '#4ade80' : '#f87171' }}>
-                                                            Your answer: <strong>{typeof ans.student_answer === 'object' ? JSON.stringify(ans.student_answer) : (ans.student_answer || 'Not answered')}</strong>
-                                                        </div>
-                                                        {!ans.is_correct && (
-                                                            <div style={{ color: '#4ade80', marginTop: '2px' }}>
-                                                                Correct answer: <strong>{typeof ans.correct_answer === 'object' ? JSON.stringify(ans.correct_answer) : ans.correct_answer}</strong>
-                                                            </div>
-                                                        )}
-                                                        {ans.explanation && (
-                                                            <div style={{ color: 'var(--text-muted)', marginTop: '4px', fontSize: '0.78rem', fontStyle: 'italic' }}>
-                                                                💡 {typeof ans.explanation === 'object' ? JSON.stringify(ans.explanation) : ans.explanation}
-                                                            </div>
-                                                        )}
-                                                    </div>
-                                                )}
-                                                {(ans.question_type === 'code' || ans.question_type === 'sql') && ans.execution_result && (
-                                                    <div style={{ marginLeft: '26px', fontSize: '0.78rem', marginTop: '4px' }}>
-                                                        {ans.execution_result.passedCases !== undefined && (
-                                                            <span style={{ color: ans.is_correct ? '#4ade80' : '#f59e0b' }}>
-                                                                Test cases: {ans.execution_result.passedCases}/{ans.execution_result.totalCases} passed
-                                                            </span>
-                                                        )}
-                                                        {ans.execution_result.output && (
-                                                            <div style={{ marginTop: '4px', padding: '6px 10px', background: '#0f172a', borderRadius: '6px', fontFamily: 'monospace', fontSize: '0.75rem', color: '#94a3b8', maxHeight: '100px', overflow: 'auto' }}>
-                                                                {ans.execution_result.output}
-                                                            </div>
-                                                        )}
-                                                    </div>
-                                                )}
                                             </div>
-                                        ))}
-                                    </div>
-                                )
-                            })}
-
-                            {/* Proctoring Violations */}
-                            {attempt?.proctoring_violations && attempt.proctoring_violations.length > 0 && (
-                                <div style={{ padding: '1rem', background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.25)', borderRadius: 12, marginBottom: '1rem' }}>
-                                    <p style={{ margin: '0 0 6px', fontSize: '0.82rem', fontWeight: 700, color: '#fbbf24', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                        <AlertTriangle size={13} /> {attempt.proctoring_violations.length} Proctoring Violation{attempt.proctoring_violations.length > 1 ? 's' : ''} Recorded
-                                    </p>
-                                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
-                                        {attempt.proctoring_violations.map((v, i) => (
-                                            <span key={i} style={{ fontSize: '0.75rem', color: '#fbbf24', background: 'rgba(245,158,11,0.12)', padding: '2px 8px', borderRadius: 6 }}>
-                                                {typeof v === 'string' ? v : (v.type || v.message || JSON.stringify(v))}
-                                            </span>
-                                        ))}
-                                    </div>
+                                        )
+                                    })()}
                                 </div>
                             )}
+
+                            {/* TAB: Time Analysis */}
+                            {activeReportTab === 'time' && sections.length > 0 && (() => {
+                                const timeLimits = attempt?.section_time_limits || {}
+                                const timeSpent = {}
+                                sections.forEach(sec => { timeSpent[sec] = sectionScores[sec]?.time_spent || 0 })
+                                const totalTimeSecs = sections.reduce((s, sec) => s + (timeSpent[sec] || 0), 0)
+                                const totalAllocatedSecs = sections.reduce((s, sec) => s + ((timeLimits[sec] || 0) * 60), 0)
+                                const maxTime = Math.max(...sections.map(sec => Math.max(timeSpent[sec] || 0, (timeLimits[sec] || 0) * 60)), 1)
+                                return (
+                                    <div style={{ background: '#1e293b', borderRadius: '16px', border: '1px solid #374151', padding: '24px', boxShadow: '0 4px 12px rgba(0,0,0,0.15)' }}>
+                                        <h3 style={{ margin: '0 0 20px', fontSize: '1.05rem', fontWeight: 800, color: '#a855f7', textTransform: 'uppercase', display: 'flex', alignItems: 'center', gap: '10px' }}>
+                                            <Clock size={18} color="#a855f7" /> Time Allocation Analysis
+                                        </h3>
+                                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '12px', marginBottom: '24px' }}>
+                                            <div style={{ background: 'linear-gradient(135deg, #1f2937, #374151)', border: '1px solid #4b5563', borderRadius: '14px', padding: '16px', textAlign: 'center' }}>
+                                                <div style={{ fontSize: '1.5rem', fontWeight: 900, color: '#a855f7' }}>{fmtDur(totalTimeSecs)}</div>
+                                                <div style={{ fontSize: '0.75rem', fontWeight: 700, color: '#9ca3af', textTransform: 'uppercase', marginTop: 4 }}>Time Spent</div>
+                                            </div>
+                                            <div style={{ background: 'linear-gradient(135deg, #1f2937, #374151)', border: '1px solid #4b5563', borderRadius: '14px', padding: '16px', textAlign: 'center' }}>
+                                                <div style={{ fontSize: '1.5rem', fontWeight: 900, color: '#c084fc' }}>{totalAllocatedSecs > 0 ? fmtDur(totalAllocatedSecs) : '—'}</div>
+                                                <div style={{ fontSize: '0.75rem', fontWeight: 700, color: '#9ca3af', textTransform: 'uppercase', marginTop: 4 }}>Allocated</div>
+                                            </div>
+                                            <div style={{ background: 'linear-gradient(135deg, #1f2937, #374151)', border: '1px solid #4b5563', borderRadius: '14px', padding: '16px', textAlign: 'center' }}>
+                                                <div style={{ fontSize: '1.5rem', fontWeight: 900, color: totalAllocatedSecs > 0 && totalTimeSecs > totalAllocatedSecs ? '#ef4444' : '#10b981' }}>
+                                                    {totalAllocatedSecs > 0 ? `${Math.min(100, Math.round((totalTimeSecs / totalAllocatedSecs) * 100))}%` : '—'}
+                                                </div>
+                                                <div style={{ fontSize: '0.75rem', fontWeight: 700, color: '#9ca3af', textTransform: 'uppercase', marginTop: 4 }}>Utilization</div>
+                                            </div>
+                                        </div>
+                                        <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                                            {sections.map(sec => {
+                                                const def = SECTION_DEFS[sec]
+                                                const secSecs = timeSpent[sec] || 0
+                                                const allocatedSecs = (timeLimits[sec] || 0) * 60
+                                                const barPct = maxTime > 0 ? Math.round((secSecs / maxTime) * 100) : 0
+                                                const allocBarPct = allocatedSecs > 0 && maxTime > 0 ? Math.round((allocatedSecs / maxTime) * 100) : 0
+                                                const utilizationPct = allocatedSecs > 0 ? Math.min(100, Math.round((secSecs / allocatedSecs) * 100)) : null
+                                                const overTime = utilizationPct > 100
+                                                return (
+                                                    <div key={sec} style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                                                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                                            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                                                                <span style={{ fontSize: '1.2rem' }}>{def?.icon || '📊'}</span>
+                                                                <span style={{ fontSize: '0.95rem', fontWeight: 800, color: '#e5e7eb' }}>{def?.label || sec}</span>
+                                                            </div>
+                                                            <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+                                                                {allocatedSecs > 0 && (
+                                                                    <span style={{ fontSize: '0.8rem', fontWeight: 800, color: overTime ? '#f87171' : '#34d399', background: overTime ? 'rgba(239,68,68,0.1)' : 'rgba(16,185,129,0.1)', padding: '2px 10px', borderRadius: '12px' }}>
+                                                                        {utilizationPct}% Used
+                                                                    </span>
+                                                                )}
+                                                                <span style={{ fontSize: '0.9rem', fontWeight: 800, color: '#a855f7' }}>{fmtDur(secSecs)}</span>
+                                                                {allocatedSecs > 0 && <span style={{ fontSize: '0.75rem', color: '#9ca3af' }}>/ {fmtDur(allocatedSecs)}</span>}
+                                                            </div>
+                                                        </div>
+                                                        <div style={{ height: 14, background: '#374151', borderRadius: 7, position: 'relative', overflow: 'hidden' }}>
+                                                            {allocBarPct > 0 && (
+                                                                <div style={{ position: 'absolute', left: 0, top: 0, height: '100%', width: `${allocBarPct}%`, background: 'rgba(168,85,247,0.1)', borderRight: '2px solid #7c3aed' }} />
+                                                            )}
+                                                            <div style={{ position: 'relative', height: '100%', width: `${barPct}%`, background: overTime ? 'linear-gradient(90deg,#ef4444,#f87171)' : 'linear-gradient(90deg,#5b21b6,#a855f7)', borderRadius: 7, transition: 'width 1s ease-out' }} />
+                                                        </div>
+                                                    </div>
+                                                )
+                                            })}
+                                        </div>
+                                        <div style={{ marginTop: '20px', paddingTop: '16px', borderTop: '1px solid #374151', display: 'flex', gap: '20px', fontSize: '0.78rem', color: '#9ca3af', fontWeight: 600 }}>
+                                            <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}><span style={{ width: 12, height: 8, borderRadius: 3, background: 'linear-gradient(90deg,#5b21b6,#a855f7)', display: 'inline-block' }} /> Time Spent</span>
+                                            <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}><span style={{ width: 12, height: 8, borderRadius: 3, background: 'rgba(168,85,247,0.1)', border: '1px solid #7c3aed', display: 'inline-block' }} /> Allocated Time</span>
+                                        </div>
+                                    </div>
+                                )
+                            })()}
                         </>
                     )}
                 </div>
@@ -3624,7 +3834,7 @@ function GlobalTests({ user }) {
                             width: '80px',
                             height: '80px',
                             borderRadius: '50%',
-                            background: isPassed ? 'linear-gradient(135deg, #10b981, #06b6d4)' : 'linear-gradient(135deg, #ef4444, #f97316)',
+                            background: isPassed ? 'linear-gradient(135deg, #10b981, #06b6d4)' : 'linear-gradient(135deg, #ef4444, #3b82f6)',
                             display: 'flex',
                             alignItems: 'center',
                             justifyContent: 'center',
@@ -4508,7 +4718,7 @@ function AptitudeTests({ user }) {
                                     borderRadius: '10px',
                                     background: showResults.status === 'passed'
                                         ? 'linear-gradient(135deg, #10b981, #06b6d4)'
-                                        : 'linear-gradient(135deg, #ef4444, #f97316)',
+                                        : 'linear-gradient(135deg, #ef4444, #3b82f6)',
                                     display: 'flex',
                                     alignItems: 'center',
                                     justifyContent: 'center'

@@ -1,6 +1,6 @@
-import { useState, useEffect, useRef, useMemo } from 'react'
+﻿import { useState, useEffect, useRef, useMemo } from 'react'
 import { Routes, Route, useLocation } from 'react-router-dom'
-import { LayoutDashboard, Users, Trophy, Award, List, Search, Send, Activity, CheckCircle, Check, TrendingUp, Clock, Globe, FileCode, Plus, X, Code, ChevronRight, Upload, AlertTriangle, Zap, Target, Sparkles, Bot, Wand2, Eye, FileText, BarChart2, RefreshCw, Calendar, HelpCircle, Trash2, Save, Brain, XCircle, Shield, Download, ClipboardList, Settings, Database, Mail, MessageSquare, Github, ExternalLink, BarChart3, Video, Building2, Filter, ChevronDown, Hash, Percent, ArrowUpDown, Link2, Layers } from 'lucide-react'
+import { LayoutDashboard, Users, Trophy, Award, List, Search, Send, Activity, CheckCircle, Check, TrendingUp, Clock, Globe, FileCode, Plus, X, Code, ChevronRight, Upload, AlertTriangle, Zap, Target, Sparkles, Bot, Wand2, Eye, FileText, BarChart2, RefreshCw, Calendar, HelpCircle, Trash2, Save, Brain, XCircle, Shield, Download, ClipboardList, Settings, Database, Mail, MessageSquare, Github, ExternalLink, BarChart3, Video, Building2, Filter, ChevronDown, Hash, Percent, ArrowUpDown, Link2, Layers, Mic } from 'lucide-react'
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, BarChart, Bar, Legend } from 'recharts'
 import DashboardLayout from '../components/DashboardLayout'
 import { AIChatbot, AIFloatingButton } from '../components/AIChatbot'
@@ -26,6 +26,7 @@ import WebhookManager from '../components/WebhookManager'
 import { AdminCertificateManager } from '../components/CertificatePortal'
 import { CompanyTestManager } from '../components/CompanyFeatures'
 import CompanyRoundManager from '../components/CompanyRoundManager'
+import AdminCommTest from '../components/AdminCommTest'
 import { useAuth } from '../App'
 import { useI18n } from '../services/i18n.jsx'
 import axios from 'axios'
@@ -151,6 +152,10 @@ function AdminPortal() {
                 setTitle('MCQ Manager')
                 setSubtitle('Create and manage MCQ tests with AI evaluation')
                 break
+            case 'comm-test':
+                setTitle('Communication Test')
+                setSubtitle('Manage content, view student reports & analytics')
+                break
             default:
                 setTitle(t('dashboard'))
                 setSubtitle(t('system_administration'))
@@ -172,7 +177,8 @@ function AdminPortal() {
                 { path: '/admin/company-tests', label: 'Company Tests', icon: <Building2 size={20} /> },
                 { path: '/admin/company-round-tests', label: 'Round Tests', icon: <Target size={20} /> },
                 { path: '/admin/resource-links', label: 'Resource Links', icon: <Link2 size={20} /> },
-                { path: '/admin/mcq', label: 'MCQ Manager', icon: <Brain size={20} /> }
+                { path: '/admin/mcq', label: 'MCQ Manager', icon: <Brain size={20} /> },
+                { path: '/admin/comm-test', label: 'Comm Test', icon: <Mic size={20} /> }
             ]
         },
         {
@@ -251,6 +257,7 @@ function AdminPortal() {
                 <Route path="/company-round-tests" element={<CompanyRoundManager />} />
                 <Route path="/resource-links" element={<AdminResourceLinks />} />
                 <Route path="/mcq" element={<AdminMCQ />} />
+                <Route path="/comm-test" element={<AdminCommTest />} />
             </Routes>
         </DashboardLayout>
     )
@@ -548,7 +555,7 @@ function Dashboard() {
                             width: '48px',
                             height: '48px',
                             borderRadius: '12px',
-                            background: 'linear-gradient(135deg, #d97706, #f59e0b)',
+                            background: 'linear-gradient(135deg, #4f46e5, #f59e0b)',
                             display: 'flex',
                             alignItems: 'center',
                             justifyContent: 'center',
@@ -888,7 +895,7 @@ function Dashboard() {
                                     width: '32px',
                                     height: '32px',
                                     borderRadius: '8px',
-                                    background: i === 0 ? 'linear-gradient(135deg, #fbbf24, #f59e0b)' : i === 1 ? 'linear-gradient(135deg, #94a3b8, #64748b)' : i === 2 ? 'linear-gradient(135deg, #d97706, #b45309)' : 'var(--bg-secondary)',
+                                    background: i === 0 ? 'linear-gradient(135deg, #fbbf24, #f59e0b)' : i === 1 ? 'linear-gradient(135deg, #94a3b8, #64748b)' : i === 2 ? 'linear-gradient(135deg, #4f46e5, #3730a3)' : 'var(--bg-secondary)',
                                     display: 'flex',
                                     alignItems: 'center',
                                     justifyContent: 'center',
@@ -1029,7 +1036,7 @@ function StudentLeaderboard() {
     const getRankIcon = (rank) => {
         if (rank === 1) return <Trophy size={24} style={{ color: '#fbbf24' }} />
         if (rank === 2) return <Award size={24} style={{ color: '#94a3b8' }} />
-        if (rank === 3) return <Award size={24} style={{ color: '#b45309' }} />
+        if (rank === 3) return <Award size={24} style={{ color: '#3730a3' }} />
         return <span style={{ fontWeight: 600, color: 'var(--text-muted)' }}>#{rank}</span>
     }
 
@@ -1780,7 +1787,7 @@ function AllSubmissions() {
                     {activeTab === 'crt' && (
                         <button onClick={handleResetCRTSubmissions} disabled={resetting || filteredSubmissions.length === 0} style={{
                             padding: '0.5rem 0.75rem', background: 'rgba(234, 88, 12, 0.1)', border: '1px solid rgba(234, 88, 12, 0.3)',
-                            borderRadius: '8px', color: '#ea580c', cursor: resetting || filteredSubmissions.length === 0 ? 'not-allowed' : 'pointer', fontSize: '0.82rem', fontWeight: 600,
+                            borderRadius: '8px', color: '#2563eb', cursor: resetting || filteredSubmissions.length === 0 ? 'not-allowed' : 'pointer', fontSize: '0.82rem', fontWeight: 600,
                             display: 'flex', alignItems: 'center', gap: '5px', opacity: resetting || filteredSubmissions.length === 0 ? 0.5 : 1
                         }}>
                             <Trash2 size={14} /> {resetting ? 'Resetting...' : 'Reset Round Tests'}
@@ -2082,7 +2089,7 @@ function AdminCRTReportModal({ submission, reportData, loading, onClose }) {
         verbal: { label: 'Verbal', icon: '📝', color: '#06b6d4' },
         logical: { label: 'Logical', icon: '🧠', color: '#8b5cf6' },
         reasoning: { label: 'Reasoning', icon: '🔍', color: '#ec4899' },
-        technical_mcq: { label: 'Technical MCQ', icon: '💻', color: '#3b82f6' },
+        technical_mcq: { label: 'Technical MCQ', icon: '💻', color: '#a855f7' },
         pseudocode: { label: 'Pseudo Code', icon: '📋', color: '#10b981' },
         debug: { label: 'Debugging', icon: '🐛', color: '#ef4444' },
         coding: { label: 'Coding', icon: '⌨️', color: '#6366f1' },
@@ -2120,19 +2127,21 @@ function AdminCRTReportModal({ submission, reportData, loading, onClose }) {
     ]
 
     return (
-        <div className="modal-overlay" onClick={onClose} style={{ zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.6)' }}>
-            <div className="modal-content p-0" onClick={e => e.stopPropagation()} style={{ width: '95%', maxWidth: '900px', maxHeight: '90vh', overflowY: 'auto', background: '#111827', borderRadius: '16px', overflow: 'hidden', boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.7)', display: 'flex', flexDirection: 'column' }}>
+        <div className="modal-overlay" onClick={onClose} style={{ zIndex: 1000, display: 'flex', alignItems: 'flex-start', justifyContent: 'center', background: 'rgba(0,0,0,0.7)', padding: '20px 16px', overflowY: 'auto' }}>
+            <div className="modal-content p-0" onClick={e => e.stopPropagation()} style={{ width: '100%', maxWidth: '920px', background: '#111827', borderRadius: '16px', boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.7)', display: 'flex', flexDirection: 'column', margin: 'auto' }}>
                 
                 {/* Header (Solid Orange) */}
-                <div style={{ background: '#1f2937', color: 'white', padding: '16px 24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0, borderBottom: '2px solid #ea580c' }}>
+                <div style={{ background: '#1f2937', color: 'white', padding: '16px 24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0, borderBottom: '2px solid #7c3aed' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                         <h2 style={{ margin: 0, fontSize: '1.2rem', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '1px' }}>
                             STUDENT CRT REPORT
                         </h2>
                     </div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.85rem', fontWeight: 600, opacity: 0.9 }}>
-                        {submission?.studentName || 'Student'} | {attempt?.company_name || 'Round Test'} | ID: {attempt?.student_id || submission?.studentId}
-                        <button onClick={onClose} style={{ background: 'transparent', border: 'none', color: 'white', cursor: 'pointer', marginLeft: '16px', padding: 0, opacity: 0.8 }} onMouseOver={e=>e.currentTarget.style.opacity=1} onMouseOut={e=>e.currentTarget.style.opacity=0.8}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.85rem', fontWeight: 600, opacity: 0.9, minWidth: 0, overflow: 'hidden' }}>
+                        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                            {submission?.studentName || 'Student'} | {attempt?.company_name || 'Round Test'} | ID: {attempt?.student_id || submission?.studentId}
+                        </span>
+                        <button onClick={onClose} style={{ background: 'transparent', border: 'none', color: 'white', cursor: 'pointer', marginLeft: '8px', padding: 0, opacity: 0.8, flexShrink: 0 }} onMouseOver={e=>e.currentTarget.style.opacity=1} onMouseOut={e=>e.currentTarget.style.opacity=0.8}>
                             <X size={24} />
                         </button>
                     </div>
@@ -2140,12 +2149,12 @@ function AdminCRTReportModal({ submission, reportData, loading, onClose }) {
 
                 <div style={{ padding: '0 24px 24px', flex: 1, overflowY: 'auto' }}>
                     {loading ? (
-                        <div style={{ textAlign: 'center', padding: '4rem', color: '#ea580c' }}>
-                            <div className="loading-spinner" style={{ margin: '0 auto 1rem', borderColor: '#ea580c', borderTopColor: 'transparent' }}></div>
-                            <span style={{ fontWeight: 600, color: '#f97316' }}>Loading report details...</span>
+                        <div style={{ textAlign: 'center', padding: '4rem', color: '#7c3aed' }}>
+                            <div className="loading-spinner" style={{ margin: '0 auto 1rem', borderColor: '#7c3aed', borderTopColor: 'transparent' }}></div>
+                            <span style={{ fontWeight: 600, color: '#a855f7' }}>Loading report details...</span>
                         </div>
                     ) : !reportData ? (
-                        <div style={{ textAlign: 'center', padding: '3rem', color: '#f97316', fontWeight: 700 }}>No report data available.</div>
+                        <div style={{ textAlign: 'center', padding: '3rem', color: '#a855f7', fontWeight: 700 }}>No report data available.</div>
                     ) : (
                         <>
                             {/* ═══ HERO CARD (matches screenshot) ═══ */}
@@ -2161,7 +2170,7 @@ function AdminCRTReportModal({ submission, reportData, loading, onClose }) {
                                 const sectionLabels = sections.map(s => SECTION_DEFS[s]?.label || s).join(', ');
                                 const truncSections = sectionLabels.length > 28 ? sectionLabels.slice(0, 28) + '...' : sectionLabels;
                                 return (
-                                    <div style={{ background: 'linear-gradient(135deg, #ea580c 0%, #d97706 50%, #b45309 100%)', borderRadius: '18px', padding: '28px 32px 24px', margin: '20px 0 0', color: 'white' }}>
+                                    <div style={{ background: 'linear-gradient(135deg, #170032 0%, #5b21b6 50%, #7c3aed 100%)', borderRadius: '18px', padding: '28px 32px 24px', margin: '20px 0 0', color: 'white' }}>
                                         {/* Top row */}
                                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '24px' }}>
                                             <div>
@@ -2220,12 +2229,12 @@ function AdminCRTReportModal({ submission, reportData, loading, onClose }) {
                                         <button key={tab.id} onClick={() => { setActiveReportTab(tab.id); if (tab.id !== 'section') setSelectedSection(null); }}
                                             style={{
                                                 padding: '10px 20px', border: 'none', cursor: 'pointer',
-                                                background: activeReportTab === tab.id ? 'linear-gradient(135deg, #ea580c, #f97316)' : 'transparent',
+                                                background: activeReportTab === tab.id ? 'linear-gradient(135deg, #5b21b6, #a855f7)' : 'transparent',
                                                 color: activeReportTab === tab.id ? 'white' : '#9ca3af',
                                                 fontSize: '0.85rem', fontWeight: 800,
                                                 display: 'flex', alignItems: 'center', gap: '8px',
                                                 borderRadius: '30px',
-                                                boxShadow: activeReportTab === tab.id ? '0 4px 12px rgba(234,88,12,0.3)' : 'none',
+                                                boxShadow: activeReportTab === tab.id ? '0 4px 12px rgba(124,58,237,0.3)' : 'none',
                                                 transition: 'all 0.2s', textTransform: 'uppercase'
                                             }}
                                         >
@@ -2246,30 +2255,30 @@ function AdminCRTReportModal({ submission, reportData, loading, onClose }) {
                                 <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: '20px', alignItems: 'start' }}>
                                     {/* OVERALL PERFORMANCE */}
                                     <div style={{ background: '#1e293b', borderRadius: '16px', border: '1px solid #374151', padding: '24px', boxShadow: '0 4px 12px rgba(0,0,0,0.15)' }}>
-                                        <h3 style={{ margin: '0 0 20px', fontSize: '1.05rem', fontWeight: 800, color: '#f97316', textTransform: 'uppercase', display: 'flex', alignItems: 'center', gap: 10 }}><BarChart2 size={18} color="#f97316" /> Overall Performance</h3>
+                                        <h3 style={{ margin: '0 0 20px', fontSize: '1.05rem', fontWeight: 800, color: '#a855f7', textTransform: 'uppercase', display: 'flex', alignItems: 'center', gap: 10 }}><BarChart2 size={18} color="#a855f7" /> Overall Performance</h3>
                                         <div style={{ display: 'flex', gap: '20px', alignItems: 'center', marginBottom: '24px' }}>
                                             <div style={{ background: 'linear-gradient(135deg, #374151, #1f2937)', borderRadius: '16px', padding: '24px 20px', flex: 1, border: '1px solid #4b5563' }}>
-                                                <div style={{ fontSize: '3.6rem', fontWeight: 900, color: '#f97316', lineHeight: 1 }}>{pct}%</div>
-                                                <div style={{ fontSize: '1.1rem', fontWeight: 800, color: '#f97316', marginTop: '8px' }}>Grade: {grade}</div>
+                                                <div style={{ fontSize: '3.6rem', fontWeight: 900, color: '#a855f7', lineHeight: 1 }}>{pct}%</div>
+                                                <div style={{ fontSize: '1.1rem', fontWeight: 800, color: '#a855f7', marginTop: '8px' }}>Grade: {grade}</div>
                                                 <div style={{ fontSize: '0.85rem', color: '#d1d5db', fontWeight: 600, marginTop: 4 }}>{totalCorrect} of {totalQs} correct</div>
                                             </div>
                                             <div style={{ width: '130px', height: '130px', position: 'relative', flexShrink: 0 }}>
                                                 <svg viewBox="0 0 36 36" style={{ width: '100%', height: '100%', transform: 'rotate(-90deg)' }}>
                                                     <circle cx="18" cy="18" r="15.9" fill="none" stroke="#374151" strokeWidth="3.5" />
-                                                    <circle cx="18" cy="18" r="15.9" fill="none" stroke="#ea580c" strokeWidth="3.5" strokeDasharray={`${pct}, 100`} strokeLinecap="round" style={{ transition: 'stroke-dasharray 1.2s ease' }} />
+                                                    <circle cx="18" cy="18" r="15.9" fill="none" stroke="#7c3aed" strokeWidth="3.5" strokeDasharray={`${pct}, 100`} strokeLinecap="round" style={{ transition: 'stroke-dasharray 1.2s ease' }} />
                                                 </svg>
                                                 <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column' }}>
-                                                    <div style={{ fontSize: '1.6rem', fontWeight: 900, color: '#ea580c' }}>{totalCorrect}</div>
+                                                    <div style={{ fontSize: '1.6rem', fontWeight: 900, color: '#7c3aed' }}>{totalCorrect}</div>
                                                     <div style={{ fontSize: '0.6rem', fontWeight: 700, color: '#9ca3af', textTransform: 'uppercase' }}>Correct</div>
                                                 </div>
                                             </div>
                                         </div>
 
-                                        <h4 style={{ margin: '0 0 14px', fontSize: '0.95rem', fontWeight: 800, color: '#f97316' }}>Performance Breakdown</h4>
+                                        <h4 style={{ margin: '0 0 14px', fontSize: '0.95rem', fontWeight: 800, color: '#a855f7' }}>Performance Breakdown</h4>
                                         <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
                                             {[
                                                 { label: 'Proficient (≥80%)', color: '#10b981', count: sections.filter(s => (sectionScores[s]?.score||0) >= 80).length },
-                                                { label: 'Above Avg (60-79%)', color: '#f97316', count: sections.filter(s => { const sc = sectionScores[s]?.score||0; return sc >= 60 && sc < 80 }).length },
+                                                { label: 'Above Avg (60-79%)', color: '#a855f7', count: sections.filter(s => { const sc = sectionScores[s]?.score||0; return sc >= 60 && sc < 80 }).length },
                                                 { label: 'Needs Work (<60%)', color: '#ef4444', count: sections.filter(s => (sectionScores[s]?.score||0) < 60).length },
                                             ].map((item, i) => (
                                                 <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px', borderRadius: 10, background: '#374151' }}>
@@ -2284,11 +2293,11 @@ function AdminCRTReportModal({ submission, reportData, loading, onClose }) {
                                     {/* RIGHT COL */}
                                     <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
                                         <div style={{ background: '#1e293b', borderRadius: '16px', border: '1px solid #374151', padding: '24px', boxShadow: '0 4px 12px rgba(0,0,0,0.15)' }}>
-                                            <h3 style={{ margin: '0 0 20px', fontSize: '1.05rem', fontWeight: 800, color: '#f97316', textTransform: 'uppercase', display: 'flex', alignItems: 'center', gap: 10 }}><Layers size={18} color="#f97316" /> Section Scores</h3>
+                                            <h3 style={{ margin: '0 0 20px', fontSize: '1.05rem', fontWeight: 800, color: '#a855f7', textTransform: 'uppercase', display: 'flex', alignItems: 'center', gap: 10 }}><Layers size={18} color="#a855f7" /> Section Scores</h3>
                                             <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
                                                 {sections.map(sec => {
                                                     const def = SECTION_DEFS[sec]; const ss = sectionScores[sec] || {}; const secPct = Math.round(ss.score || 0);
-                                                    const barColor = secPct >= 80 ? '#10b981' : secPct >= 60 ? '#f97316' : '#ef4444';
+                                                    const barColor = secPct >= 80 ? '#10b981' : secPct >= 60 ? '#a855f7' : '#ef4444';
                                                     return (
                                                         <div key={sec} onClick={() => { setActiveReportTab('section'); setSelectedSection(sec); }} style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer', padding: '4px 0' }}>
                                                             <span style={{ width: 26, fontSize: '1rem', textAlign: 'center', flexShrink: 0 }}>{def?.icon || '📊'}</span>
@@ -2308,7 +2317,7 @@ function AdminCRTReportModal({ submission, reportData, loading, onClose }) {
 
                                         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
                                             <div style={{ background: '#1e293b', borderRadius: '14px', border: '1px solid #374151', padding: '18px', textAlign: 'center', color: 'white' }}>
-                                                <div style={{ fontSize: '2rem', fontWeight: 900, color: '#f97316' }}>{sections.length}</div>
+                                                <div style={{ fontSize: '2rem', fontWeight: 900, color: '#a855f7' }}>{sections.length}</div>
                                                 <div style={{ fontSize: '0.75rem', fontWeight: 700, color: '#9ca3af', textTransform: 'uppercase' }}>Sections</div>
                                             </div>
                                             <div style={{ background: '#1e293b', borderRadius: '14px', border: '1px solid #374151', padding: '18px', textAlign: 'center', color: 'white' }}>
@@ -2324,8 +2333,8 @@ function AdminCRTReportModal({ submission, reportData, loading, onClose }) {
                             {/* TAB: Section Analysis */}
                             {activeReportTab === 'section' && sections.length > 0 && (
                                 <div style={{ background: '#1e293b', borderRadius: '16px', border: '1px solid #374151', padding: '24px', boxShadow: '0 4px 12px rgba(0,0,0,0.15)' }}>
-                                    <h3 style={{ margin: '0 0 20px', fontSize: '1.05rem', fontWeight: 800, color: '#f97316', textTransform: 'uppercase', display: 'flex', alignItems: 'center', gap: '10px' }}>
-                                        <Layers size={18} color="#f97316" /> Choose a Section to Review
+                                    <h3 style={{ margin: '0 0 20px', fontSize: '1.05rem', fontWeight: 800, color: '#a855f7', textTransform: 'uppercase', display: 'flex', alignItems: 'center', gap: '10px' }}>
+                                        <Layers size={18} color="#a855f7" /> Choose a Section to Review
                                     </h3>
                                     
                                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: '16px', marginBottom: '24px' }}>
@@ -2337,16 +2346,16 @@ function AdminCRTReportModal({ submission, reportData, loading, onClose }) {
                                             return (
                                                 <button key={sec} onClick={() => setSelectedSection(isActive ? null : sec)}
                                                     style={{
-                                                        padding: '16px', border: isActive ? '2px solid #ea580c' : '1px solid #374151',
+                                                        padding: '16px', border: isActive ? '2px solid #7c3aed' : '1px solid #374151',
                                                         borderRadius: '16px', cursor: 'pointer', textAlign: 'left',
-                                                        background: isActive ? 'rgba(234,88,12,0.15)' : '#111827',
+                                                        background: isActive ? 'rgba(124,58,237,0.15)' : '#111827',
                                                         transition: 'all 0.2s', display: 'flex', alignItems: 'center', gap: '12px',
-                                                        boxShadow: isActive ? '0 4px 12px rgba(234,88,12,0.2)' : '0 2px 4px rgba(0,0,0,0.1)'
+                                                        boxShadow: isActive ? '0 4px 12px rgba(124,58,237,0.2)' : '0 2px 4px rgba(0,0,0,0.1)'
                                                     }}
                                                 >
                                                     <span style={{ fontSize: '1.8rem' }}>{def?.icon || '📊'}</span>
                                                     <div style={{ flex: 1 }}>
-                                                        <div style={{ fontSize: '1rem', fontWeight: 800, color: isActive ? '#f97316' : '#e5e7eb' }}>{def?.label || sec}</div>
+                                                        <div style={{ fontSize: '1rem', fontWeight: 800, color: isActive ? '#a855f7' : '#e5e7eb' }}>{def?.label || sec}</div>
                                                         <div style={{ fontSize: '0.8rem', fontWeight: 600, color: '#9ca3af', marginTop: 4 }}>
                                                             {ss.correct || 0} Correct · {pct}%
                                                         </div>
@@ -2361,28 +2370,33 @@ function AdminCRTReportModal({ submission, reportData, loading, onClose }) {
                                         const secAnswers = answersBySection[selectedSection] || []
                                         const def = SECTION_DEFS[selectedSection]
                                         if (secAnswers.length === 0) return (
-                                            <div style={{ textAlign: 'center', padding: '3rem', color: '#f97316', background: '#111827', borderRadius: '16px', fontWeight: 700 }}>
+                                            <div style={{ textAlign: 'center', padding: '3rem', color: '#a855f7', background: '#111827', borderRadius: '16px', fontWeight: 700 }}>
                                                 No answers recorded for this section.
                                             </div>
                                         )
                                         return (
                                             <div style={{ marginTop: '24px', paddingTop: '24px', borderTop: '2px dashed #4b5563', animation: 'fadeIn 0.4s ease-out' }}>
-                                                <h4 style={{ margin: '0 0 20px', fontSize: '1.05rem', fontWeight: 800, display: 'flex', alignItems: 'center', gap: '12px', color: '#f97316' }}>
+                                                <h4 style={{ margin: '0 0 20px', fontSize: '1.05rem', fontWeight: 800, display: 'flex', alignItems: 'center', gap: '12px', color: '#a855f7' }}>
                                                     {def?.icon} {def?.label || selectedSection} — Question Review
                                                 </h4>
                                                 <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-                                                    {secAnswers.map((ans, idx) => (
+                                                    {secAnswers.map((ans, idx) => {
+                                                        const isCode = ans.question_type === 'code' || ['coding','debug','pseudocode'].includes(ans.section);
+                                                        const isSql  = ans.question_type === 'sql'  || ans.section === 'sql';
+                                                        const submittedCode = ans.student_answer || '';
+                                                        const execResult = ans.execution_result;
+                                                        const testCases = Array.isArray(ans.test_cases) ? ans.test_cases : [];
+                                                        return (
                                                         <div key={ans.id || idx} style={{ padding: '16px 20px', background: ans.is_correct ? 'rgba(16,185,129,0.05)' : 'rgba(239,68,68,0.05)', border: `1px solid ${ans.is_correct ? 'rgba(16,185,129,0.4)' : 'rgba(239,68,68,0.4)'}`, borderRadius: '12px', boxShadow: '0 1px 3px rgba(0,0,0,0.2)' }}>
                                                             <div style={{ display: 'flex', alignItems: 'flex-start', gap: '12px', marginBottom: '8px' }}>
                                                                 <span style={{ fontSize: '1.1rem', flexShrink: 0, marginTop: '2px' }}>{ans.is_correct ? '✅' : '❌'}</span>
                                                                 <div style={{ flex: 1 }}>
                                                                     <div style={{ fontSize: '0.95rem', fontWeight: 700, color: '#f3f4f6', lineHeight: 1.5 }}>Q{idx + 1}: {ans.question}</div>
                                                                 </div>
-                                                                <span style={{
-                                                                    fontSize: '0.85rem', padding: '4px 12px', borderRadius: '20px', fontWeight: 800, flexShrink: 0,
-                                                                    background: ans.is_correct ? 'rgba(16,185,129,0.15)' : 'rgba(239,68,68,0.15)', color: ans.is_correct ? '#34d399' : '#f87171'
-                                                                }}>{Math.round(ans.score || 0)}% Score</span>
+                                                                <span style={{ fontSize: '0.85rem', padding: '4px 12px', borderRadius: '20px', fontWeight: 800, flexShrink: 0, background: ans.is_correct ? 'rgba(16,185,129,0.15)' : 'rgba(239,68,68,0.15)', color: ans.is_correct ? '#34d399' : '#f87171' }}>{Math.round(ans.score || 0)}% Score</span>
                                                             </div>
+
+                                                            {/* MCQ answer display */}
                                                             {ans.question_type === 'mcq' && (
                                                                 <div style={{ marginLeft: '36px', fontSize: '0.9rem', display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '12px' }}>
                                                                     <div style={{ color: ans.is_correct ? '#34d399' : '#f87171', background: ans.is_correct ? 'rgba(16,185,129,0.1)' : 'rgba(239,68,68,0.1)', padding: '10px 14px', borderRadius: '8px', fontWeight: 600 }}>
@@ -2395,8 +2409,60 @@ function AdminCRTReportModal({ submission, reportData, loading, onClose }) {
                                                                     )}
                                                                 </div>
                                                             )}
+
+                                                            {/* Code submission display */}
+                                                            {(isCode || isSql) && (
+                                                                <div style={{ marginLeft: '36px', marginTop: '14px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                                                                    <div style={{ fontSize: '0.8rem', fontWeight: 700, color: isSql ? '#14b8a6' : '#6366f1', textTransform: 'uppercase', letterSpacing: '0.5px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                                                        {isSql ? '🗄️' : '⌨️'} Student Submission
+                                                                    </div>
+                                                                    <pre style={{ margin: 0, padding: '14px 16px', background: '#0d1117', border: `1px solid ${isSql ? 'rgba(20,184,166,0.3)' : 'rgba(99,102,241,0.3)'}`, borderRadius: '10px', fontSize: '0.78rem', color: '#e2e8f0', fontFamily: 'ui-monospace, "Cascadia Code", Consolas, monospace', lineHeight: 1.6, overflowX: 'auto', whiteSpace: 'pre-wrap', wordBreak: 'break-word', maxHeight: '260px', overflowY: 'auto' }}>
+                                                                        {submittedCode.trim() || <span style={{ color: '#6b7280', fontStyle: 'italic' }}>No code submitted</span>}
+                                                                    </pre>
+
+                                                                    {/* Execution / test results */}
+                                                                    {execResult && (
+                                                                        <div style={{ background: '#0f172a', border: '1px solid #334155', borderRadius: '10px', padding: '12px 14px' }}>
+                                                                            <div style={{ fontSize: '0.78rem', fontWeight: 700, color: '#94a3b8', marginBottom: '8px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Execution Result</div>
+                                                                            {typeof execResult === 'object' && execResult.test_results ? (
+                                                                                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                                                                                    {execResult.test_results.slice(0, 6).map((tc, ti) => (
+                                                                                        <div key={ti} style={{ display: 'flex', alignItems: 'flex-start', gap: '8px', padding: '6px 10px', background: tc.passed ? 'rgba(16,185,129,0.07)' : 'rgba(239,68,68,0.07)', borderRadius: '8px', border: `1px solid ${tc.passed ? 'rgba(16,185,129,0.2)' : 'rgba(239,68,68,0.2)'}`, fontSize: '0.75rem' }}>
+                                                                                            <span style={{ flexShrink: 0 }}>{tc.passed ? '✅' : '❌'}</span>
+                                                                                            <span style={{ color: '#94a3b8' }}>Test {ti + 1}:</span>
+                                                                                            {tc.input !== undefined && <span style={{ color: '#64748b' }}>in: <code style={{ color: '#67e8f9' }}>{String(tc.input).slice(0, 40)}</code></span>}
+                                                                                            <span style={{ color: '#64748b' }}>exp: <code style={{ color: '#4ade80' }}>{String(tc.expected || tc.expected_output || '').slice(0, 40)}</code></span>
+                                                                                            {!tc.passed && <span style={{ color: '#64748b' }}>got: <code style={{ color: '#f87171' }}>{String(tc.actual || tc.output || '').slice(0, 40)}</code></span>}
+                                                                                        </div>
+                                                                                    ))}
+                                                                                    {execResult.test_results.length > 6 && <div style={{ fontSize: '0.72rem', color: '#6b7280', textAlign: 'center' }}>+{execResult.test_results.length - 6} more test cases</div>}
+                                                                                </div>
+                                                                            ) : (
+                                                                                <pre style={{ margin: 0, fontSize: '0.75rem', color: '#94a3b8', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{typeof execResult === 'string' ? execResult : JSON.stringify(execResult, null, 2)}</pre>
+                                                                            )}
+                                                                        </div>
+                                                                    )}
+
+                                                                    {/* Expected output for code */}
+                                                                    {isCode && ans.expected_output && !ans.is_correct && (
+                                                                        <div style={{ background: 'rgba(16,185,129,0.05)', border: '1px solid rgba(16,185,129,0.25)', borderRadius: '10px', padding: '10px 14px' }}>
+                                                                            <div style={{ fontSize: '0.75rem', fontWeight: 700, color: '#34d399', marginBottom: '6px' }}>Expected Output</div>
+                                                                            <pre style={{ margin: 0, fontSize: '0.78rem', color: '#a7f3d0', fontFamily: 'ui-monospace,monospace', whiteSpace: 'pre-wrap' }}>{ans.expected_output}</pre>
+                                                                        </div>
+                                                                    )}
+
+                                                                    {/* SQL schema hint */}
+                                                                    {isSql && ans.sql_schema && (
+                                                                        <details style={{ background: 'rgba(20,184,166,0.05)', border: '1px solid rgba(20,184,166,0.2)', borderRadius: '10px', padding: '10px 14px', cursor: 'pointer' }}>
+                                                                            <summary style={{ fontSize: '0.75rem', fontWeight: 700, color: '#5eead4', userSelect: 'none' }}>🗄️ SQL Schema (reference)</summary>
+                                                                            <pre style={{ margin: '8px 0 0', fontSize: '0.75rem', color: '#94a3b8', fontFamily: 'ui-monospace,monospace', whiteSpace: 'pre-wrap' }}>{ans.sql_schema}</pre>
+                                                                        </details>
+                                                                    )}
+                                                                </div>
+                                                            )}
                                                         </div>
-                                                    ))}
+                                                        );
+                                                    })}
                                                 </div>
                                             </div>
                                         )
@@ -2417,18 +2483,18 @@ function AdminCRTReportModal({ submission, reportData, loading, onClose }) {
                                 }), 1)
                                 return (
                                     <div style={{ background: '#1e293b', borderRadius: '16px', border: '1px solid #374151', padding: '24px', boxShadow: '0 4px 12px rgba(0,0,0,0.15)' }}>
-                                        <h3 style={{ margin: '0 0 20px', fontSize: '1.05rem', fontWeight: 800, color: '#f97316', textTransform: 'uppercase', display: 'flex', alignItems: 'center', gap: '10px' }}>
-                                            <Clock size={18} color="#f97316" /> Time Allocation Analysis
+                                        <h3 style={{ margin: '0 0 20px', fontSize: '1.05rem', fontWeight: 800, color: '#a855f7', textTransform: 'uppercase', display: 'flex', alignItems: 'center', gap: '10px' }}>
+                                            <Clock size={18} color="#a855f7" /> Time Allocation Analysis
                                         </h3>
 
                                         {/* Summary Cards */}
                                         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '12px', marginBottom: '24px' }}>
                                             <div style={{ background: 'linear-gradient(135deg, #1f2937, #374151)', border: '1px solid #4b5563', borderRadius: '14px', padding: '16px', textAlign: 'center' }}>
-                                                <div style={{ fontSize: '1.5rem', fontWeight: 900, color: '#f97316' }}>{fmtDur(totalTimeSecsAdmin)}</div>
+                                                <div style={{ fontSize: '1.5rem', fontWeight: 900, color: '#a855f7' }}>{fmtDur(totalTimeSecsAdmin)}</div>
                                                 <div style={{ fontSize: '0.75rem', fontWeight: 700, color: '#9ca3af', textTransform: 'uppercase', marginTop: 4 }}>Time Spent</div>
                                             </div>
                                             <div style={{ background: 'linear-gradient(135deg, #1f2937, #374151)', border: '1px solid #4b5563', borderRadius: '14px', padding: '16px', textAlign: 'center' }}>
-                                                <div style={{ fontSize: '1.5rem', fontWeight: 900, color: '#fb923c' }}>{totalAllocatedSecs > 0 ? fmtDur(totalAllocatedSecs) : '—'}</div>
+                                                <div style={{ fontSize: '1.5rem', fontWeight: 900, color: '#c084fc' }}>{totalAllocatedSecs > 0 ? fmtDur(totalAllocatedSecs) : '—'}</div>
                                                 <div style={{ fontSize: '0.75rem', fontWeight: 700, color: '#9ca3af', textTransform: 'uppercase', marginTop: 4 }}>Allocated</div>
                                             </div>
                                             <div style={{ background: 'linear-gradient(135deg, #1f2937, #374151)', border: '1px solid #4b5563', borderRadius: '14px', padding: '16px', textAlign: 'center' }}>
@@ -2462,16 +2528,16 @@ function AdminCRTReportModal({ submission, reportData, loading, onClose }) {
                                                                         {utilizationPct}% Used
                                                                     </span>
                                                                 )}
-                                                                <span style={{ fontSize: '0.9rem', fontWeight: 800, color: '#f97316' }}>{fmtDur(secSecs)}</span>
+                                                                <span style={{ fontSize: '0.9rem', fontWeight: 800, color: '#a855f7' }}>{fmtDur(secSecs)}</span>
                                                                 {allocatedSecs > 0 && <span style={{ fontSize: '0.75rem', color: '#9ca3af' }}>/ {fmtDur(allocatedSecs)}</span>}
                                                             </div>
                                                         </div>
                                                         
                                                         <div style={{ height: 14, background: '#374151', borderRadius: 7, position: 'relative', overflow: 'hidden' }}>
                                                             {allocBarPct > 0 && (
-                                                                <div style={{ position: 'absolute', left: 0, top: 0, height: '100%', width: `${allocBarPct}%`, background: 'rgba(249,115,22,0.1)', borderRight: '2px solid #ea580c' }} />
+                                                                <div style={{ position: 'absolute', left: 0, top: 0, height: '100%', width: `${allocBarPct}%`, background: 'rgba(168,85,247,0.1)', borderRight: '2px solid #7c3aed' }} />
                                                             )}
-                                                            <div style={{ position: 'relative', height: '100%', width: `${barPct}%`, background: overTime ? 'linear-gradient(90deg,#ef4444,#f87171)' : 'linear-gradient(90deg,#ea580c,#f97316)', borderRadius: 7, transition: 'width 1s ease-out' }} />
+                                                            <div style={{ position: 'relative', height: '100%', width: `${barPct}%`, background: overTime ? 'linear-gradient(90deg,#ef4444,#f87171)' : 'linear-gradient(90deg,#5b21b6,#a855f7)', borderRadius: 7, transition: 'width 1s ease-out' }} />
                                                         </div>
                                                     </div>
                                                 )
@@ -2480,8 +2546,8 @@ function AdminCRTReportModal({ submission, reportData, loading, onClose }) {
 
                                         {/* Legend */}
                                         <div style={{ marginTop: '20px', paddingTop: '16px', borderTop: '1px solid #374151', display: 'flex', gap: '20px', fontSize: '0.78rem', color: '#9ca3af', fontWeight: 600 }}>
-                                            <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}><span style={{ width: 12, height: 8, borderRadius: 3, background: 'linear-gradient(90deg,#ea580c,#f97316)', display: 'inline-block' }} /> Time Spent</span>
-                                            <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}><span style={{ width: 12, height: 8, borderRadius: 3, background: 'rgba(249,115,22,0.1)', border: '1px solid #ea580c', display: 'inline-block' }} /> Allocated Time</span>
+                                            <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}><span style={{ width: 12, height: 8, borderRadius: 3, background: 'linear-gradient(90deg,#5b21b6,#a855f7)', display: 'inline-block' }} /> Time Spent</span>
+                                            <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}><span style={{ width: 12, height: 8, borderRadius: 3, background: 'rgba(168,85,247,0.1)', border: '1px solid #7c3aed', display: 'inline-block' }} /> Allocated Time</span>
                                         </div>
                                     </div>
                                 )

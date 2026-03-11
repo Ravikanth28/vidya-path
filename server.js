@@ -294,8 +294,8 @@ const getCerebrasKeys = () => {
     if (process.env.CEREBRAS_API_KEY) keys.push(process.env.CEREBRAS_API_KEY);
     if (process.env.cereberas_api_key) keys.push(process.env.cereberas_api_key);
 
-    // Numbered backups (1-4)
-    for (let i = 1; i <= 4; i++) {
+    // Numbered backups (1-6)
+    for (let i = 1; i <= 6; i++) {
         const k = process.env[`CEREBRAS_API_KEY_${i}`];
         if (k) keys.push(k);
     }
@@ -13349,15 +13349,127 @@ app.get('/api/crt-submissions', authenticate, authorize('admin'), async (req, re
     }
 });
 
+// ─── Communication Test ── DB setup ─────────────────────────────────────────
+async function ensureCommTestTables() {
+    try {
+        // Drop legacy comm_test_attempts table (old schema, holds FK fk_1 that conflicts with VARCHAR id)
+        try { await pool.query('DROP TABLE IF EXISTS comm_test_attempts'); } catch (_) {}
+        // Drop any other stale FK constraints named fk_1 from older schema versions
+        for (const t of ['comm_test_sessions','comm_test_assignments','comm_test_questions','comm_test_submissions']) {
+            try { await pool.query(`ALTER TABLE \`${t}\` DROP FOREIGN KEY fk_1`); } catch (_) {}
+        }
+        // Master test definitions (created by admin)
+        await pool.query(`
+            CREATE TABLE IF NOT EXISTS comm_tests (
+                id VARCHAR(50) PRIMARY KEY,
+                title VARCHAR(200) NOT NULL,
+                description TEXT,
+                status ENUM('draft','active','ended') DEFAULT 'draft',
+                modules JSON NOT NULL COMMENT 'enabled module keys array',
+                duration_minutes INT DEFAULT 60,
+                questions_per_module INT DEFAULT 5,
+                section_questions JSON NULL COMMENT 'per-section question counts {moduleKey: count}',
+                proctoring_mode ENUM('off','basic','strict') DEFAULT 'off',
+                section_times JSON NULL COMMENT 'per-section time limits in minutes {moduleKey: minutes}',
+                passing_score INT DEFAULT 60,
+                attempt_limit INT DEFAULT NULL COMMENT 'NULL = unlimited',
+                created_by VARCHAR(50),
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                activated_at DATETIME NULL,
+                ended_at DATETIME NULL,
+                INDEX idx_ct_status (status)
+            )
+        `);
+        // Per-test question bank
+        await pool.query(`
+            CREATE TABLE IF NOT EXISTS comm_test_questions (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                test_id VARCHAR(50) NOT NULL,
+                module_type ENUM('read-speak','listen-repeat','topic-speak','grammar-quiz','vocabulary-test','situational-response','email-writing','interview-qa') NOT NULL,
+                content TEXT NOT NULL,
+                answer VARCHAR(500) NULL,
+                category VARCHAR(100) NULL,
+                hint TEXT NULL,
+                time_limit_sec INT DEFAULT NULL,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                INDEX idx_ctq_test (test_id),
+                INDEX idx_ctq_module (module_type)
+            )
+        `);
+        // Student assignments
+        await pool.query(`
+            CREATE TABLE IF NOT EXISTS comm_test_assignments (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                test_id VARCHAR(50) NOT NULL,
+                student_id VARCHAR(50) NOT NULL,
+                assigned_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE KEY uq_cta (test_id, student_id),
+                INDEX idx_cta_student (student_id)
+            )
+        `);
+        // Session attempts (now linked to a test)
+        await pool.query(`
+            CREATE TABLE IF NOT EXISTS comm_test_sessions (
+                id VARCHAR(50) PRIMARY KEY,
+                test_id VARCHAR(50) NOT NULL DEFAULT '',
+                student_id VARCHAR(50) NOT NULL,
+                started_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                completed_at DATETIME,
+                overall_score DECIMAL(5,2),
+                INDEX idx_comm_student (student_id),
+                INDEX idx_comm_test (test_id)
+            )
+        `);
+        await pool.query(`
+            CREATE TABLE IF NOT EXISTS comm_test_submissions (
+                id VARCHAR(50) PRIMARY KEY,
+                session_id VARCHAR(50) NOT NULL,
+                student_id VARCHAR(50) NOT NULL,
+                module_type ENUM('read-speak','listen-repeat','topic-speak','grammar-quiz','vocabulary-test','situational-response','email-writing','interview-qa') NOT NULL,
+                question_id INT NOT NULL DEFAULT 0,
+                transcribed_text TEXT,
+                expected_text TEXT,
+                score DECIMAL(5,2) NOT NULL DEFAULT 0,
+                max_score DECIMAL(5,2) NOT NULL DEFAULT 100,
+                feedback TEXT,
+                ai_scores JSON,
+                submitted_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                INDEX idx_comm_session (session_id),
+                INDEX idx_comm_sub_student (student_id)
+            )
+        `);
+        // Safe column adds (in case old tables exist without test_id / attempt_limit)
+        try { await pool.query('ALTER TABLE comm_test_sessions ADD COLUMN test_id VARCHAR(50) NOT NULL DEFAULT \'\' AFTER id'); } catch (_) {}
+        try { await pool.query('ALTER TABLE comm_tests ADD COLUMN attempt_limit INT DEFAULT NULL AFTER passing_score'); } catch (_) {}
+        try { await pool.query('ALTER TABLE comm_tests ADD COLUMN section_questions JSON NULL AFTER questions_per_module'); } catch (_) {}
+        try { await pool.query("ALTER TABLE comm_tests ADD COLUMN proctoring_mode ENUM('off','basic','strict') DEFAULT 'off' AFTER section_questions"); } catch (_) {}
+        try { await pool.query('ALTER TABLE comm_tests ADD COLUMN section_times JSON NULL AFTER proctoring_mode'); } catch (_) {}
+        // Add hint column for new module types
+        try { await pool.query('ALTER TABLE comm_test_questions ADD COLUMN hint TEXT NULL AFTER category'); } catch (_) {}
+        // Expand ENUMs to include new hiring-focused module types
+        const newEnum = "'read-speak','listen-repeat','topic-speak','grammar-quiz','vocabulary-test','situational-response','email-writing','interview-qa'";
+        try { await pool.query(`ALTER TABLE comm_test_questions MODIFY COLUMN module_type ENUM(${newEnum}) NOT NULL`); } catch (_) {}
+        try { await pool.query(`ALTER TABLE comm_test_submissions MODIFY COLUMN module_type ENUM(${newEnum}) NOT NULL`); } catch (_) {}
+        console.log('✅ comm_test tables ready');
+    } catch (error) {
+        console.error('⚠️ Error creating comm_test tables:', error.message);
+    }
+}
+
 // Start server
 (async () => {
     await ensureTestAllocationsTable();
     await ensureResourceLinksTable();
     await ensureMCQTables();
+    await ensureCommTestTables();
 
     // Register Advanced Features Routes
     const advancedFeaturesRouter = require('./routes/advanced_features');
     app.use('/api', advancedFeaturesRouter(pool, PlagiarismDetector, GamificationService, PredictiveAnalyticsService, ViolationScoringService));
+
+    // Register Communication Test Routes
+    const communicationRouter = require('./routes/communication_routes');
+    app.use('/api', communicationRouter(pool, authenticate, cerebrasChat));
 
     httpServer.listen(PORT, '0.0.0.0', () => {
         console.log(`🚀 Server running on http://127.0.0.1:${PORT}`);

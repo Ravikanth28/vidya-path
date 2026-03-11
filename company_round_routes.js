@@ -619,11 +619,12 @@ function registerCompanyRoundRoutes(app, pool) {
                 `SELECT t.*, 
                     (SELECT COUNT(*) FROM crt_attempts a WHERE a.test_id = t.id AND a.student_id = ?) AS my_attempts,
                     (SELECT MAX(a.overall_score) FROM crt_attempts a WHERE a.test_id = t.id AND a.student_id = ? AND a.status = 'completed') AS my_best_score,
+                    (SELECT a.id FROM crt_attempts a WHERE a.test_id = t.id AND a.student_id = ? AND a.status = 'completed' ORDER BY a.completed_at DESC LIMIT 1) AS latest_attempt_id,
                     (SELECT COUNT(*) FROM crt_questions q WHERE q.test_id = t.id) AS total_questions
                  FROM crt_tests t
                  WHERE t.is_active = 1
                  ORDER BY t.created_at DESC`,
-                [studentId, studentId]
+                [studentId, studentId, studentId]
             );
 
             // Filter: only assigned students can see the test (or all if assigned_students is empty/null)
