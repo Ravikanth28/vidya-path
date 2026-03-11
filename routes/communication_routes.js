@@ -41,6 +41,7 @@ function scoreSpeech(expectedSentence, transcribedText) {
 }
 
 function tryParse(val) {
+    if (val !== null && typeof val === 'object') return val; // mysql2 auto-parses JSON columns
     try { return JSON.parse(val || 'null'); } catch { return null; }
 }
 
@@ -81,14 +82,14 @@ module.exports = function communicationRoutes(pool, authenticate, cerebrasChat) 
     // POST /admin/comm-test/tests
     router.post('/admin/comm-test/tests', authenticate, requireAdmin, async (req, res) => {
         try {
-            const { title, description, modules, duration_minutes, questions_per_module, section_questions, section_times, passing_score, attempt_limit, proctoring_mode } = req.body;
+            const { title, description, modules, duration_minutes, questions_per_module, section_questions, section_times, passing_score, attempt_limit, proctoring_mode, gd_participants } = req.body;
             if (!title || !title.trim()) return res.status(400).json({ success: false, error: 'Title is required' });
             if (!Array.isArray(modules) || modules.length === 0) return res.status(400).json({ success: false, error: 'At least one module must be selected' });
 
             const id = uuidv4();
             await pool.query(
-                `INSERT INTO comm_tests (id, title, description, modules, duration_minutes, questions_per_module, section_questions, section_times, passing_score, attempt_limit, proctoring_mode, created_by)
-                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                `INSERT INTO comm_tests (id, title, description, modules, duration_minutes, questions_per_module, section_questions, section_times, passing_score, attempt_limit, proctoring_mode, gd_participants, created_by)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
                 [id, title.trim(), (description || '').trim(), JSON.stringify(modules),
                  duration_minutes || 60, questions_per_module || 5,
                  section_questions ? JSON.stringify(section_questions) : null,
@@ -96,6 +97,7 @@ module.exports = function communicationRoutes(pool, authenticate, cerebrasChat) 
                  passing_score || 60,
                  attempt_limit != null ? Number(attempt_limit) : null,
                  proctoring_mode || 'off',
+                 gd_participants ? Number(gd_participants) : 3,
                  req.user.id]
             );
             res.json({ success: true, id, message: 'Test created' });
@@ -108,7 +110,7 @@ module.exports = function communicationRoutes(pool, authenticate, cerebrasChat) 
     // PUT /admin/comm-test/tests/:id
     router.put('/admin/comm-test/tests/:id', authenticate, requireAdmin, async (req, res) => {
         try {
-            const { title, description, modules, duration_minutes, questions_per_module, section_questions, section_times, passing_score, attempt_limit, proctoring_mode } = req.body;
+            const { title, description, modules, duration_minutes, questions_per_module, section_questions, section_times, passing_score, attempt_limit, proctoring_mode, gd_participants } = req.body;
             const [[test]] = await pool.query('SELECT status FROM comm_tests WHERE id = ?', [req.params.id]);
             if (!test) return res.status(404).json({ success: false, error: 'Test not found' });
             if (test.status === 'ended') return res.status(400).json({ success: false, error: 'Cannot edit an ended test' });
@@ -125,6 +127,7 @@ module.exports = function communicationRoutes(pool, authenticate, cerebrasChat) 
             if (passing_score) { updates.push('passing_score = ?'); values.push(passing_score); }
             if ('attempt_limit' in req.body) { updates.push('attempt_limit = ?'); values.push(attempt_limit != null ? Number(attempt_limit) : null); }
             if (proctoring_mode) { updates.push('proctoring_mode = ?'); values.push(proctoring_mode); }
+            if (gd_participants) { updates.push('gd_participants = ?'); values.push(Number(gd_participants)); }
             if (updates.length === 0) return res.status(400).json({ success: false, error: 'No fields to update' });
 
             values.push(req.params.id);
@@ -209,7 +212,7 @@ module.exports = function communicationRoutes(pool, authenticate, cerebrasChat) 
         try {
             const { module_type, content, answer, category, hint, time_limit_sec } = req.body;
             const testId = req.params.id;
-            const VALID_MODULES = ['read-speak','listen-repeat','topic-speak','grammar-quiz','vocabulary-test','situational-response','email-writing','interview-qa'];
+            const VALID_MODULES = ['read-speak','listen-repeat','topic-speak','grammar-quiz','vocabulary-test','situational-response','email-writing','interview-qa','gd-round'];
             if (!module_type || !VALID_MODULES.includes(module_type)) {
                 return res.status(400).json({ success: false, error: 'Invalid or missing module_type' });
             }
@@ -255,7 +258,7 @@ module.exports = function communicationRoutes(pool, authenticate, cerebrasChat) 
         try {
             const testId = req.params.id;
             const { module_type, topic, count = 5 } = req.body;
-            const VALID_MODULES = ['read-speak','listen-repeat','topic-speak','grammar-quiz','vocabulary-test','situational-response','email-writing','interview-qa'];
+            const VALID_MODULES = ['read-speak','listen-repeat','topic-speak','grammar-quiz','vocabulary-test','situational-response','email-writing','interview-qa','gd-round'];
             if (!module_type || !VALID_MODULES.includes(module_type)) {
                 return res.status(400).json({ success: false, error: 'Invalid module_type' });
             }
@@ -273,7 +276,7 @@ module.exports = function communicationRoutes(pool, authenticate, cerebrasChat) 
                 'vocabulary-test':      `Generate ${n} vocabulary questions${topicCtx}. Each has a word and its meaning/usage in a professional context. Respond ONLY with valid JSON: {"questions":[{"content":"<word or phrase>","answer":"<meaning and usage example>","category":"<part of speech>"}]}`,
                 'situational-response': `Generate ${n} realistic workplace situational scenarios${topicCtx} requiring a spoken professional response. Respond ONLY with valid JSON: {"questions":[{"content":"<scenario description>"}]}`,
                 'email-writing':        `Generate ${n} professional email writing prompts${topicCtx}. Each should be a clear, realistic workplace task. Respond ONLY with valid JSON: {"questions":[{"content":"<email writing task>"}]}`,
-                'interview-qa':         `Generate ${n} common ${topicCtx || 'job'} interview questions for an English verbal assessment. Mix behavioral and situational questions. Respond ONLY with valid JSON: {"questions":[{"content":"<interview question>"}]}`,
+                'gd-round':             `Generate 1 rich, thought-provoking group discussion topic${topicCtx} suitable for a 30–45 minute professional discussion. The topic should be debatable with multiple perspectives. Respond ONLY with valid JSON: {"questions":[{"content":"<full topic statement or question>","category":"<theme like Leadership/Ethics/Technology>"}]}`,
             };
 
             const aiResponse = await cerebrasChat(
@@ -333,16 +336,12 @@ module.exports = function communicationRoutes(pool, authenticate, cerebrasChat) 
             if (!Array.isArray(student_ids) || student_ids.length === 0) {
                 return res.status(400).json({ success: false, error: 'student_ids array required' });
             }
-            let assigned = 0;
-            for (const sid of student_ids) {
-                try {
-                    await pool.query(
-                        'INSERT IGNORE INTO comm_test_assignments (test_id, student_id) VALUES (?, ?)',
-                        [testId, String(sid)]
-                    );
-                    assigned++;
-                } catch (_) {}
-            }
+            const values = student_ids.map(sid => [testId, String(sid)]);
+            const [result] = await pool.query(
+                'INSERT IGNORE INTO comm_test_assignments (test_id, student_id) VALUES ?',
+                [values]
+            );
+            const assigned = result.affectedRows;
             res.json({ success: true, assigned, message: `Assigned to ${assigned} student(s)` });
         } catch (err) {
             res.status(500).json({ success: false, error: err.message });
@@ -828,7 +827,7 @@ Respond ONLY with valid JSON, no markdown:
             const { sessionId } = req.params;
             const studentId = String(req.user.id);
             const [[sessionInfo]] = await pool.query(
-                `SELECT t.section_times FROM comm_test_sessions s
+                `SELECT s.started_at, s.completed_at, t.section_times FROM comm_test_sessions s
                  LEFT JOIN comm_tests t ON s.test_id = t.id
                  WHERE s.id = ? AND s.student_id = ?`,
                 [sessionId, studentId]
@@ -853,7 +852,8 @@ Respond ONLY with valid JSON, no markdown:
             const overallScore = moduleStats.length
                 ? Math.round(moduleStats.reduce((s, m) => s + m.avgScore, 0) / moduleStats.length)
                 : 0;
-            res.json({ success: true, sessionId, overallScore, modules: moduleStats, sectionTimes });
+            res.json({ success: true, sessionId, overallScore, modules: moduleStats, sectionTimes,
+                session: { started_at: sessionInfo?.started_at, completed_at: sessionInfo?.completed_at } });
         } catch (err) {
             res.status(500).json({ success: false, error: err.message });
         }
@@ -875,6 +875,229 @@ Respond ONLY with valid JSON, no markdown:
                 [String(req.user.id)]
             );
             res.json({ success: true, sessions });
+        } catch (err) {
+            res.status(500).json({ success: false, error: err.message });
+        }
+    });
+
+    // ==========================================================================
+    //  GROUP DISCUSSION (GD) ROUTES
+    // ==========================================================================
+
+    // POST /comm-test/gd/start  — get topic + participant config for a GD session
+    router.post('/comm-test/gd/start', authenticate, async (req, res) => {
+        try {
+            const { sessionId, testId } = req.body;
+            if (!sessionId || !testId) return res.status(400).json({ success: false, error: 'sessionId and testId required' });
+            const [[testRow]] = await pool.query('SELECT gd_participants, section_times, section_questions FROM comm_tests WHERE id = ?', [testId]);
+            if (!testRow) return res.status(404).json({ success: false, error: 'Test not found' });
+
+            const participants = testRow.gd_participants || 3;
+            const sectionTimes = tryParse(testRow.section_times) || {};
+            const durationMins = sectionTimes['gd-round'] || 30;
+
+            // Get GD topic (first question of gd-round module for this test)
+            const [[topicRow]] = await pool.query(
+                'SELECT id, content, category FROM comm_test_questions WHERE test_id = ? AND module_type = ? LIMIT 1',
+                [testId, 'gd-round']
+            );
+            if (!topicRow) return res.status(400).json({ success: false, error: 'No GD topic found. Add a topic in Questions first.' });
+
+            // Build AI participant names
+            const aiNames = ['Alex (AI)', 'Jordan (AI)', 'Morgan (AI)', 'Taylor (AI)', 'Quinn (AI)', 'Riley (AI)', 'Casey (AI)'];
+            const aiParticipants = aiNames.slice(0, participants - 1).map((name, i) => ({ id: `ai_${i}`, name, isAI: true }));
+
+            res.json({
+                success: true,
+                topicId: topicRow.id,
+                topic: topicRow.content,
+                category: topicRow.category || 'General',
+                participants: aiParticipants,
+                durationMins,
+                prepSeconds: 30,
+            });
+        } catch (err) {
+            console.error('[gd] start error:', err);
+            res.status(500).json({ success: false, error: err.message });
+        }
+    });
+
+    // POST /comm-test/gd/ai-turn  — generate AI participant's spoken response
+    router.post('/comm-test/gd/ai-turn', authenticate, async (req, res) => {
+        try {
+            const { topic, aiName, previousTurns, stance } = req.body;
+            if (!topic || !aiName) return res.status(400).json({ success: false, error: 'topic and aiName required' });
+
+            const history = (previousTurns || []).slice(-6).map(t => `${t.speaker}: "${t.transcript}"`).join('\n');
+            const prompt = `You are ${aiName}, a confident English speaker in a group discussion.
+Topic: "${topic}"
+Your stance: ${stance || 'balanced — consider multiple perspectives'}
+${history ? `\nPrevious discussion:\n${history}` : ''}
+
+Speak for 20-40 seconds as ${aiName}. Make a clear, focused point. Be conversational, not formal.
+Respond ONLY with the spoken text — no labels, no JSON, just natural speech.`;
+
+            const aiResponse = await cerebrasChat(
+                [{ role: 'user', content: prompt }],
+                { model: 'gpt-oss-120b', temperature: 0.8, max_tokens: 200 }
+            );
+            const speech = (aiResponse.choices[0]?.message?.content || '').trim();
+            res.json({ success: true, speech });
+        } catch (err) {
+            console.error('[gd] ai-turn error:', err);
+            res.status(500).json({ success: false, error: err.message });
+        }
+    });
+
+    // POST /comm-test/gd/turn  — save one student speaking turn
+    router.post('/comm-test/gd/turn', authenticate, async (req, res) => {
+        try {
+            const { sessionId, turnIndex, transcript, durationSec, topic } = req.body;
+            if (!sessionId || !transcript) return res.status(400).json({ success: false, error: 'sessionId and transcript required' });
+            const studentId = String(req.user.id);
+
+            // Score the turn with AI — STRICT evaluation
+            const wordCount = transcript.trim().split(/\s+/).length;
+            const prompt = `You are an EXTREMELY STRICT English communication evaluator for a formal group discussion. Be harsh and realistic — do NOT give high scores unless the response is truly excellent.
+
+Topic: "${topic || 'General Discussion'}"
+Student said: "${transcript.trim()}"
+Word count: ${wordCount}
+Duration: ${durationSec || 0} seconds
+
+Score on 3 criteria (0-100 each). Apply these STRICT rules:
+1. Language quality (grammar, vocabulary richness, sentence structure):
+   - Below 30: very poor grammar, extremely limited vocabulary
+   - 30-50: frequent errors, basic vocabulary, simple sentences
+   - 50-65: some errors, decent vocabulary, mix of simple/complex
+   - 65-80: mostly correct, good vocabulary, well-structured
+   - 80-100: near-perfect grammar, rich vocabulary, sophisticated expression
+   PENALISE: filler words (um/uh/like/you know), sentence fragments, repetition
+2. Pronunciation clarity (estimated from text quality, word choices, expression flow):
+   - Short responses (<10 words) should score BELOW 40
+   - Score higher for clear articulation indicators and varied expression
+3. Content confidence (relevance to topic, assertiveness, clarity of argument):
+   - Off-topic or vague: below 30
+   - Partially relevant with weak argument: 30-50
+   - Relevant but unstructured: 50-65
+   - Clear relevant argument with reasoning: 65-80
+   - Compelling, well-structured argument with evidence: 80-100
+
+Respond ONLY with valid JSON:
+{"languageScore":<0-100>,"pronunciationScore":<0-100>,"confidenceScore":<0-100>,"overallScore":<0-100>,"feedback":"<one sentence>"}`;
+
+            let scores = { languageScore: 70, pronunciationScore: 70, confidenceScore: 70, overallScore: 70, feedback: 'Good contribution.' };
+            try {
+                const aiResp = await cerebrasChat([{ role: 'user', content: prompt }], { model: 'gpt-oss-120b', temperature: 0.3, max_tokens: 200 });
+                let raw = (aiResp.choices[0]?.message?.content || '{}').replace(/```json\s*|\s*```/g, '').trim();
+                scores = { ...scores, ...JSON.parse(raw) };
+            } catch {}
+
+            await pool.query(
+                `INSERT INTO comm_gd_turns (id, session_id, speaker, speaker_label, turn_index, transcript, duration_sec, language_score, pronunciation_score, confidence_score)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                [uuidv4(), sessionId, studentId, 'You (Student)', turnIndex || 0, transcript, durationSec || 0,
+                 scores.languageScore, scores.pronunciationScore, scores.confidenceScore]
+            );
+            res.json({ success: true, ...scores });
+        } catch (err) {
+            console.error('[gd] turn error:', err);
+            res.status(500).json({ success: false, error: err.message });
+        }
+    });
+
+    // POST /comm-test/gd/conclude  — finalize GD, compute overall score, generate report
+    router.post('/comm-test/gd/conclude', authenticate, async (req, res) => {
+        try {
+            const { sessionId, topic, aiTurns } = req.body;
+            const studentId = String(req.user.id);
+
+            const [studentTurns] = await pool.query(
+                'SELECT * FROM comm_gd_turns WHERE session_id = ? ORDER BY turn_index ASC',
+                [sessionId]
+            );
+
+            if (studentTurns.length === 0) {
+                // Student never spoke — score 0
+                await pool.query(
+                    'UPDATE comm_test_sessions SET completed_at = NOW(), overall_score = 0 WHERE id = ? AND student_id = ?',
+                    [sessionId, studentId]
+                );
+                return res.json({ success: true, overallScore: 0 });
+            }
+
+            const avgLang  = Math.round(studentTurns.reduce((s, t) => s + (t.language_score || 0), 0) / studentTurns.length);
+            const avgPron  = Math.round(studentTurns.reduce((s, t) => s + (t.pronunciation_score || 0), 0) / studentTurns.length);
+            const avgConf  = Math.round(studentTurns.reduce((s, t) => s + (t.confidence_score || 0), 0) / studentTurns.length);
+            const participation = Math.min(100, studentTurns.length * 15); // up to 100 for ~7 turns
+            const overallScore = Math.round((avgLang * 0.3) + (avgPron * 0.2) + (avgConf * 0.3) + (participation * 0.2));
+
+            // Build full conversation for report (student + AI turns interleaved)
+            const allTurns = studentTurns.map(t => ({
+                speaker: 'student', speaker_label: t.speaker_label || 'You (Student)',
+                transcript: t.transcript, turn_index: t.turn_index,
+                language_score: t.language_score, pronunciation_score: t.pronunciation_score, confidence_score: t.confidence_score
+            }));
+            // Interleave AI turns from the request
+            if (Array.isArray(aiTurns)) {
+                aiTurns.forEach((text, i) => {
+                    allTurns.push({ speaker: `ai_${i}`, speaker_label: `AI Panelist ${i + 1}`, transcript: text, turn_index: -1 });
+                });
+            }
+
+            // Save to submissions table for unified reporting
+            await pool.query(
+                `INSERT INTO comm_test_submissions (id, session_id, student_id, module_type, question_id, transcribed_text, expected_text, score, max_score, feedback, ai_scores)
+                 VALUES (?, ?, ?, 'gd-round', 0, ?, ?, ?, 100, ?, ?)`,
+                [uuidv4(), sessionId, studentId,
+                 JSON.stringify(studentTurns.map(t => t.transcript)),
+                 topic || 'Group Discussion',
+                 overallScore,
+                 `${studentTurns.length} turn(s) — Language ${avgLang}%, Pronunciation ${avgPron}%, Confidence ${avgConf}%`,
+                 JSON.stringify({ avgLang, avgPron, avgConf, participation, turns: allTurns, aiTurns: aiTurns || [] })]
+            );
+
+            await pool.query(
+                'UPDATE comm_test_sessions SET completed_at = NOW(), overall_score = ? WHERE id = ? AND student_id = ?',
+                [overallScore, sessionId, studentId]
+            );
+
+            res.json({ success: true, overallScore, avgLang, avgPron, avgConf, participation, turns: studentTurns.length });
+        } catch (err) {
+            console.error('[gd] conclude error:', err);
+            res.status(500).json({ success: false, error: err.message });
+        }
+    });
+
+    // GET /comm-test/gd/report/:sessionId  — full GD report
+    router.get('/comm-test/gd/report/:sessionId', authenticate, async (req, res) => {
+        try {
+            const { sessionId } = req.params;
+            const studentId = String(req.user.id);
+
+            const [turns] = await pool.query(
+                'SELECT * FROM comm_gd_turns WHERE session_id = ? ORDER BY turn_index ASC',
+                [sessionId]
+            );
+            const [[sub]] = await pool.query(
+                `SELECT score, feedback, ai_scores, transcribed_text FROM comm_test_submissions
+                 WHERE session_id = ? AND student_id = ? AND module_type = 'gd-round'`,
+                [sessionId, studentId]
+            );
+            const aiScores = tryParse(sub?.ai_scores) || {};
+
+            res.json({
+                success: true,
+                sessionId,
+                turns,
+                score: sub?.score || 0,
+                feedback: sub?.feedback || '',
+                avgLang: aiScores.avgLang || 0,
+                avgPron: aiScores.avgPron || 0,
+                avgConf: aiScores.avgConf || 0,
+                participation: aiScores.participation || 0,
+                aiTurns: aiScores.aiTurns || [],
+            });
         } catch (err) {
             res.status(500).json({ success: false, error: err.message });
         }

@@ -14,6 +14,7 @@ import {
     RefreshCw, ChevronRight, Clock, Target, Brain, BookOpen,
     Play, Square, ArrowRight, Star, Layers, Zap, Award, X
 } from 'lucide-react'
+import ModuleGDRound from './ModuleGDRound'
 
 const API_BASE = (import.meta.env.VITE_API_URL || 'http://localhost:3000') + '/api'
 
@@ -614,7 +615,8 @@ function SessionReport({ sessionId, onRestart }) {
         'read-speak':     { label: 'Read & Speak',    color: '#a855f7', bg: 'rgba(168,85,247,0.12)' },
         'listen-repeat':  { label: 'Listen & Repeat', color: '#5b21b6', bg: 'rgba(91,33,182,0.12)'  },
         'topic-speak':    { label: 'Topic Speaking',  color: '#7c3aed', bg: 'rgba(124,58,237,0.12)' },
-        'grammar-quiz':   { label: 'Grammar Quiz',    color: '#c084fc', bg: 'rgba(192,132,252,0.12)'}
+        'grammar-quiz':   { label: 'Grammar Quiz',    color: '#c084fc', bg: 'rgba(192,132,252,0.12)'},
+        'gd-round':       { label: 'Group Discussion', color: '#6366f1', bg: 'rgba(99,102,241,0.12)' },
     }
 
     if (loading) return <div style={{ textAlign: 'center', padding: 60, color: '#64748b' }}>Generating your report…</div>
@@ -623,6 +625,51 @@ function SessionReport({ sessionId, onRestart }) {
     const score = report.overallScore
 
     function renderModuleDetail(module, submissions) {
+        if (module === 'gd-round') {
+            const ai = submissions[0]?.ai_scores || {}
+            const turns = ai.turns || []
+            const stuTurns = turns.filter(t => t.speaker === 'student')
+            return (
+                <div>
+                    {/* GD Scores */}
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 8, marginTop: 10, marginBottom: 14 }}>
+                        {[['Language', ai.avgLang, '#a78bfa'], ['Pronunciation', ai.avgPron, '#34d399'], ['Confidence', ai.avgConf, '#fb923c'], ['Participation', ai.participation, '#60a5fa']].map(([l, v, c]) => (
+                            <div key={l} style={{ textAlign: 'center', background: c + '15', borderRadius: 8, padding: '10px 4px' }}>
+                                <div style={{ color: c, fontWeight: 800, fontSize: 18 }}>{Math.round(v || 0)}%</div>
+                                <div style={{ color: '#94a3b8', fontSize: 10 }}>{l}</div>
+                            </div>
+                        ))}
+                    </div>
+                    {/* Turn count */}
+                    <div style={{ fontSize: 12, color: '#64748b', marginBottom: 10 }}>
+                        You spoke <b style={{ color: '#10b981' }}>{stuTurns.length}</b> time{stuTurns.length !== 1 ? 's' : ''} out of <b style={{ color: '#a855f7' }}>{turns.length || submissions.length}</b> total turns
+                    </div>
+                    {/* Transcript */}
+                    {turns.length > 0 ? turns.map((t, i) => (
+                        <div key={i} style={{ marginTop: 8, background: 'rgba(0,0,0,0.25)', borderRadius: 10, padding: '10px 14px', borderLeft: `3px solid ${t.speaker === 'student' ? '#10b981' : '#6366f1'}` }}>
+                            <div style={{ fontSize: 11, fontWeight: 700, color: t.speaker === 'student' ? '#10b981' : '#818cf8', marginBottom: 3 }}>{t.speaker_label || t.speaker}</div>
+                            <div style={{ color: '#cbd5e1', fontSize: 12, lineHeight: 1.5 }}>{t.transcript}</div>
+                            {t.speaker === 'student' && t.language_score != null && (
+                                <div style={{ display: 'flex', gap: 8, marginTop: 5, fontSize: 10 }}>
+                                    {[['Lang', t.language_score, '#a78bfa'], ['Pron', t.pronunciation_score, '#34d399'], ['Conf', t.confidence_score, '#fb923c']].map(([lb, vl, cl]) => (
+                                        <span key={lb} style={{ background: cl + '22', color: cl, padding: '2px 7px', borderRadius: 6, fontWeight: 700 }}>{lb} {vl}%</span>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+                    )) : submissions.map((sub, i) => (
+                        <div key={i} style={{ marginTop: 8, background: 'rgba(0,0,0,0.25)', borderRadius: 10, padding: '10px 14px' }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
+                                <span style={{ color: '#64748b', fontSize: 11 }}>Turn {i+1}</span>
+                                <span style={{ color: '#a855f7', fontWeight: 700 }}>{Math.round(sub.score || 0)}/100</span>
+                            </div>
+                            {sub.transcribed_text && <div style={{ color: '#94a3b8', fontSize: 12 }}>{sub.transcribed_text}</div>}
+                            {sub.feedback && <p style={{ margin: '4px 0 0', color: '#64748b', fontSize: 11, fontStyle: 'italic' }}>{sub.feedback}</p>}
+                        </div>
+                    ))}
+                </div>
+            )
+        }
         if (module === 'topic-speak') {
             return submissions.map((sub, i) => {
                 const ai = sub.ai_scores || {}
@@ -791,7 +838,7 @@ function SessionReport({ sessionId, onRestart }) {
             {/* ── TABS ── */}
             <div style={{ display: 'flex', justifyContent: 'center' }}>
                 <div style={{ background: '#1e293b', border: '1px solid #374151', borderRadius: 30, display: 'flex', padding: 4, boxShadow: '0 4px 6px rgba(0,0,0,0.2)' }}>
-                    {[{ id: 'overview', label: 'Overview', icon: <BarChart2 size={14} /> }, { id: 'section', label: 'Section Analysis', icon: <Layers size={14} /> }].map(t => (
+                    {[{ id: 'overview', label: 'Overview', icon: <BarChart2 size={14} /> }, { id: 'section', label: 'Section Analysis', icon: <Layers size={14} /> }, { id: 'time', label: 'Time Analysis', icon: <Clock size={14} /> }].map(t => (
                         <button key={t.id} onClick={() => { setActiveTab(t.id); setSelectedModule(null) }}
                             style={{
                                 padding: '10px 20px', border: 'none', cursor: 'pointer', borderRadius: 30,
@@ -810,6 +857,7 @@ function SessionReport({ sessionId, onRestart }) {
 
             {/* ── OVERVIEW TAB ── */}
             {activeTab === 'overview' && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
                 <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: 16, alignItems: 'start' }}>
                     {/* Left: Overall performance */}
                     <div style={{ background: '#1e293b', borderRadius: 16, border: '1px solid #374151', padding: 22 }}>
@@ -884,7 +932,120 @@ function SessionReport({ sessionId, onRestart }) {
                         </div>
                     </div>
                 </div>
+
+                </div>
             )}
+
+            {/* ── TIME ANALYSIS TAB ── */}
+            {activeTab === 'time' && (() => {
+                const hasTimes = modules.some(m => m.allocatedMinutes)
+                const totalAllocMins = modules.reduce((s, m) => s + (m.allocatedMinutes || 0), 0)
+                const sessionData = report.session || report
+                const sessionDurationMs = sessionData.completed_at && sessionData.started_at
+                    ? new Date(sessionData.completed_at) - new Date(sessionData.started_at) : null
+                const sessionDurationMins = sessionDurationMs ? Math.round(sessionDurationMs / 60000) : null
+                const utilization = hasTimes && sessionDurationMins && totalAllocMins
+                    ? Math.min(100, Math.round((sessionDurationMins / totalAllocMins) * 100)) : null
+                const fmtMins = m => m >= 60 ? `${Math.floor(m/60)}h ${m%60}m` : `${m}m`
+                return (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                        {/* Summary stats */}
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12 }}>
+                            {[
+                                { label: 'TIME SPENT', value: sessionDurationMins != null ? fmtMins(sessionDurationMins) : 'N/A', color: '#a855f7' },
+                                { label: 'ALLOCATED',  value: hasTimes ? fmtMins(totalAllocMins) : 'Not Set', color: '#0891b2' },
+                                { label: 'UTILIZATION', value: utilization != null ? `${utilization}%` : 'N/A', color: utilization >= 80 ? '#10b981' : utilization >= 50 ? '#f59e0b' : '#94a3b8' },
+                            ].map((st, i) => (
+                                <div key={i} style={{ background: '#1e293b', border: '1px solid #334155', borderRadius: 14, padding: 20, textAlign: 'center' }}>
+                                    <div style={{ fontSize: '1.6rem', fontWeight: 900, color: st.color }}>{st.value}</div>
+                                    <div style={{ fontSize: '0.68rem', fontWeight: 700, color: '#64748b', marginTop: 6, letterSpacing: 1 }}>{st.label}</div>
+                                </div>
+                            ))}
+                        </div>
+
+                        {/* Per-section cards */}
+                        <div style={{ background: '#1e293b', borderRadius: 16, border: '1px solid #334155', padding: 22 }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 18 }}>
+                                <h3 style={{ margin: 0, fontSize: '0.9rem', fontWeight: 800, color: '#0891b2', textTransform: 'uppercase', letterSpacing: 1 }}>
+                                    ⏱ Section Breakdown
+                                </h3>
+                                {sessionDurationMins != null && hasTimes && (
+                                    <span style={{ fontSize: '0.68rem', color: '#64748b', fontStyle: 'italic' }}>
+                                        Est. time based on proportional allocation
+                                    </span>
+                                )}
+                            </div>
+                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 14 }}>
+                                {modules.map(m => {
+                                    const meta = MODULE_META_REPORT[m.module] || { label: m.module, color: '#a855f7' }
+                                    const icon = m.module === 'read-speak' ? '📖' : m.module === 'listen-repeat' ? '🔊' : m.module === 'topic-speak' ? '⚡' : '🧠'
+                                    const scoreColor = m.avgScore >= 80 ? '#10b981' : m.avgScore >= 60 ? '#f59e0b' : '#ef4444'
+                                    const proportion = hasTimes && totalAllocMins > 0
+                                        ? (m.allocatedMinutes || 0) / totalAllocMins
+                                        : 1 / modules.length
+                                    const estMins = sessionDurationMins != null ? Math.round(sessionDurationMins * proportion) : null
+                                    const passed = m.avgScore >= 60
+                                    return (
+                                        <div key={m.module} style={{
+                                            background: '#0f172a', borderRadius: 14,
+                                            border: `1px solid ${meta.color}33`,
+                                            borderLeft: `4px solid ${meta.color}`,
+                                            padding: 18, display: 'flex', flexDirection: 'column', gap: 14
+                                        }}>
+                                            {/* Header */}
+                                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                                                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                                                    <span style={{ fontSize: '1.3rem' }}>{icon}</span>
+                                                    <span style={{ fontSize: '0.88rem', fontWeight: 700, color: '#e5e7eb' }}>{meta.label}</span>
+                                                </div>
+                                                <span style={{
+                                                    fontSize: '0.7rem', fontWeight: 700, padding: '3px 8px', borderRadius: 6,
+                                                    background: passed ? 'rgba(16,185,129,0.15)' : 'rgba(239,68,68,0.15)',
+                                                    color: passed ? '#10b981' : '#ef4444',
+                                                    border: `1px solid ${passed ? '#10b98133' : '#ef444433'}`
+                                                }}>{passed ? '✓ PASS' : '✗ FAIL'}</span>
+                                            </div>
+                                            {/* Time stats */}
+                                            <div style={{ display: 'flex', gap: 10 }}>
+                                                <div style={{ flex: 1, background: '#1e293b', borderRadius: 10, padding: '10px 14px', textAlign: 'center' }}>
+                                                    <div style={{ fontSize: '1.1rem', fontWeight: 800, color: '#0891b2' }}>
+                                                        {m.allocatedMinutes ? `${m.allocatedMinutes}m` : '—'}
+                                                    </div>
+                                                    <div style={{ fontSize: '0.6rem', fontWeight: 700, color: '#64748b', marginTop: 3, letterSpacing: 0.8 }}>ALLOCATED</div>
+                                                </div>
+                                                <div style={{ flex: 1, background: '#1e293b', borderRadius: 10, padding: '10px 14px', textAlign: 'center' }}>
+                                                    <div style={{ fontSize: '1.1rem', fontWeight: 800, color: '#a855f7' }}>
+                                                        {estMins != null ? `~${estMins}m` : '—'}
+                                                    </div>
+                                                    <div style={{ fontSize: '0.6rem', fontWeight: 700, color: '#64748b', marginTop: 3, letterSpacing: 0.8 }}>EST. SPENT</div>
+                                                </div>
+                                            </div>
+                                            {/* Score bar */}
+                                            <div>
+                                                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
+                                                    <span style={{ fontSize: '0.75rem', color: '#94a3b8', fontWeight: 600 }}>Score</span>
+                                                    <span style={{ fontSize: '0.82rem', fontWeight: 800, color: scoreColor }}>{m.avgScore}%</span>
+                                                </div>
+                                                <div style={{ height: 10, background: '#374151', borderRadius: 6, overflow: 'hidden' }}>
+                                                    <div style={{ height: '100%', width: `${m.avgScore}%`, background: `linear-gradient(90deg, ${scoreColor}88, ${scoreColor})`, borderRadius: 6, transition: 'width 1s ease-out' }} />
+                                                </div>
+                                                <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 4, fontSize: '0.6rem', color: '#64748b' }}>
+                                                    <span>0%</span><span>100%</span>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    )
+                                })}
+                            </div>
+                            {!hasTimes && (
+                                <div style={{ marginTop: 14, padding: '8px 14px', background: 'rgba(245,158,11,0.08)', border: '1px solid #f59e0b33', borderRadius: 8, fontSize: '0.75rem', color: '#f59e0b' }}>
+                                    ⚠ No per-section time limits configured for this test
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                )
+            })()}
 
             {/* ── SECTION ANALYSIS TAB ── */}
             {activeTab === 'section' && (
@@ -961,10 +1122,15 @@ function SessionReport({ sessionId, onRestart }) {
 // ─── Main Component ───────────────────────────────────────────────────────────
 
 const MODULES = [
-    { id: 'read-speak',    label: 'Read & Speak',    icon: <BookOpen size={18} />,  color: '#a855f7', desc: 'Read sentences aloud & get pronunciation score' },
-    { id: 'listen-repeat', label: 'Listen & Repeat', icon: <Volume2 size={18} />,   color: '#5b21b6', desc: 'Listen to audio, then repeat it back' },
-    { id: 'topic-speak',   label: 'Topic Speaking',  icon: <Zap size={18} />,       color: '#7c3aed', desc: 'Speak freestyle — AI evaluates your response' },
-    { id: 'grammar-quiz',  label: 'Grammar Quiz',    icon: <Brain size={18} />,     color: '#c084fc', desc: 'Fill-in-the-blank grammar challenges' }
+    { id: 'read-speak',            label: 'Read & Speak',          icon: <BookOpen size={18} />, color: '#a855f7', desc: 'Read sentences aloud & get pronunciation score' },
+    { id: 'listen-repeat',         label: 'Listen & Repeat',        icon: <Volume2 size={18} />,  color: '#5b21b6', desc: 'Listen to audio, then repeat it back' },
+    { id: 'topic-speak',           label: 'Topic Speaking',         icon: <Zap size={18} />,     color: '#7c3aed', desc: 'Speak freestyle — AI evaluates your response' },
+    { id: 'grammar-quiz',          label: 'Grammar Quiz',           icon: <Brain size={18} />,   color: '#c084fc', desc: 'Fill-in-the-blank grammar challenges' },
+    { id: 'vocabulary-test',       label: 'Vocabulary Test',        icon: <Layers size={18} />,  color: '#7c2d92', desc: 'Test your word knowledge and usage' },
+    { id: 'situational-response',  label: 'Situational Response',   icon: <Star size={18} />,    color: '#0f766e', desc: 'Respond to workplace scenarios' },
+    { id: 'email-writing',         label: 'Professional Writing',   icon: <Award size={18} />,   color: '#b45309', desc: 'Write professional emails and messages' },
+    { id: 'interview-qa',          label: 'Interview Q&A',          icon: <Target size={18} />,  color: '#be123c', desc: 'Answer common interview questions' },
+    { id: 'gd-round',              label: 'Group Discussion',        icon: <Mic size={18} />,     color: '#6366f1', desc: 'Debate a topic with AI participants' },
 ]
 
 export default function CommunicationTest({ user }) {
@@ -1122,7 +1288,8 @@ export default function CommunicationTest({ user }) {
                             let totalQ = (test.questions_per_module || 5) * (activeMods.length || 4)
                             try {
                                 const sq = typeof test.section_questions === 'string' ? JSON.parse(test.section_questions) : test.section_questions
-                                if (sq && typeof sq === 'object') totalQ = Object.values(sq).reduce((a, b) => a + Number(b), 0)
+                                const mods2 = Array.isArray(test.modules) ? test.modules : JSON.parse(test.modules || '[]')
+                                if (sq && typeof sq === 'object') totalQ = mods2.reduce((a, k) => a + Number(sq[k] || 0), 0)
                             } catch {}
                             const attemptsUsed = test.sessions_count || 0
                             const attemptsLimit = test.attempt_limit
@@ -1159,12 +1326,22 @@ export default function CommunicationTest({ user }) {
                                         }
                                     </div>
                                     {/* Action */}
-                                    {limitReached
-                                        ? <div style={{ width: '100%', padding: '10px 0', background: '#1f2937', border: '1px solid #374151', borderRadius: 10, color: '#6b7280', fontWeight: 700, textAlign: 'center', fontSize: '0.9rem' }}>Attempt Limit Reached</div>
-                                        : <button onClick={() => { setSelectedTest(test); setPhase('intro') }} style={{ width: '100%', padding: '10px 0', background: 'linear-gradient(135deg, #5b21b6, #7c3aed)', border: 'none', borderRadius: 10, color: 'white', fontWeight: 700, cursor: 'pointer', fontSize: '0.9rem' }}>
-                                            {test.completed_at ? 'View & Retry →' : 'View & Start →'}
-                                        </button>
-                                    }
+                                    <div style={{ display: 'flex', gap: 8 }}>
+                                        {test.session_id && (
+                                            <button
+                                                onClick={() => { setSessionId(test.session_id); setPhase('report') }}
+                                                style={{ flex: 1, padding: '10px 0', background: '#1e293b', border: '1px solid #7c3aed', borderRadius: 10, color: '#a78bfa', fontWeight: 700, cursor: 'pointer', fontSize: '0.9rem' }}
+                                            >
+                                                📊 View Report
+                                            </button>
+                                        )}
+                                        {limitReached
+                                            ? <div style={{ flex: 1, padding: '10px 0', background: '#1f2937', border: '1px solid #374151', borderRadius: 10, color: '#6b7280', fontWeight: 700, textAlign: 'center', fontSize: '0.9rem' }}>Attempt Limit Reached</div>
+                                            : <button onClick={() => { setSelectedTest(test); setPhase('intro') }} style={{ flex: 1, padding: '10px 0', background: 'linear-gradient(135deg, #5b21b6, #7c3aed)', border: 'none', borderRadius: 10, color: 'white', fontWeight: 700, cursor: 'pointer', fontSize: '0.9rem' }}>
+                                                {test.completed_at ? 'Retry →' : 'Start →'}
+                                            </button>
+                                        }
+                                    </div>
                                 </div>
                             )
                         })
@@ -1260,7 +1437,7 @@ export default function CommunicationTest({ user }) {
                                 <Clock size={16} /> Past Sessions
                             </div>
                             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                                {history.slice(0, 5).map(s => (
+                                {history.filter(s => s.test_id === selectedTest?.id).slice(0, 5).map(s => (
                                     <div key={s.id} style={{ display: 'flex', alignItems: 'center', gap: 12, background: '#0f172a', borderRadius: 10, padding: '10px 14px' }}>
                                         <div style={{ flex: 1 }}>
                                             <div style={{ fontSize: '0.82rem', color: '#d1d5db', fontWeight: 600 }}>
@@ -1273,11 +1450,11 @@ export default function CommunicationTest({ user }) {
                                                 {Math.round(s.overall_score)}%
                                             </div>
                                         )}
-                                        {s.completed_at ? (
-                                            <CheckCircle size={16} color="#10b981" />
-                                        ) : (
-                                            <Clock size={16} color="#f59e0b" />
-                                        )}
+                                        {s.completed_at ? <CheckCircle size={16} color="#10b981" /> : <Clock size={16} color="#f59e0b" />}
+                                        <button
+                                            onClick={() => { setSessionId(s.id); setPhase('report') }}
+                                            style={{ flexShrink: 0, padding: '5px 12px', background: 'linear-gradient(135deg, #5b21b6, #7c3aed)', border: 'none', borderRadius: 7, color: 'white', fontWeight: 700, fontSize: '0.72rem', cursor: 'pointer' }}
+                                        >View Report</button>
                                     </div>
                                 ))}
                             </div>
@@ -1339,10 +1516,11 @@ export default function CommunicationTest({ user }) {
                     {/* Scrollable content area */}
                     <div style={{ flex: 1, overflowY: 'auto', padding: '28px 20px' }}>
                         <div style={{ maxWidth: 820, margin: '0 auto' }}>
-                            {currentModule.id === 'read-speak'    && <ModuleReadSpeak    sessionId={sessionId} testId={selectedTest?.id} onComplete={nextModule} />}
-                            {currentModule.id === 'listen-repeat' && <ModuleListenRepeat sessionId={sessionId} testId={selectedTest?.id} onComplete={nextModule} />}
-                            {currentModule.id === 'topic-speak'   && <ModuleTopicSpeak   sessionId={sessionId} testId={selectedTest?.id} onComplete={nextModule} />}
-                            {currentModule.id === 'grammar-quiz'  && <ModuleGrammarQuiz  sessionId={sessionId} testId={selectedTest?.id} onComplete={nextModule} />}
+                            {currentModule.id === 'read-speak'                                           && <ModuleReadSpeak    sessionId={sessionId} testId={selectedTest?.id} onComplete={nextModule} />}
+                            {currentModule.id === 'listen-repeat'                                        && <ModuleListenRepeat sessionId={sessionId} testId={selectedTest?.id} onComplete={nextModule} />}
+                            {['topic-speak','situational-response','interview-qa'].includes(currentModule.id) && <ModuleTopicSpeak   sessionId={sessionId} testId={selectedTest?.id} onComplete={nextModule} />}
+                            {['grammar-quiz','vocabulary-test','email-writing'].includes(currentModule.id)   && <ModuleGrammarQuiz  sessionId={sessionId} testId={selectedTest?.id} onComplete={nextModule} />}
+                            {currentModule.id === 'gd-round' && <ModuleGDRound sessionId={sessionId} testId={selectedTest?.id} test={selectedTest} onComplete={nextModule} />}
                         </div>
                     </div>
 

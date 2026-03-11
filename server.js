@@ -290,70 +290,89 @@ const CEREBRAS_API_URL = 'https://api.cerebras.ai/v1/chat/completions';
 // Helper to get all available API keys
 const getCerebrasKeys = () => {
     const keys = [];
-    // Primary key
     if (process.env.CEREBRAS_API_KEY) keys.push(process.env.CEREBRAS_API_KEY);
     if (process.env.cereberas_api_key) keys.push(process.env.cereberas_api_key);
-
-    // Numbered backups (1-6)
     for (let i = 1; i <= 6; i++) {
         const k = process.env[`CEREBRAS_API_KEY_${i}`];
         if (k) keys.push(k);
     }
-
-    // Deduplicate and filter empty
     return [...new Set(keys)].filter(k => k && k.trim().length > 0);
 };
 
-// Cerebras chat completion helper function with Failover/Rotation
-async function cerebrasChat(messages, options = {}) {
-    const keys = getCerebrasKeys();
+// Round-robin index so each request starts from a different key
+let _cerebrasKeyIndex = 0;
 
-    if (keys.length === 0) {
+// Cerebras chat completion helper with round-robin rotation + exponential-backoff retry on 429
+async function cerebrasChat(messages, options = {}) {
+    const allKeys = getCerebrasKeys();
+    if (allKeys.length === 0) {
         console.error('❌ No Cerebras API keys found in environment variables!');
         throw new Error('Server configuration error: No AI API keys available.');
     }
 
+    // Rotate starting point so load is spread across concurrent requests
+    const startIdx = _cerebrasKeyIndex % allKeys.length;
+    _cerebrasKeyIndex = (_cerebrasKeyIndex + 1) % allKeys.length;
+    const keys = [...allKeys.slice(startIdx), ...allKeys.slice(0, startIdx)];
+
+    const MAX_GLOBAL_RETRIES = 3;   // retry full key cycle up to 3 times on global 429
+    const RETRY_DELAYS = [3000, 7000, 15000]; // wait before each retry cycle
+
     let lastError = null;
 
-    // Try each key in sequence
-    for (const apiKey of keys) {
-        try {
-            const response = await fetch(CEREBRAS_API_URL, {
-                method: 'POST',
-                headers: {
-                    'Authorization': `Bearer ${apiKey}`,
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({
-                    model: options.model || 'gpt-oss-120b',
-                    messages: messages,
-                    temperature: options.temperature || 0.7,
-                    max_tokens: options.max_tokens || 1024,
-                    ...(options.response_format && { response_format: options.response_format })
-                })
-            });
+    for (let globalRetry = 0; globalRetry <= MAX_GLOBAL_RETRIES; globalRetry++) {
+        let all429 = true;
 
-            if (!response.ok) {
+        for (let attempt = 0; attempt < keys.length; attempt++) {
+            const apiKey = keys[attempt];
+            try {
+                const response = await fetch(CEREBRAS_API_URL, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${apiKey}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        model: options.model || 'gpt-oss-120b',
+                        messages,
+                        temperature: options.temperature ?? 0.7,
+                        max_tokens: options.max_tokens || 1024,
+                        ...(options.response_format && { response_format: options.response_format })
+                    })
+                });
+
+                if (response.ok) return await response.json();
+
                 const errorText = await response.text();
-                // If it's a 4xx or 5xx error, log warn and try next key
-                console.warn(`⚠️ API Error (${response.status}) with key ending ...${apiKey.slice(-5)}. Switching to next backup key.`);
                 lastError = new Error(`API Error ${response.status}: ${errorText}`);
-                continue;
+
+                if (response.status === 429) {
+                    console.warn(`⚠️ Cerebras key ...${apiKey.slice(-5)} → 429. Trying next key.`);
+                    await new Promise(r => setTimeout(r, 800));
+                } else {
+                    all429 = false;
+                    console.warn(`⚠️ Cerebras key ...${apiKey.slice(-5)} → ${response.status}. Trying next key.`);
+                }
+
+            } catch (error) {
+                all429 = false;
+                console.warn(`⚠️ Cerebras network error with key ...${apiKey.slice(-5)}: ${error.message}`);
+                lastError = error;
+                await new Promise(r => setTimeout(r, 800));
             }
+        }
 
-            // Success!
-            return await response.json();
-
-        } catch (error) {
-            console.warn(`⚠️ Network/Execution Error with key ending ...${apiKey.slice(-5)}: ${error.message}. Switching to next backup key.`);
-            lastError = error;
-            await new Promise(resolve => setTimeout(resolve, 1000)); // Wait 1s before next key
-            // Continue to loop
+        // If every key got 429 and we have retries left, wait and try again
+        if (all429 && globalRetry < MAX_GLOBAL_RETRIES) {
+            const delay = RETRY_DELAYS[globalRetry];
+            console.warn(`⚠️ All Cerebras keys returned 429. Waiting ${delay/1000}s before retry ${globalRetry + 1}/${MAX_GLOBAL_RETRIES}...`);
+            await new Promise(r => setTimeout(r, delay));
+        } else if (!all429) {
+            break; // non-429 errors won't be fixed by waiting
         }
     }
 
-    // If we get here, all keys failed
-    console.error('❌ All available Cerebras API keys failed.');
+    console.error('❌ All Cerebras API keys failed after retries.');
     throw lastError || new Error('All AI API keys failed to respond.');
 }
 
@@ -13385,7 +13404,7 @@ async function ensureCommTestTables() {
             CREATE TABLE IF NOT EXISTS comm_test_questions (
                 id INT AUTO_INCREMENT PRIMARY KEY,
                 test_id VARCHAR(50) NOT NULL,
-                module_type ENUM('read-speak','listen-repeat','topic-speak','grammar-quiz','vocabulary-test','situational-response','email-writing','interview-qa') NOT NULL,
+                module_type ENUM('read-speak','listen-repeat','topic-speak','grammar-quiz','vocabulary-test','situational-response','email-writing','interview-qa','gd-round') NOT NULL,
                 content TEXT NOT NULL,
                 answer VARCHAR(500) NULL,
                 category VARCHAR(100) NULL,
@@ -13425,7 +13444,7 @@ async function ensureCommTestTables() {
                 id VARCHAR(50) PRIMARY KEY,
                 session_id VARCHAR(50) NOT NULL,
                 student_id VARCHAR(50) NOT NULL,
-                module_type ENUM('read-speak','listen-repeat','topic-speak','grammar-quiz','vocabulary-test','situational-response','email-writing','interview-qa') NOT NULL,
+                module_type ENUM('read-speak','listen-repeat','topic-speak','grammar-quiz','vocabulary-test','situational-response','email-writing','interview-qa','gd-round') NOT NULL,
                 question_id INT NOT NULL DEFAULT 0,
                 transcribed_text TEXT,
                 expected_text TEXT,
@@ -13444,12 +13463,20 @@ async function ensureCommTestTables() {
         try { await pool.query('ALTER TABLE comm_tests ADD COLUMN section_questions JSON NULL AFTER questions_per_module'); } catch (_) {}
         try { await pool.query("ALTER TABLE comm_tests ADD COLUMN proctoring_mode ENUM('off','basic','strict') DEFAULT 'off' AFTER section_questions"); } catch (_) {}
         try { await pool.query('ALTER TABLE comm_tests ADD COLUMN section_times JSON NULL AFTER proctoring_mode'); } catch (_) {}
+        try { await pool.query('ALTER TABLE comm_tests ADD COLUMN gd_participants INT DEFAULT 3'); } catch (_) {}
         // Add hint column for new module types
         try { await pool.query('ALTER TABLE comm_test_questions ADD COLUMN hint TEXT NULL AFTER category'); } catch (_) {}
-        // Expand ENUMs to include new hiring-focused module types
-        const newEnum = "'read-speak','listen-repeat','topic-speak','grammar-quiz','vocabulary-test','situational-response','email-writing','interview-qa'";
+        // Expand ENUMs to include all module types including gd-round
+        const newEnum = "'read-speak','listen-repeat','topic-speak','grammar-quiz','vocabulary-test','situational-response','email-writing','interview-qa','gd-round'";
         try { await pool.query(`ALTER TABLE comm_test_questions MODIFY COLUMN module_type ENUM(${newEnum}) NOT NULL`); } catch (_) {}
         try { await pool.query(`ALTER TABLE comm_test_submissions MODIFY COLUMN module_type ENUM(${newEnum}) NOT NULL`); } catch (_) {}
+        // GD turns table
+        try { await pool.query(`CREATE TABLE IF NOT EXISTS comm_gd_turns (
+            id VARCHAR(50) PRIMARY KEY, session_id VARCHAR(50) NOT NULL, speaker VARCHAR(50) NOT NULL,
+            speaker_label VARCHAR(100), turn_index INT NOT NULL, transcript TEXT,
+            duration_sec FLOAT DEFAULT 0, language_score FLOAT, pronunciation_score FLOAT, confidence_score FLOAT,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP, INDEX idx_gd_session (session_id)
+        )`); } catch (_) {}
         console.log('✅ comm_test tables ready');
     } catch (error) {
         console.error('⚠️ Error creating comm_test tables:', error.message);
