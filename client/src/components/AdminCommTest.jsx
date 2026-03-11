@@ -2,7 +2,7 @@
 import {
     Mic, Plus, Trash2, Edit3, Users, Play, Square, BarChart2,
     X, Search, CheckCircle, CheckCircle2, Clock, BookOpen, Volume2, MessageSquare,
-    PenTool, Eye, AlertCircle, AlertTriangle, Briefcase, FileText, Brain, List, Headphones, ArrowRight
+    PenTool, Eye, AlertCircle, AlertTriangle, Briefcase, FileText, Brain, List, Headphones, ArrowRight, Radio
 } from 'lucide-react';
 import {
     BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer
@@ -22,6 +22,9 @@ const MODULE_DEFS = [
     { key: 'situational-response', label: 'Situational Response',   icon: Briefcase,     color: '#0f766e', group: 'Professional' },
     { key: 'email-writing',        label: 'Professional Writing',   icon: FileText,      color: '#b45309', group: 'Professional' },
     { key: 'interview-qa',         label: 'Interview Q&A',          icon: List,          color: '#be123c', group: 'Professional' },
+    // Group Discussion (exclusive — cannot be mixed with other sections)
+    { key: 'gd-round',             label: 'Group Discussion (GD)',  icon: Radio,         color: '#6366f1', group: 'Group Discussion', exclusive: true,
+      desc: 'AI-powered group discussion — students debate a topic with AI participants' },
 ];
 
 const STATUS_BADGE = {
@@ -500,7 +503,7 @@ function QuestionEditor({ test, onBack, showToast }) {
                             <span style={{ background: D.card, borderRadius: 6, padding: '2px 8px', fontSize: 12, fontWeight: 700, color: D.textSec, flexShrink: 0 }}>#{i+1}</span>
                             <div style={{ flex: 1 }}>
                                 <p style={{ margin: 0, fontSize: 14, color: D.text }}>{q.content}</p>
-                                {q.answer && <p style={{ margin: '4px 0 0', fontSize: 12, color: '#34d399' }}>Answer: <strong>{q.answer}</strong>{q.category ? ` � ${q.category}` : ''}</p>}
+                                {q.answer && <p style={{ margin: '4px 0 0', fontSize: 12, color: '#34d399' }}>Answer: <strong>{q.answer}</strong>{q.category ? ` · ${q.category}` : ''}</p>}
                             </div>
                             <button onClick={() => deleteQuestion(q.id)} style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer', padding: 4 }}><Trash2 size={14}/></button>
                         </div>
@@ -527,6 +530,7 @@ function ReportsView({ testId: propTestId, testTitle }) {
     const [dateFrom, setDateFrom] = useState('');
     const [dateTo, setDateTo] = useState('');
     const [deleting, setDeleting] = useState(null);
+    const [fetchKey, setFetchKey] = useState(0);
 
     useEffect(() => {
         if (!propTestId) {
@@ -553,13 +557,14 @@ function ReportsView({ testId: propTestId, testTitle }) {
             .then(r => r.json())
             .then(d => { setSessions(d.sessions || []); setTotal(d.total || 0); setLoading(false); })
             .catch(() => { setError('Failed to load reports. Check your connection.'); setLoading(false); });
-    }, [propTestId, search, filterTest, filterStatus, filterScore, filterSort, dateFrom, dateTo]);
+    }, [propTestId, search, filterTest, filterStatus, filterScore, filterSort, dateFrom, dateTo, fetchKey]);
 
     useEffect(() => { fetchReports(); }, [fetchReports]);
 
     const resetFilters = () => {
         setSearch(''); setFilterTest(propTestId || ''); setFilterStatus('');
         setFilterScore(''); setFilterSort('newest'); setDateFrom(''); setDateTo('');
+        setFetchKey(k => k + 1);
     };
 
     const handleDelete = async (sessionId) => {
@@ -717,11 +722,56 @@ function SessionReport({ sessionId, onBack }) {
         'listen-repeat': { label: 'Listen & Repeat', color: '#0891b2', bg: 'rgba(8,145,178,0.15)' },
         'topic-speak':   { label: 'Topic Speaking',  color: '#059669', bg: 'rgba(5,150,105,0.15)' },
         'grammar-quiz':  { label: 'Grammar Quiz',    color: '#d97706', bg: 'rgba(217,119,6,0.15)' },
+        'gd-round':      { label: 'Group Discussion', color: '#6366f1', bg: 'rgba(99,102,241,0.15)' },
     };
 
-    const modIcon = mod => mod === 'read-speak' ? '\u{1F4D6}' : mod === 'listen-repeat' ? '\u{1F50A}' : mod === 'topic-speak' ? '\u26A1' : '\u{1F9E0}';
+    const modIcon = mod => mod === 'read-speak' ? '\u{1F4D6}' : mod === 'listen-repeat' ? '\u{1F50A}' : mod === 'topic-speak' ? '\u26A1' : mod === 'gd-round' ? '\u{1F4AC}' : '\u{1F9E0}';
 
     function renderSubmissions(module, submissions) {
+        if (module === 'gd-round') {
+            const ai = submissions[0]?.ai_scores || {};
+            const turns = ai.turns || [];
+            const stuTurns = turns.filter(t => t.speaker === 'student');
+            const aiTurns = turns.filter(t => t.speaker !== 'student');
+            return (
+                <div>
+                    {/* GD Scores overview */}
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 10, marginBottom: 16 }}>
+                        {[['Language', ai.avgLang, '#a78bfa'], ['Pronunciation', ai.avgPron, '#34d399'], ['Confidence', ai.avgConf, '#fb923c'], ['Participation', ai.participation, '#60a5fa']].map(([l, v, c]) => (
+                            <div key={l} style={{ background: D.bg, borderRadius: 10, padding: '12px 10px', border: `1px solid ${D.border}`, textAlign: 'center' }}>
+                                <div style={{ fontSize: '1.2rem', fontWeight: 800, color: c }}>{Math.round(v || 0)}%</div>
+                                <div style={{ fontSize: '0.7rem', color: D.textMuted, fontWeight: 600, marginTop: 3 }}>{l}</div>
+                            </div>
+                        ))}
+                    </div>
+                    {/* GD Stats */}
+                    <div style={{ display: 'flex', gap: 16, marginBottom: 14, fontSize: '0.8rem', color: D.textSec }}>
+                        <span>Total turns: <strong style={{ color: D.text }}>{turns.length || submissions.length}</strong></span>
+                        <span>Student turns: <strong style={{ color: '#10b981' }}>{stuTurns.length}</strong></span>
+                        <span>AI turns: <strong style={{ color: '#818cf8' }}>{aiTurns.length}</strong></span>
+                    </div>
+                    {/* Discussion transcript */}
+                    {turns.length > 0 ? turns.map((t, i) => (
+                        <div key={i} style={{ background: D.bg, borderRadius: 10, padding: '10px 14px', marginBottom: 8, border: `1px solid ${D.border}`, borderLeft: `3px solid ${t.speaker === 'student' ? '#10b981' : '#6366f1'}` }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
+                                <span style={{ fontWeight: 700, color: t.speaker === 'student' ? '#10b981' : '#818cf8', fontSize: '0.78rem' }}>{t.speaker_label || t.speaker}</span>
+                                {t.language_score != null && <span style={{ fontSize: '0.72rem', color: D.textMuted }}>L:{t.language_score} P:{t.pronunciation_score} C:{t.confidence_score}</span>}
+                            </div>
+                            <p style={{ margin: 0, color: D.textSec, fontSize: '0.82rem', lineHeight: 1.5 }}>{t.transcript}</p>
+                        </div>
+                    )) : submissions.map((sub, i) => (
+                        <div key={i} style={{ background: D.bg, borderRadius: 10, padding: 14, marginBottom: 10, border: `1px solid ${D.border}` }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
+                                <span style={{ fontWeight: 700, color: D.textMuted, fontSize: '0.8rem' }}>Turn #{i+1}</span>
+                                <span style={{ fontWeight: 800, color: sub.score >= 60 ? '#10b981' : '#ef4444' }}>{Math.round(sub.score)}%</span>
+                            </div>
+                            {sub.transcribed_text && <p style={{ margin: 0, color: D.textSec, fontSize: '0.85rem' }}>{sub.transcribed_text}</p>}
+                            {sub.feedback && <p style={{ margin: '4px 0 0', color: D.purple, fontSize: '0.78rem', fontStyle: 'italic' }}>{sub.feedback}</p>}
+                        </div>
+                    ))}
+                </div>
+            );
+        }
         if (module === 'topic-speak') {
             return submissions.map((sub, i) => {
                 const ai = sub.ai_scores || {};
@@ -849,7 +899,7 @@ function SessionReport({ sessionId, onBack }) {
             {/* ── TABS ── */}
             <div style={{ display: 'flex', justifyContent: 'center' }}>
                 <div style={{ background: D.card, border: `1px solid ${D.border}`, borderRadius: 30, display: 'flex', padding: 4, boxShadow: '0 4px 6px rgba(0,0,0,0.2)' }}>
-                    {[{ id: 'overview', label: 'Overview' }, { id: 'section', label: 'Section Analysis' }].map(t => (
+                    {[{ id: 'overview', label: 'Overview' }, { id: 'section', label: 'Section Analysis' }, { id: 'time', label: '⏱ Time Analysis' }].map(t => (
                         <button key={t.id} onClick={() => { setActiveTab(t.id); setSelectedModule(null); }}
                             style={{
                                 padding: '10px 20px', border: 'none', cursor: 'pointer', borderRadius: 30,
@@ -867,6 +917,7 @@ function SessionReport({ sessionId, onBack }) {
 
             {/* ── OVERVIEW TAB ── */}
             {activeTab === 'overview' && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
                 <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: 16, alignItems: 'start' }}>
                     {/* Overall Performance card */}
                     <div style={{ background: D.card, borderRadius: 16, border: `1px solid ${D.border}`, padding: 22 }}>
@@ -938,8 +989,120 @@ function SessionReport({ sessionId, onBack }) {
                             })}
                         </div>
                     </div>
+
+                </div>
+
                 </div>
             )}
+
+            {/* ── TIME ANALYSIS TAB ── */}
+            {activeTab === 'time' && (() => {
+                const hasTimes = modules.some(m => m.allocatedMinutes);
+                const totalAllocMins = modules.reduce((s, m) => s + (m.allocatedMinutes || 0), 0);
+                const sessionDurationMs = session.completed_at && session.started_at
+                    ? new Date(session.completed_at) - new Date(session.started_at) : null;
+                const sessionDurationMins = sessionDurationMs ? Math.round(sessionDurationMs / 60000) : null;
+                const utilization = hasTimes && sessionDurationMins
+                    ? Math.min(100, Math.round((sessionDurationMins / totalAllocMins) * 100)) : null;
+                const fmtMins = m => m >= 60 ? `${Math.floor(m/60)}h ${m%60}m` : `${m}m`;
+                return (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                        {/* Summary stats */}
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12 }}>
+                            {[
+                                { label: 'TIME SPENT', value: sessionDurationMins != null ? fmtMins(sessionDurationMins) : 'N/A', color: '#a855f7' },
+                                { label: 'ALLOCATED',  value: hasTimes ? fmtMins(totalAllocMins) : 'Not Set', color: '#0891b2' },
+                                { label: 'UTILIZATION', value: utilization != null ? `${utilization}%` : 'N/A', color: utilization >= 80 ? '#10b981' : utilization >= 50 ? '#f59e0b' : '#94a3b8' },
+                            ].map((s, i) => (
+                                <div key={i} style={{ background: D.bg, border: `1px solid ${D.border}`, borderRadius: 14, padding: 20, textAlign: 'center' }}>
+                                    <div style={{ fontSize: '1.6rem', fontWeight: 900, color: s.color }}>{s.value}</div>
+                                    <div style={{ fontSize: '0.68rem', fontWeight: 700, color: D.textMuted, marginTop: 6, letterSpacing: 1 }}>{s.label}</div>
+                                </div>
+                            ))}
+                        </div>
+
+                        {/* Per-section cards */}
+                        <div style={{ background: D.card, borderRadius: 16, border: `1px solid ${D.border}`, padding: 22 }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 18 }}>
+                                <h3 style={{ margin: 0, fontSize: '0.9rem', fontWeight: 800, color: '#0891b2', textTransform: 'uppercase', letterSpacing: 1 }}>
+                                    ⏱ Section Breakdown
+                                </h3>
+                                {sessionDurationMins != null && hasTimes && (
+                                    <span style={{ fontSize: '0.68rem', color: D.textMuted, fontStyle: 'italic' }}>
+                                        Est. time based on proportional allocation
+                                    </span>
+                                )}
+                            </div>
+                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 14 }}>
+                                {modules.map(m => {
+                                    const meta = MODULE_META[m.module] || { label: m.module, color: D.purple };
+                                    const scoreColor = m.avgScore >= 80 ? '#10b981' : m.avgScore >= 60 ? '#f59e0b' : '#ef4444';
+                                    const proportion = hasTimes && totalAllocMins > 0
+                                        ? (m.allocatedMinutes || 0) / totalAllocMins
+                                        : 1 / modules.length;
+                                    const estMins = sessionDurationMins != null ? Math.round(sessionDurationMins * proportion) : null;
+                                    const passed = m.avgScore >= 60;
+                                    return (
+                                        <div key={m.module} style={{
+                                            background: D.bg, borderRadius: 14,
+                                            border: `1px solid ${meta.color}33`,
+                                            borderLeft: `4px solid ${meta.color}`,
+                                            padding: 18, display: 'flex', flexDirection: 'column', gap: 14
+                                        }}>
+                                            {/* Header */}
+                                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                                                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                                                    <span style={{ fontSize: '1.3rem' }}>{modIcon(m.module)}</span>
+                                                    <span style={{ fontSize: '0.88rem', fontWeight: 700, color: D.text }}>{meta.label}</span>
+                                                </div>
+                                                <span style={{
+                                                    fontSize: '0.7rem', fontWeight: 700, padding: '3px 8px', borderRadius: 6,
+                                                    background: passed ? 'rgba(16,185,129,0.15)' : 'rgba(239,68,68,0.15)',
+                                                    color: passed ? '#10b981' : '#ef4444',
+                                                    border: `1px solid ${passed ? '#10b98133' : '#ef444433'}`
+                                                }}>{passed ? '✓ PASS' : '✗ FAIL'}</span>
+                                            </div>
+                                            {/* Time stats */}
+                                            <div style={{ display: 'flex', gap: 10 }}>
+                                                <div style={{ flex: 1, background: D.card, borderRadius: 10, padding: '10px 14px', textAlign: 'center' }}>
+                                                    <div style={{ fontSize: '1.1rem', fontWeight: 800, color: '#0891b2' }}>
+                                                        {m.allocatedMinutes ? `${m.allocatedMinutes}m` : '—'}
+                                                    </div>
+                                                    <div style={{ fontSize: '0.6rem', fontWeight: 700, color: D.textMuted, marginTop: 3, letterSpacing: 0.8 }}>ALLOCATED</div>
+                                                </div>
+                                                <div style={{ flex: 1, background: D.card, borderRadius: 10, padding: '10px 14px', textAlign: 'center' }}>
+                                                    <div style={{ fontSize: '1.1rem', fontWeight: 800, color: '#a855f7' }}>
+                                                        {estMins != null ? `~${estMins}m` : '—'}
+                                                    </div>
+                                                    <div style={{ fontSize: '0.6rem', fontWeight: 700, color: D.textMuted, marginTop: 3, letterSpacing: 0.8 }}>EST. SPENT</div>
+                                                </div>
+                                            </div>
+                                            {/* Score bar */}
+                                            <div>
+                                                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
+                                                    <span style={{ fontSize: '0.75rem', color: D.textMuted, fontWeight: 600 }}>Score</span>
+                                                    <span style={{ fontSize: '0.82rem', fontWeight: 800, color: scoreColor }}>{m.avgScore}%</span>
+                                                </div>
+                                                <div style={{ height: 10, background: D.card, borderRadius: 6, overflow: 'hidden', border: `1px solid ${D.border}` }}>
+                                                    <div style={{ height: '100%', width: `${m.avgScore}%`, background: `linear-gradient(90deg, ${scoreColor}88, ${scoreColor})`, borderRadius: 6, transition: 'width 1s ease-out' }} />
+                                                </div>
+                                                <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 4, fontSize: '0.6rem', color: D.textMuted }}>
+                                                    <span>0%</span><span>100%</span>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                            {!hasTimes && (
+                                <div style={{ marginTop: 14, padding: '8px 14px', background: 'rgba(245,158,11,0.08)', border: '1px solid #f59e0b33', borderRadius: 8, fontSize: '0.75rem', color: '#f59e0b' }}>
+                                    ⚠ No per-section time limits configured — set them in the test editor to see allocated times
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                );
+            })()}
 
             {/* ── SECTION ANALYSIS TAB ── */}
             {activeTab === 'section' && (
@@ -1105,19 +1268,30 @@ function TestForm({ existing, onSaved, onCancel, showToast }) {
         section_times: initSectionT(initMods, existing),
         passing_score: existing ? (existing.passing_score || 60) : 60,
         attempt_limit: existing ? (existing.attempt_limit ?? null) : null,
+        gd_participants: existing ? (existing.gd_participants || 3) : 3,
         proctoring_mode: existing ? (existing.proctoring_mode || 'off') : 'off',
     });
     const [saving, setSaving] = React.useState(false);
     const [saveError, setSaveError] = React.useState('');
 
     function toggleModule(key) {
+        const def = MODULE_DEFS.find(m => m.key === key);
         const active = form.modules.includes(key);
-        const newMods = active ? form.modules.filter(m => m !== key) : [...form.modules, key];
+        let newMods;
+        if (active) {
+            newMods = form.modules.filter(m => m !== key);
+        } else if (def?.exclusive) {
+            // GD is exclusive — deselect all others
+            newMods = [key];
+        } else {
+            // Deselect any exclusive module when selecting a regular one
+            newMods = [...form.modules.filter(m => !MODULE_DEFS.find(d => d.key === m)?.exclusive), key];
+        }
         const newSQ = { ...form.section_questions };
         const newST = { ...form.section_times };
         if (!active) {
-            if (!newSQ[key]) newSQ[key] = 5;
-            if (!newST[key]) newST[key] = 10;
+            if (!newSQ[key]) newSQ[key] = def?.exclusive ? 1 : 5;
+            if (!newST[key]) newST[key] = def?.exclusive ? 30 : 10;
         }
         setForm({ ...form, modules: newMods, section_questions: newSQ, section_times: newST });
     }
@@ -1143,9 +1317,14 @@ function TestForm({ existing, onSaved, onCancel, showToast }) {
         setSaveError('');
         setSaving(true);
         try {
+            // Only keep section_questions entries for currently active modules
+            const activeSQ = {};
+            form.modules.forEach(k => { activeSQ[k] = form.section_questions[k] || 5; });
             const payload = {
                 ...form,
-                questions_per_module: Math.max(...form.modules.map(k => form.section_questions[k] || 5)),
+                section_questions: activeSQ,
+                questions_per_module: Math.max(...form.modules.map(k => activeSQ[k] || 5)),
+                gd_participants: form.gd_participants || 3,
             };
             const url = existing ? `${API}/admin/comm-test/tests/${existing.id}` : `${API}/admin/comm-test/tests`;
             const r = await fetch(url, { method: existing ? 'PUT' : 'POST', headers: authHeader(), body: JSON.stringify(payload) });
@@ -1296,6 +1475,42 @@ function TestForm({ existing, onSaved, onCancel, showToast }) {
                     </div>
                 )}
 
+                {/* GD-specific config panel */}
+                {form.modules.includes('gd-round') && (
+                    <div style={{ marginBottom: 20, padding: '16px 18px', background: '#1e1b4b', border: '1px solid #6366f144', borderRadius: 12 }}>
+                        <p style={{ ...secHead, margin: '0 0 14px', color: '#818cf8' }}>&#11088; Group Discussion Settings</p>
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
+                            <div>
+                                <label style={{ ...lbl, color: '#a5b4fc' }}>Total Participants (incl. student)</label>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                                    <button onClick={() => setForm({...form, gd_participants: Math.max(2, form.gd_participants - 1)})} style={btnStep}>&#8722;</button>
+                                    <input type="number" min="2" max="8" value={form.gd_participants}
+                                        onChange={e => setForm({...form, gd_participants: Math.min(8, Math.max(2, Number(e.target.value)))})}
+                                        style={{ ...numInp('#818cf8'), width: 52 }}/>
+                                    <button onClick={() => setForm({...form, gd_participants: Math.min(8, form.gd_participants + 1)})} style={btnStep}>&#43;</button>
+                                    <span style={{ fontSize: 12, color: '#818cf8' }}>
+                                        = 1 student + {form.gd_participants - 1} AI
+                                    </span>
+                                </div>
+                            </div>
+                            <div>
+                                <label style={{ ...lbl, color: '#a5b4fc' }}>Duration (30–45 min recommended)</label>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                                    <button onClick={() => { const v = Math.max(15, (form.section_times['gd-round']||30) - 5); setForm({...form, section_times: {...form.section_times, 'gd-round': v}, duration_minutes: v}); }} style={btnStep}>&#8722;</button>
+                                    <input type="number" min="15" max="60" value={form.section_times['gd-round'] || 30}
+                                        onChange={e => { const v = Math.min(60, Math.max(15, Number(e.target.value))); setForm({...form, section_times: {...form.section_times, 'gd-round': v}, duration_minutes: v}); }}
+                                        style={{ ...numInp('#818cf8'), width: 52 }}/>
+                                    <button onClick={() => { const v = Math.min(60, (form.section_times['gd-round']||30) + 5); setForm({...form, section_times: {...form.section_times, 'gd-round': v}, duration_minutes: v}); }} style={btnStep}>&#43;</button>
+                                    <span style={{ fontSize: 12, color: '#818cf8' }}>min</span>
+                                </div>
+                            </div>
+                        </div>
+                        <div style={{ marginTop: 10, fontSize: 12, color: '#6366f1', background: '#1e1b4b', borderRadius: 8, padding: '6px 10px', border: '1px solid #6366f122' }}>
+                            💡 Topic count is fixed at <strong>1</strong> — one discussion topic per session. Questions count in per-section settings is used as the topic.
+                        </div>
+                    </div>
+                )}
+
                 <hr style={divider}/>
 
                 {/* Passing Score + Attempt Limit */}
@@ -1434,7 +1649,7 @@ export default function AdminCommTest() {
     if (view === 'test-reports' && selectedTest) return (
         <div style={{ padding: 24 }}>
             {toast && <Toast {...toast} onClose={() => setToast(null)}/>}
-            <button onClick={() => { setView('tests'); setSelectedTest(null); }} style={{ background: 'none', border: `1px solid ${D.border}`, borderRadius: 8, padding: '6px 14px', cursor: 'pointer', fontSize: 13, marginBottom: 16, color: D.textSec }}>? Back to Tests</button>
+            <button onClick={() => { setView('tests'); setSelectedTest(null); }} style={{ background: 'none', border: `1px solid ${D.border}`, borderRadius: 8, padding: '6px 14px', cursor: 'pointer', fontSize: 13, marginBottom: 16, color: D.textSec }}>← Back to Tests</button>
             <ReportsView testId={selectedTest.id} testTitle={selectedTest.title}/>
         </div>
     );
@@ -1490,6 +1705,12 @@ export default function AdminCommTest() {
                             const badge = STATUS_BADGE[test.status] || STATUS_BADGE.draft;
                             const mods = Array.isArray(test.modules) ? test.modules : JSON.parse(test.modules || '[]');
                             const atLimit = test.attempt_limit;
+                            const activeMods = MODULE_DEFS.filter(m => mods.length === 0 || mods.includes(m.key));
+                            let totalQ = (test.questions_per_module || 5) * (mods.length || 4);
+                            try {
+                                const sq = typeof test.section_questions === 'string' ? JSON.parse(test.section_questions) : test.section_questions;
+                                if (sq && typeof sq === 'object') totalQ = mods.reduce((a, k) => a + Number(sq[k] || 0), 0);
+                            } catch {}
                             return (
                                 <div key={test.id} style={{ background: D.card, border: `1px solid ${D.border}`, borderRadius: 14, padding: 20 }}>
                                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 16 }}>
@@ -1512,7 +1733,7 @@ export default function AdminCommTest() {
                                             </div>
                                             <div style={{ display: 'flex', gap: 18, fontSize: 12, color: D.textMuted, flexWrap: 'wrap' }}>
                                                 <span><Clock size={11} style={{ verticalAlign: 'middle', marginRight: 3 }}/>{test.duration_minutes} min</span>
-                                                <span><BookOpen size={11} style={{ verticalAlign: 'middle', marginRight: 3 }}/>{Number(test.question_count)||0} questions</span>
+                                                <span><BookOpen size={11} style={{ verticalAlign: 'middle', marginRight: 3 }}/>{totalQ} questions</span>
                                                 <span><Users size={11} style={{ verticalAlign: 'middle', marginRight: 3 }}/>{Number(test.assigned_count)||0} assigned</span>
                                                 <span><BarChart2 size={11} style={{ verticalAlign: 'middle', marginRight: 3 }}/>{Number(test.attempt_count)||0} attempts</span>
                                                 <span style={{ color: atLimit ? '#fbbf24' : D.textMuted }}>
