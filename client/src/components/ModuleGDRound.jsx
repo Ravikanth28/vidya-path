@@ -48,42 +48,139 @@ function AudioWave({ active, color = '#6366f1', size = 'md' }) {
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
-   Participant avatar
+   2-D Room Avatar — SVG person with head + suit body
    ═══════════════════════════════════════════════════════════════════════════ */
-function Avatar({ name, isSpeaking, isStudent, color, isRaisedHand }) {
-    const initials = name.replace(/\s*\(AI\)\s*/i, '').split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase();
+const AI_AVT_COLORS = ['#6366f1', '#8b5cf6', '#3b82f6', '#06b6d4', '#a78bfa'];
+
+function RoomAvatar({ name, isSpeaking, isStudent, isRaisedHand, colorIdx = 0 }) {
+    const displayName = name.replace(/\s*\(AI\)\s*/i, '').replace(/\s*\(Student\)\s*/i, '');
+    const color = isStudent ? '#10b981' : AI_AVT_COLORS[colorIdx % AI_AVT_COLORS.length];
+    const initials = displayName.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase();
     return (
-        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6, minWidth: 68, position: 'relative' }}>
-            {/* Raised hand indicator */}
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4, width: 80, position: 'relative' }}>
             {isRaisedHand && (
-                <div style={{ position: 'absolute', top: -6, right: 6, fontSize: 15, zIndex: 2 }}>✋</div>
+                <div style={{ position: 'absolute', top: -8, right: 0, fontSize: 14, zIndex: 3, animation: 'gdFloat .8s ease-in-out infinite alternate' }}>✋</div>
             )}
-            {/* Glow ring */}
+            {/* Avatar wrapper — glow border + pulse when speaking */}
             <div style={{
-                width: 56, height: 56, borderRadius: '50%',
-                background: isSpeaking ? `radial-gradient(circle, ${color}33 0%, transparent 70%)` : 'transparent',
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                transition: 'all 0.4s',
+                padding: 4, borderRadius: 14,
+                border: `2px solid ${isSpeaking ? color : 'transparent'}`,
+                boxShadow: isSpeaking ? `0 0 18px ${color}66` : 'none',
+                background: isSpeaking ? `${color}11` : 'transparent',
+                transition: 'all .35s',
+                animation: isSpeaking ? 'gdRingPulse 1.4s ease-in-out infinite' : 'none',
             }}>
-                <div style={{
-                    width: 48, height: 48, borderRadius: '50%',
-                    background: isSpeaking ? color : C.card,
-                    border: `2px solid ${isSpeaking ? color : C.border}`,
-                    display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    fontSize: 15, fontWeight: 800,
-                    color: isSpeaking ? '#fff' : C.muted,
-                    boxShadow: isSpeaking ? `0 0 22px ${color}66` : 'none',
-                    transition: 'all 0.3s',
-                }}>
-                    {isStudent ? <Mic size={18} /> : initials}
-                </div>
+                <svg width="52" height="66" viewBox="0 0 52 66" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    {/* Head */}
+                    <circle cx="26" cy="15" r="12" fill={isStudent ? '#052e16' : '#1e1b4b'} stroke={color} strokeWidth={isSpeaking ? 2.2 : 1.4} opacity={isSpeaking ? 1 : 0.8} />
+                    {/* Eyes */}
+                    <circle cx="21.5" cy="13" r="1.7" fill={color} opacity={isSpeaking ? 1 : 0.45} />
+                    <circle cx="30.5" cy="13" r="1.7" fill={color} opacity={isSpeaking ? 1 : 0.45} />
+                    {/* Mouth */}
+                    <path d={isSpeaking ? 'M20 20 Q26 25 32 20' : 'M20 20 Q26 23 32 20'} stroke={color} strokeWidth="1.4" strokeLinecap="round" fill="none" opacity={isSpeaking ? 1 : 0.45} />
+                    {/* Student: mic icon | AI: initials */}
+                    {isStudent ? (
+                        <>
+                            <rect x="24" y="7" width="4" height="7.5" rx="2" fill={color} opacity=".85" />
+                            <path d="M20 13.5 Q20 19.5 26 19.5 Q32 19.5 32 13.5" stroke={color} strokeWidth="1.2" fill="none" opacity=".85" />
+                            <line x1="26" y1="19.5" x2="26" y2="23" stroke={color} strokeWidth="1.2" opacity=".85" />
+                        </>
+                    ) : (
+                        <text x="26" y="19" textAnchor="middle" fontSize="8" fontWeight="800" fill={color} fontFamily="system-ui" opacity={isSpeaking ? 1 : 0.55}>{initials}</text>
+                    )}
+                    {/* Neck */}
+                    <rect x="22.5" y="26.5" width="7" height="5" rx="2.5" fill={isStudent ? '#052e16' : '#1e1b4b'} />
+                    {/* Body / suit */}
+                    <rect x="7" y="31.5" width="38" height="31" rx="10" fill={isStudent ? '#064e3b' : '#1e1b4b'} stroke={color} strokeWidth={isSpeaking ? 1.8 : 1} opacity={isSpeaking ? 1 : 0.6} />
+                    {/* Jacket collar V */}
+                    <path d="M18.5 31.5 L26 44 L33.5 31.5" stroke={color} strokeWidth="1.4" fill="none" strokeLinejoin="round" opacity={isSpeaking ? .85 : .35} />
+                    {/* Shoulder caps */}
+                    <ellipse cx="8" cy="38" rx="4.5" ry="7" fill={isStudent ? '#052e16' : '#1e1b4b'} opacity=".9" />
+                    <ellipse cx="44" cy="38" rx="4.5" ry="7" fill={isStudent ? '#052e16' : '#1e1b4b'} opacity=".9" />
+                    {/* Role badge strip */}
+                    <rect x="13" y="50" width="26" height="10" rx="5" fill={`${color}22`} />
+                    <text x="26" y="57.5" textAnchor="middle" fontSize="6.5" fontWeight="800" fill={color} fontFamily="system-ui">{isStudent ? 'YOU' : 'AI'}</text>
+                </svg>
             </div>
-            {/* Name */}
-            <span style={{ fontSize: 10, color: isSpeaking ? C.text : C.muted, fontWeight: isSpeaking ? 700 : 400, textAlign: 'center', maxWidth: 74, lineHeight: 1.2 }}>
-                {name}
+            {/* Name label */}
+            <span style={{ fontSize: 11, fontWeight: isSpeaking ? 800 : 500, color: isSpeaking ? color : '#64748b', textAlign: 'center', maxWidth: 80, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', transition: 'color .3s' }}>
+                {displayName || name}
             </span>
             {/* Wave bars */}
-            <AudioWave active={isSpeaking} color={color} size="sm" />
+            <div style={{ display: 'flex', alignItems: 'center', gap: 2, height: 16 }}>
+                {[0, 1, 2, 3, 4].map(i => (
+                    <div key={i} style={{
+                        width: 3, borderRadius: 2,
+                        background: isSpeaking ? color : '#334155',
+                        height: isSpeaking ? undefined : 3,
+                        animation: isSpeaking ? `gdWave 1s ease-in-out ${i * .12}s infinite alternate` : 'none',
+                        transition: 'background .3s',
+                    }} />
+                ))}
+            </div>
+        </div>
+    );
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Conference Room — seats participants around an oval table
+   ═══════════════════════════════════════════════════════════════════════════ */
+function ConferenceRoom({ participants, activeSpeaker, studentIsSpeaking, handRaised, topic }) {
+    const n = participants.length;
+    let topRow = [], leftP = null, rightP = null;
+    if (n <= 1)      { topRow = participants; }
+    else if (n === 2){ topRow = [participants[0]]; leftP = participants[1]; }
+    else             { leftP = participants[n - 2]; rightP = participants[n - 1]; topRow = participants.slice(0, n - 2); }
+
+    return (
+        <div style={{
+            background: '#1e293b', border: '1px solid #334155', borderRadius: 20,
+            padding: '14px 14px', marginBottom: 10,
+            display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8,
+        }}>
+            <span style={{ fontSize: 9, color: '#475569', fontWeight: 700, letterSpacing: '.1em', textTransform: 'uppercase' }}>
+                ◈ Conference Room · Group Discussion ◈
+            </span>
+
+            {/* Top row */}
+            {topRow.length > 0 && (
+                <div style={{ display: 'flex', gap: 16, justifyContent: 'center' }}>
+                    {topRow.map((p, i) => (
+                        <RoomAvatar key={p.id} name={p.name} isSpeaking={activeSpeaker === p.id} colorIdx={i} />
+                    ))}
+                </div>
+            )}
+
+            {/* Middle: left seat | oval table | right seat */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'auto 1fr auto', alignItems: 'center', gap: 6, width: '100%' }}>
+                <div style={{ display: 'flex', justifyContent: 'center' }}>
+                    {leftP
+                        ? <RoomAvatar name={leftP.name} isSpeaking={activeSpeaker === leftP.id} colorIdx={n - 2} />
+                        : <div style={{ width: 80 }} />}
+                </div>
+                {/* Oval conference table */}
+                <div style={{
+                    background: 'linear-gradient(160deg, #1e293b 0%, #0f172a 100%)',
+                    border: '2px solid #334155', borderRadius: 48,
+                    padding: '14px 10px', textAlign: 'center',
+                    boxShadow: 'inset 0 3px 12px #00000077, 0 0 0 5px #1e293b, 0 0 0 7px #334155',
+                    minHeight: 86, display: 'flex', flexDirection: 'column',
+                    alignItems: 'center', justifyContent: 'center', gap: 5,
+                }}>
+                    <div style={{ fontSize: 8, color: '#475569', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.07em' }}>Discussion Topic</div>
+                    <div style={{ fontSize: 10.5, color: '#818cf8', fontWeight: 700, lineHeight: 1.4, maxWidth: 155 }}>
+                        "{topic && topic.length > 58 ? topic.slice(0, 55) + '\u2026' : topic}"
+                    </div>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'center' }}>
+                    {rightP
+                        ? <RoomAvatar name={rightP.name} isSpeaking={activeSpeaker === rightP.id} colorIdx={n - 1} />
+                        : <div style={{ width: 80 }} />}
+                </div>
+            </div>
+
+            {/* Bottom: student */}
+            <RoomAvatar name="You" isSpeaking={studentIsSpeaking} isStudent isRaisedHand={handRaised} />
         </div>
     );
 }
@@ -497,14 +594,14 @@ export default function ModuleGDRound({ sessionId, testId, test, onComplete }) {
                 </button>
             </div>
 
-            {/* Participants */}
-            <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 14, padding: '14px 16px' }}>
-                <div style={{ fontSize: 11, color: C.muted, fontWeight: 700, marginBottom: 12, letterSpacing: '0.05em' }}>PARTICIPANTS</div>
-                <div style={{ display: 'flex', gap: 16, justifyContent: 'center', flexWrap: 'wrap' }}>
-                    {gd?.participants?.map(p => <Avatar key={p.id} name={p.name} isStudent={false} color={C.indigo} />)}
-                    <Avatar name="You (Student)" isStudent color={C.green} />
-                </div>
-            </div>
+            {/* Conference Room preview during prep */}
+            <ConferenceRoom
+                participants={gd?.participants || []}
+                activeSpeaker={null}
+                studentIsSpeaking={false}
+                handRaised={false}
+                topic={gd?.topic}
+            />
             <style>{gdStyles}</style>
         </div>
     );
@@ -589,16 +686,14 @@ export default function ModuleGDRound({ sessionId, testId, test, onComplete }) {
                 </div>
             </div>
 
-            {/* ── Participants row with live waves ────────────────────── */}
-            <div style={{
-                display: 'flex', gap: 12, justifyContent: 'center', padding: '12px 8px', marginBottom: 10,
-                background: C.card, border: `1px solid ${C.border}`, borderRadius: 14,
-            }}>
-                {gd?.participants?.map(p => (
-                    <Avatar key={p.id} name={p.name} isSpeaking={activeSpeaker === p.id} isStudent={false} color={C.indigo} />
-                ))}
-                <Avatar name="You" isSpeaking={studentIsSpeaking} isStudent isRaisedHand={handRaised} color={C.green} />
-            </div>
+            {/* ── Conference Room ────────────────────────────────────── */}
+            <ConferenceRoom
+                participants={gd?.participants || []}
+                activeSpeaker={activeSpeaker}
+                studentIsSpeaking={studentIsSpeaking}
+                handRaised={handRaised}
+                topic={gd?.topic}
+            />
 
             {/* ── Global wave bar when someone speaks ─────────────────── */}
             {(aiIsSpeaking || studentIsSpeaking) && (
@@ -733,4 +828,6 @@ const gdStyles = `
     75%  { height: 10px; }
     100% { height: 6px;  }
 }
+@keyframes gdRingPulse { 0%,100%{opacity:1} 50%{opacity:.55} }
+@keyframes gdFloat { from{transform:translateY(0)} to{transform:translateY(-5px)} }
 `;
