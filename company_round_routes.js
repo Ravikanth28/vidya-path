@@ -8,7 +8,7 @@
  *  - Card actions: Assign, Live/End, Attempts, Delete, Report
  *  - Proctoring config per test
  *  - Local code execution (Python, JS, C, C++, Java) + sql.js for SQL
- *  - Full evaluation + per-section score breakdown
+ *  - Full evaluation +per-section score breakdown
  */
 
 const path = require('path');
