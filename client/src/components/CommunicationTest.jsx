@@ -1514,15 +1514,21 @@ export default function CommunicationTest({ user }) {
                     </div>
 
                     {/* Scrollable content area */}
-                    <div style={{ flex: 1, overflowY: 'auto', padding: '28px 20px' }}>
-                        <div style={{ maxWidth: 820, margin: '0 auto' }}>
-                            {currentModule.id === 'read-speak'                                           && <ModuleReadSpeak    sessionId={sessionId} testId={selectedTest?.id} onComplete={nextModule} />}
-                            {currentModule.id === 'listen-repeat'                                        && <ModuleListenRepeat sessionId={sessionId} testId={selectedTest?.id} onComplete={nextModule} />}
-                            {['topic-speak','situational-response','interview-qa'].includes(currentModule.id) && <ModuleTopicSpeak   sessionId={sessionId} testId={selectedTest?.id} onComplete={nextModule} />}
-                            {['grammar-quiz','vocabulary-test','email-writing'].includes(currentModule.id)   && <ModuleGrammarQuiz  sessionId={sessionId} testId={selectedTest?.id} onComplete={nextModule} />}
-                            {currentModule.id === 'gd-round' && <ModuleGDRound sessionId={sessionId} testId={selectedTest?.id} test={selectedTest} onComplete={nextModule} />}
+                    {currentModule.id === 'gd-round' ? (
+                        /* GD gets its own full-height container — no scroll, no padding */
+                        <div style={{ flex: 1, position: 'relative', minHeight: 0, overflow: 'hidden' }}>
+                            <ModuleGDRound sessionId={sessionId} testId={selectedTest?.id} test={selectedTest} onComplete={nextModule} />
                         </div>
-                    </div>
+                    ) : (
+                        <div style={{ flex: 1, overflowY: 'auto', padding: '28px 20px' }}>
+                            <div style={{ maxWidth: 820, margin: '0 auto' }}>
+                                {currentModule.id === 'read-speak'                                           && <ModuleReadSpeak    sessionId={sessionId} testId={selectedTest?.id} onComplete={nextModule} />}
+                                {currentModule.id === 'listen-repeat'                                        && <ModuleListenRepeat sessionId={sessionId} testId={selectedTest?.id} onComplete={nextModule} />}
+                                {['topic-speak','situational-response','interview-qa'].includes(currentModule.id) && <ModuleTopicSpeak   sessionId={sessionId} testId={selectedTest?.id} onComplete={nextModule} />}
+                                {['grammar-quiz','vocabulary-test','email-writing'].includes(currentModule.id)   && <ModuleGrammarQuiz  sessionId={sessionId} testId={selectedTest?.id} onComplete={nextModule} />}
+                            </div>
+                        </div>
+                    )}
 
                     {/* Exit Section confirmation modal */}
                     {exitSectionModal && (

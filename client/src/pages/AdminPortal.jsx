@@ -1,6 +1,6 @@
 ﻿import { useState, useEffect, useRef, useMemo } from 'react'
 import { Routes, Route, useLocation } from 'react-router-dom'
-import { LayoutDashboard, Users, Trophy, Award, List, Search, Send, Activity, CheckCircle, Check, TrendingUp, Clock, Globe, FileCode, Plus, X, Code, ChevronRight, Upload, AlertTriangle, Zap, Target, Sparkles, Bot, Wand2, Eye, FileText, BarChart2, RefreshCw, Calendar, HelpCircle, Trash2, Save, Brain, XCircle, Shield, Download, ClipboardList, Settings, Database, Mail, MessageSquare, Github, ExternalLink, BarChart3, Video, Building2, Filter, ChevronDown, Hash, Percent, ArrowUpDown, Link2, Layers, Mic } from 'lucide-react'
+import { LayoutDashboard, Users, Trophy, Award, List, Search, Send, Activity, CheckCircle, Check, TrendingUp, Clock, Globe, FileCode, Plus, X, Code, ChevronRight, Upload, AlertTriangle, Zap, Target, Sparkles, Bot, Wand2, Eye, FileText, BarChart2, RefreshCw, Calendar, HelpCircle, Trash2, Save, Brain, XCircle, Shield, Download, ClipboardList, Settings, Database, MessageSquare, Github, ExternalLink, BarChart3, Video, Building2, Filter, ChevronDown, Hash, Percent, ArrowUpDown, Link2, Layers, Mic } from 'lucide-react'
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, BarChart, Bar, Legend } from 'recharts'
 import DashboardLayout from '../components/DashboardLayout'
 import { AIChatbot, AIFloatingButton } from '../components/AIChatbot'
@@ -11,7 +11,6 @@ import LocalTestCasesManager from '../components/LocalTestCasesManager'
 import AdminLiveMonitoring from '../components/AdminLiveMonitoring'
 import AdminOperations from '../components/AdminOperations'
 import UserManagement from '../components/UserManagement'
-import DirectMessaging from '../components/DirectMessaging'
 import FileUpload from '../components/FileUpload'
 import SkillTestManager from '../components/SkillTestManager'
 import SkillSubmissions from '../components/SkillSubmissions'
@@ -36,7 +35,6 @@ import './Portal.css'
 const API_BASE = (import.meta.env.VITE_API_URL || 'http://localhost:3000') + '/api'
 
 const COLORS = ['#3b82f6', '#8b5cf6', '#06b6d4', '#10b981', '#f59e0b']
-const ADMIN_ID = 'admin-001'
 
 
 function AdminPortal() {
@@ -45,21 +43,6 @@ function AdminPortal() {
     const location = useLocation()
     const [title, setTitle] = useState('')
     const [subtitle, setSubtitle] = useState('')
-    const [unreadCount, setUnreadCount] = useState(0)
-
-    // Poll for unread messages
-    useEffect(() => {
-        const userId = user?.id || user?.userId || ADMIN_ID
-        const fetchUnread = async () => {
-            try {
-                const res = await axios.get(`${API_BASE}/messages/unread/${userId}`)
-                setUnreadCount(res.data.unreadCount || 0)
-            } catch (e) { /* ignore */ }
-        }
-        fetchUnread()
-        const interval = setInterval(fetchUnread, 15000)
-        return () => clearInterval(interval)
-    }, [user])
 
     useEffect(() => {
         const path = location.pathname.split('/').pop()
@@ -108,9 +91,10 @@ function AdminPortal() {
                 setTitle('User Management')
                 setSubtitle('Create, edit, and manage platform users')
                 break
+            case 'login-activity':
             case 'messaging':
-                setTitle('Messaging')
-                setSubtitle('Chat with students and mentors')
+                setTitle('Login Activity')
+                setSubtitle('Track student logins, logouts, tests attended, and time spent')
                 break
             case 'analytics':
                 setTitle(t('analytics'))
@@ -219,7 +203,7 @@ function AdminPortal() {
             children: [
                 { path: '/admin/operations', label: t('admin_operations'), icon: <Settings size={20} /> },
                 { path: '/admin/user-management', label: 'User Management', icon: <Shield size={20} /> },
-                { path: '/admin/messaging', label: 'Messaging', icon: <Mail size={20} />, badge: unreadCount },
+                { path: '/admin/login-activity', label: 'Login Activity', icon: <ClipboardList size={20} /> },
                 { path: '/admin/certificates', label: 'Issue Certificates', icon: <Award size={20} /> },
                 { path: '/admin/webhooks', label: 'Webhook Manager', icon: <Zap size={20} /> },
                 { path: '/admin/reports', label: 'Export Reports', icon: <Download size={20} /> }
@@ -246,7 +230,8 @@ function AdminPortal() {
                 <Route path="/analytics" element={<AdminAnalyticsDashboard />} />
                 <Route path="/operations" element={<AdminOperations />} />
                 <Route path="/user-management" element={<UserManagement />} />
-                <Route path="/messaging" element={<DirectMessaging currentUser={{ ...user, role: 'admin' }} />} />
+                <Route path="/login-activity" element={<AdminLoginActivity />} />
+                <Route path="/messaging" element={<AdminLoginActivity />} />
                 <Route path="/webhooks" element={<WebhookManager />} />
                 <Route path="/certificates" element={<AdminCertificateManager />} />
                 <Route path="/plagiarism" element={<AdminPlagiarismDashboard adminId={user?.id} adminName={user?.name} />} />
@@ -1405,6 +1390,20 @@ function AllSubmissions() {
     const [sortDir, setSortDir] = useState('desc')
     const [showFilters, setShowFilters] = useState(false)
 
+    // WhatsApp Send Report modal state
+    const [showWAModal, setShowWAModal] = useState(false)
+    const [waStep, setWAStep] = useState(1)        // 1=type, 2=title, 3=mode, 4=details
+    const [waTestType, setWATestType] = useState('crt')
+    const [waTestTitle, setWATestTitle] = useState('')
+    const [waSendMode, setWASendMode] = useState('individual') // 'individual' | 'bulk'
+    const [waIndivName, setWAIndivName] = useState('')
+    const [waIndivEmail, setWAIndivEmail] = useState('')
+    const [waIndivPhone, setWAIndivPhone] = useState('')
+    const [waBulkJson, setWABulkJson] = useState('')
+    const [waSending, setWASending] = useState(false)
+    const [waResults, setWAResults] = useState([])  // [{name, phone, status, link}]
+    const [waJsonError, setWAJsonError] = useState('')
+
     const fetchSubmissions = () => {
         setLoading(true)
         Promise.all([
@@ -1782,6 +1781,15 @@ function AllSubmissions() {
                     }}>
                         <Trash2 size={14} /> {resetting ? 'Resetting...' : 'Reset All'}
                     </button>
+
+                    {/* WhatsApp Send Report Button */}
+                    <button onClick={() => { setShowWAModal(true); setWAStep(1); setWATestType('crt'); setWATestTitle(''); setWASendMode('individual'); setWAIndivName(''); setWAIndivEmail(''); setWAIndivPhone(''); setWABulkJson(''); setWAResults([]); setWAJsonError(''); }} style={{
+                        padding: '0.5rem 0.75rem', background: 'rgba(37,211,102,0.12)', border: '1px solid rgba(37,211,102,0.4)',
+                        borderRadius: '8px', color: '#25d366', cursor: 'pointer', fontSize: '0.82rem', fontWeight: 600,
+                        display: 'flex', alignItems: 'center', gap: '5px'
+                    }}>
+                        <span style={{ fontSize: '1rem' }}>📲</span> Send Report
+                    </button>
                     
                     {/* Additional Reset Button explicitly for CRT/Round Tests ONLY */}
                     {activeTab === 'crt' && (
@@ -2075,6 +2083,369 @@ function AllSubmissions() {
                     onClose={() => { setViewCRTReport(null); setCrtReportData(null); }}
                 />
             )}
+
+            {/* ═══ WhatsApp Send Report Modal ═══ */}
+            {showWAModal && (() => {
+                // Derive available titles for chosen type
+                const typeMap = {
+                    crt: crtSubmissions,
+                    global: globalSubmissions,
+                    mcq: mcqSubmissions,
+                    aptitude: aptitudeSubmissions,
+                }
+                const pool = typeMap[waTestType] || []
+                const titleKey = waTestType === 'mcq' ? 'mcq_title' : waTestType === 'global' ? 'testTitle' : waTestType === 'aptitude' ? 'itemTitle' : 'test_title'
+                const availTitles = [...new Set(pool.map(s => s[titleKey] || s.itemTitle || s.testTitle || s.title || '').filter(Boolean))].sort()
+
+                // Build WhatsApp message for a single submission
+                const buildMessage = (sub) => {
+                    const name = sub.studentName || sub.student_name || 'Student'
+                    const title = sub[titleKey] || sub.itemTitle || sub.testTitle || sub.title || 'Test'
+                    const score = Math.round(Number(sub.score || sub.overallPercentage || 0))
+                    const status = (sub.status || '').toUpperCase() || (score >= (sub.pass_percentage || 60) ? 'PASSED' : 'FAILED')
+                    const rank = sub.rank ? `${sub.rank}/${sub.total_participants || '—'}` : '—'
+                    const date = sub.submittedAt || sub.submitted_at || sub.completed_at
+                        ? new Date(sub.submittedAt || sub.submitted_at || sub.completed_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })
+                        : ''
+                    const sectionScores = sub.section_scores || {}
+                    const sections = sub.sections || Object.keys(sectionScores)
+                    const totalQ = sections.reduce((s, sec) => s + (sectionScores[sec]?.total || 0), 0) || sub.total_questions || ''
+                    const correctQ = sections.reduce((s, sec) => s + (sectionScores[sec]?.correct || 0), 0) || sub.correct_answers || ''
+                    const wrongQ = correctQ !== '' && totalQ !== '' ? (sub.attempted_questions != null ? sub.attempted_questions - correctQ : '') : ''
+                    const missed = totalQ !== '' && sub.attempted_questions != null ? totalQ - sub.attempted_questions : ''
+
+                    let secLines = ''
+                    if (sections.length > 0) {
+                        secLines = '\n\n📚 *Section-wise Performance:*\n' + sections.map(sec => {
+                            const ss = sectionScores[sec] || {}
+                            const label = { aptitude: 'Aptitude', verbal: 'Verbal', logical: 'Logical', reasoning: 'Reasoning', technical_mcq: 'Technical MCQ', coding: 'Coding', sql: 'SQL' }[sec] || sec
+                            return `• ${label}: ${Math.round(ss.score || 0)}% (${ss.correct || 0}/${ss.total || 0})`
+                        }).join('\n')
+                    }
+
+                    return `🎓 *AI Mentor Hub – Test Report*\n\n👤 *Student:* ${name}\n📋 *Test:* ${title}${date ? `\n📅 *Date:* ${date}` : ''}\n\n📊 *Overall Score:* ${score}%\n🏆 *Status:* ${status}\n🎯 *Rank:* ${rank}${totalQ ? `\n\n📝 *Question Breakdown:*\n✅ Correct: ${correctQ}${wrongQ !== '' ? `\n❌ Wrong: ${wrongQ}` : ''}${missed !== '' ? `\n⏭️ Missed: ${missed}` : ''}\n📋 Total: ${totalQ}` : ''}${secLines}\n\n🔗 Login to AI Mentor Hub to view your full detailed report.`
+                }
+
+                // Find submission by email and title
+                const findSub = (email, title) => {
+                    const emailLc = (email || '').toLowerCase().trim()
+                    const titleLc = (title || '').toLowerCase().trim()
+                    return pool.find(s => {
+                        const sEmail = (s.studentEmail || s.student_email || s.email || '').toLowerCase().trim()
+                        const sTitle = (s[titleKey] || s.itemTitle || s.testTitle || s.title || '').toLowerCase().trim()
+                        return sEmail === emailLc && (titleLc === '' || sTitle === titleLc)
+                    })
+                }
+
+                // Send individual text — calls backend API directly
+                const sendIndividual = async () => {
+                    const sub = findSub(waIndivEmail, waTestTitle)
+                    const phone = waIndivPhone.replace(/\D/g, '')
+                    if (!phone) { alert('Please enter a valid phone number.'); return }
+                    const msg = sub ? buildMessage(sub) : `🎓 *AI Mentor Hub – Test Report*\n\n👤 *Student:* ${waIndivName || waIndivEmail}\n📋 *Test:* ${waTestTitle}\n\n⚠️ Detailed report data not available. Please log into the portal to view your results.`
+                    setWASending(true)
+                    setWAResults([{ name: waIndivName || waIndivEmail, phone, status: 'Sending…' }])
+                    try {
+                        await axios.post(`${API_BASE}/admin/send-whatsapp`, { phone, message: msg })
+                        setWAResults([{ name: waIndivName || waIndivEmail, phone, status: sub ? '✅ Text sent' : '✅ Text sent (no submission data found)' }])
+                    } catch (err) {
+                        const errMsg = err.response?.data?.error || err.message
+                        setWAResults([{ name: waIndivName || waIndivEmail, phone, status: `❌ Failed: ${errMsg}` }])
+                    } finally {
+                        setWASending(false)
+                    }
+                }
+
+                // Send individual PDF report
+                const sendIndividualPDF = async () => {
+                    const sub = findSub(waIndivEmail, waTestTitle)
+                    if (!sub) { alert('No CRT submission found for this email and test title. PDF reports are only available for Round Tests.'); return }
+                    const attemptId = sub.attemptId || sub.id
+                    if (!attemptId) { alert('Could not find attempt ID for this submission.'); return }
+                    const phone = waIndivPhone.replace(/\D/g, '')
+                    if (!phone) { alert('Please enter a valid phone number.'); return }
+                    setWASending(true)
+                    setWAResults([{ name: waIndivName || waIndivEmail, phone, status: '⏳ Generating PDF & sending…' }])
+                    try {
+                        await axios.post(`${API_BASE}/admin/send-whatsapp-pdf`, { attemptId, phone })
+                        setWAResults([{ name: waIndivName || waIndivEmail, phone, status: '✅ PDF report sent!' }])
+                    } catch (err) {
+                        const errMsg = err.response?.data?.error || err.message
+                        setWAResults([{ name: waIndivName || waIndivEmail, phone, status: `❌ PDF failed: ${errMsg}` }])
+                    } finally {
+                        setWASending(false)
+                    }
+                }
+
+                // Parse & prepare bulk — then allow per-row send or send-all
+                const sendBulk = () => {
+                    setWAJsonError('')
+                    let list
+                    try { list = JSON.parse(waBulkJson) } catch { setWAJsonError('Invalid JSON. Please fix and retry.'); return }
+                    if (!Array.isArray(list) || list.length === 0) { setWAJsonError('JSON must be a non-empty array of objects.'); return }
+                    const results = []
+                    list.forEach((item, i) => {
+                        const { name, email, phone: rawPhone } = item
+                        if (!rawPhone) { results.push({ name: name || email || `#${i+1}`, email, phone: '', msg: '', status: 'Skipped – no phone' }); return }
+                        const phone = String(rawPhone).replace(/\D/g, '')
+                        const sub = findSub(email, waTestTitle)
+                        const msgObj = sub ? { ...sub, studentName: name || sub.studentName } : null
+                        const msg = msgObj ? buildMessage(msgObj) : `🎓 *AI Mentor Hub – Test Report*\n\n👤 *Student:* ${name || email}\n📋 *Test:* ${waTestTitle}\n\n⚠️ Report data not available. Please log into the portal.`
+                        const attemptId = sub ? (sub.attemptId || sub.id) : null
+                        results.push({ name: name || email || `#${i+1}`, email, phone, msg, attemptId, status: 'Ready' })
+                    })
+                    setWAResults(results)
+                }
+
+                const sendOneBulkRow = async (idx) => {
+                    const row = waResults[idx]
+                    if (!row.phone || !row.msg) return
+                    setWAResults(prev => prev.map((r, i) => i === idx ? { ...r, status: 'Sending…' } : r))
+                    try {
+                        await axios.post(`${API_BASE}/admin/send-whatsapp`, { phone: row.phone, message: row.msg })
+                        setWAResults(prev => prev.map((r, i) => i === idx ? { ...r, status: '✅ Text sent' } : r))
+                    } catch (err) {
+                        const errMsg = err.response?.data?.error || err.message
+                        setWAResults(prev => prev.map((r, i) => i === idx ? { ...r, status: `❌ ${errMsg}` } : r))
+                    }
+                }
+
+                const sendOneBulkPDF = async (idx) => {
+                    const row = waResults[idx]
+                    if (!row.phone) return
+                    if (!row.attemptId) { setWAResults(prev => prev.map((r, i) => i === idx ? { ...r, status: '❌ No CRT attempt found' } : r)); return }
+                    setWAResults(prev => prev.map((r, i) => i === idx ? { ...r, status: '⏳ Generating PDF…' } : r))
+                    try {
+                        await axios.post(`${API_BASE}/admin/send-whatsapp-pdf`, { attemptId: row.attemptId, phone: row.phone })
+                        setWAResults(prev => prev.map((r, i) => i === idx ? { ...r, status: '✅ PDF sent' } : r))
+                    } catch (err) {
+                        const errMsg = err.response?.data?.error || err.message
+                        setWAResults(prev => prev.map((r, i) => i === idx ? { ...r, status: `❌ PDF: ${errMsg}` } : r))
+                    }
+                }
+
+                const sendAllBulk = async () => {
+                    setWASending(true)
+                    for (let i = 0; i < waResults.length; i++) {
+                        if (waResults[i].phone && waResults[i].msg && !waResults[i].status?.startsWith('✅')) {
+                            await sendOneBulkRow(i)
+                            await new Promise(r => setTimeout(r, 700)) // brief gap between sends
+                        }
+                    }
+                    setWASending(false)
+                }
+
+                const typeLabel = { crt: 'Round Test', global: 'Global Test', mcq: 'MCQ', aptitude: 'Aptitude' }
+
+                return (
+                    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.75)', zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '16px' }}
+                        onClick={() => setShowWAModal(false)}>
+                        <div onClick={e => e.stopPropagation()} style={{ background: '#111827', border: '1px solid #374151', borderRadius: '20px', width: '100%', maxWidth: '600px', maxHeight: '90vh', overflowY: 'auto', boxShadow: '0 25px 50px rgba(0,0,0,0.8)' }}>
+                            {/* Header */}
+                            <div style={{ background: 'linear-gradient(135deg, #075e54, #128c7e)', padding: '20px 24px', borderRadius: '20px 20px 0 0', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                                    <span style={{ fontSize: '1.8rem' }}>📲</span>
+                                    <div>
+                                        <div style={{ color: 'white', fontWeight: 900, fontSize: '1.1rem' }}>Send Report via WhatsApp</div>
+                                        <div style={{ color: 'rgba(255,255,255,0.75)', fontSize: '0.78rem', marginTop: '2px' }}>Step {waStep} of 4</div>
+                                    </div>
+                                </div>
+                                <button onClick={() => setShowWAModal(false)} style={{ background: 'rgba(255,255,255,0.15)', border: 'none', color: 'white', borderRadius: '50%', width: 32, height: 32, cursor: 'pointer', fontSize: '1.1rem', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>✕</button>
+                            </div>
+
+                            {/* Step indicator */}
+                            <div style={{ display: 'flex', padding: '16px 24px 0', gap: '6px' }}>
+                                {[1,2,3,4].map(n => (
+                                    <div key={n} style={{ flex: 1, height: '4px', borderRadius: '4px', background: waStep >= n ? '#25d366' : '#374151', transition: 'background 0.3s' }}></div>
+                                ))}
+                            </div>
+
+                            <div style={{ padding: '24px' }}>
+
+                                {/* Step 1: Test Type */}
+                                {waStep === 1 && (
+                                    <div>
+                                        <div style={{ color: '#e5e7eb', fontWeight: 800, fontSize: '1rem', marginBottom: '16px' }}>1. Choose Test Type</div>
+                                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                                            {[
+                                                { key: 'crt', label: 'Round Test', icon: '🏢', desc: `${crtSubmissions.length} submissions` },
+                                                { key: 'global', label: 'Global Test', icon: '🌐', desc: `${globalSubmissions.length} submissions` },
+                                                { key: 'mcq', label: 'MCQ', icon: '🔢', desc: `${mcqSubmissions.length} submissions` },
+                                                { key: 'aptitude', label: 'Aptitude', icon: '📝', desc: `${aptitudeSubmissions.length} submissions` },
+                                            ].map(t => (
+                                                <button key={t.key} onClick={() => { setWATestType(t.key); setWATestTitle('') }}
+                                                    style={{ padding: '16px', border: waTestType === t.key ? '2px solid #25d366' : '1px solid #374151', borderRadius: '14px', background: waTestType === t.key ? 'rgba(37,211,102,0.1)' : '#1e293b', cursor: 'pointer', textAlign: 'left', transition: 'all 0.2s' }}>
+                                                    <div style={{ fontSize: '1.6rem', marginBottom: '6px' }}>{t.icon}</div>
+                                                    <div style={{ color: waTestType === t.key ? '#25d366' : '#e5e7eb', fontWeight: 800, fontSize: '0.9rem' }}>{t.label}</div>
+                                                    <div style={{ color: '#6b7280', fontSize: '0.75rem', marginTop: '2px' }}>{t.desc}</div>
+                                                </button>
+                                            ))}
+                                        </div>
+                                        <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '20px' }}>
+                                            <button onClick={() => setWAStep(2)} style={{ padding: '10px 24px', background: '#25d366', border: 'none', borderRadius: '10px', color: 'white', fontWeight: 700, cursor: 'pointer', fontSize: '0.9rem' }}>Next →</button>
+                                        </div>
+                                    </div>
+                                )}
+
+                                {/* Step 2: Test Title */}
+                                {waStep === 2 && (
+                                    <div>
+                                        <div style={{ color: '#e5e7eb', fontWeight: 800, fontSize: '1rem', marginBottom: '16px' }}>2. Select Test Title <span style={{ color: '#6b7280', fontSize: '0.8rem', fontWeight: 500 }}>({typeLabel[waTestType]})</span></div>
+                                        {availTitles.length === 0 ? (
+                                            <div style={{ padding: '16px', background: 'rgba(239,68,68,0.1)', borderRadius: '10px', color: '#f87171', fontSize: '0.85rem' }}>No submissions found for this test type.</div>
+                                        ) : (
+                                            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', maxHeight: '260px', overflowY: 'auto' }}>
+                                                {availTitles.map(t => (
+                                                    <button key={t} onClick={() => setWATestTitle(t)}
+                                                        style={{ padding: '12px 16px', border: waTestTitle === t ? '2px solid #25d366' : '1px solid #374151', borderRadius: '10px', background: waTestTitle === t ? 'rgba(37,211,102,0.1)' : '#1e293b', cursor: 'pointer', textAlign: 'left', color: waTestTitle === t ? '#25d366' : '#e5e7eb', fontWeight: 600, fontSize: '0.88rem', transition: 'all 0.2s' }}>
+                                                        {t}
+                                                    </button>
+                                                ))}
+                                            </div>
+                                        )}
+                                        <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '20px' }}>
+                                            <button onClick={() => setWAStep(1)} style={{ padding: '10px 20px', background: '#374151', border: 'none', borderRadius: '10px', color: '#e5e7eb', fontWeight: 600, cursor: 'pointer', fontSize: '0.9rem' }}>← Back</button>
+                                            <button onClick={() => setWAStep(3)} disabled={!waTestTitle} style={{ padding: '10px 24px', background: waTestTitle ? '#25d366' : '#374151', border: 'none', borderRadius: '10px', color: 'white', fontWeight: 700, cursor: waTestTitle ? 'pointer' : 'not-allowed', fontSize: '0.9rem', opacity: waTestTitle ? 1 : 0.5 }}>Next →</button>
+                                        </div>
+                                    </div>
+                                )}
+
+                                {/* Step 3: Send Mode */}
+                                {waStep === 3 && (
+                                    <div>
+                                        <div style={{ color: '#e5e7eb', fontWeight: 800, fontSize: '1rem', marginBottom: '16px' }}>3. How do you want to send?</div>
+                                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
+                                            {[
+                                                { key: 'individual', label: 'Individual', icon: '👤', desc: 'Send to one student by entering their details' },
+                                                { key: 'bulk', label: 'Bulk Send', icon: '👥', desc: 'Upload a JSON list of students with phone numbers' },
+                                            ].map(m => (
+                                                <button key={m.key} onClick={() => setWASendMode(m.key)}
+                                                    style={{ padding: '20px 16px', border: waSendMode === m.key ? '2px solid #25d366' : '1px solid #374151', borderRadius: '14px', background: waSendMode === m.key ? 'rgba(37,211,102,0.1)' : '#1e293b', cursor: 'pointer', textAlign: 'left', transition: 'all 0.2s' }}>
+                                                    <div style={{ fontSize: '2rem', marginBottom: '8px' }}>{m.icon}</div>
+                                                    <div style={{ color: waSendMode === m.key ? '#25d366' : '#e5e7eb', fontWeight: 800, fontSize: '0.95rem', marginBottom: '6px' }}>{m.label}</div>
+                                                    <div style={{ color: '#9ca3af', fontSize: '0.78rem', lineHeight: 1.4 }}>{m.desc}</div>
+                                                </button>
+                                            ))}
+                                        </div>
+                                        <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '20px' }}>
+                                            <button onClick={() => setWAStep(2)} style={{ padding: '10px 20px', background: '#374151', border: 'none', borderRadius: '10px', color: '#e5e7eb', fontWeight: 600, cursor: 'pointer', fontSize: '0.9rem' }}>← Back</button>
+                                            <button onClick={() => { setWAResults([]); setWAStep(4); }} style={{ padding: '10px 24px', background: '#25d366', border: 'none', borderRadius: '10px', color: 'white', fontWeight: 700, cursor: 'pointer', fontSize: '0.9rem' }}>Next →</button>
+                                        </div>
+                                    </div>
+                                )}
+
+                                {/* Step 4: Details + Send */}
+                                {waStep === 4 && (
+                                    <div>
+                                        <div style={{ color: '#e5e7eb', fontWeight: 800, fontSize: '1rem', marginBottom: '4px' }}>4. {waSendMode === 'individual' ? 'Enter Student Details' : 'Upload Student List (JSON)'}</div>
+                                        <div style={{ color: '#6b7280', fontSize: '0.78rem', marginBottom: '16px' }}>Test: <strong style={{ color: '#a855f7' }}>{waTestTitle}</strong> ({typeLabel[waTestType]})</div>
+
+                                        {waSendMode === 'individual' ? (
+                                            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                                                <div>
+                                                    <label style={{ display: 'block', color: '#9ca3af', fontSize: '0.78rem', fontWeight: 700, marginBottom: '4px', textTransform: 'uppercase' }}>Student Name</label>
+                                                    <input value={waIndivName} onChange={e => setWAIndivName(e.target.value)} placeholder="e.g. Akshaya" style={{ width: '100%', padding: '10px 14px', background: '#1e293b', border: '1px solid #374151', borderRadius: '10px', color: 'white', fontSize: '0.9rem', boxSizing: 'border-box', outline: 'none' }} />
+                                                </div>
+                                                <div>
+                                                    <label style={{ display: 'block', color: '#9ca3af', fontSize: '0.78rem', fontWeight: 700, marginBottom: '4px', textTransform: 'uppercase' }}>Login Email (Username)</label>
+                                                    <input value={waIndivEmail} onChange={e => setWAIndivEmail(e.target.value)} placeholder="student@example.com" style={{ width: '100%', padding: '10px 14px', background: '#1e293b', border: '1px solid #374151', borderRadius: '10px', color: 'white', fontSize: '0.9rem', boxSizing: 'border-box', outline: 'none' }} />
+                                                </div>
+                                                <div>
+                                                    <label style={{ display: 'block', color: '#9ca3af', fontSize: '0.78rem', fontWeight: 700, marginBottom: '4px', textTransform: 'uppercase' }}>WhatsApp Phone Number</label>
+                                                    <input value={waIndivPhone} onChange={e => setWAIndivPhone(e.target.value)} placeholder="91XXXXXXXXXX (with country code)" style={{ width: '100%', padding: '10px 14px', background: '#1e293b', border: '1px solid #374151', borderRadius: '10px', color: 'white', fontSize: '0.9rem', boxSizing: 'border-box', outline: 'none' }} />
+                                                </div>
+                                                <button onClick={sendIndividual} disabled={!waIndivPhone || waSending}
+                                                    style={{ marginTop: '8px', padding: '14px', background: '#25d366', border: 'none', borderRadius: '12px', color: 'white', fontWeight: 800, fontSize: '0.95rem', cursor: (waIndivPhone && !waSending) ? 'pointer' : 'not-allowed', opacity: (waIndivPhone && !waSending) ? 1 : 0.5, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
+                                                    <span>{waSending ? '⏳' : '📲'}</span> {waSending ? 'Sending…' : 'Send Text Report'}
+                                                </button>
+                                                {waTestType === 'crt' && (
+                                                    <button onClick={sendIndividualPDF} disabled={!waIndivPhone || !waIndivEmail || waSending}
+                                                        style={{ padding: '14px', background: '#7c3aed', border: 'none', borderRadius: '12px', color: 'white', fontWeight: 800, fontSize: '0.95rem', cursor: (waIndivPhone && waIndivEmail && !waSending) ? 'pointer' : 'not-allowed', opacity: (waIndivPhone && waIndivEmail && !waSending) ? 1 : 0.5, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
+                                                        <span>{waSending ? '⏳' : '📄'}</span> {waSending ? 'Generating PDF…' : 'Send as PDF Report'}
+                                                    </button>
+                                                )}
+                                                {waResults.length > 0 && (
+                                                    <div style={{ padding: '12px 16px', background: waResults[0].status?.startsWith('✅') ? 'rgba(37,211,102,0.1)' : waResults[0].status?.startsWith('❌') ? 'rgba(239,68,68,0.1)' : 'rgba(245,158,11,0.1)', border: `1px solid ${waResults[0].status?.startsWith('✅') ? 'rgba(37,211,102,0.3)' : waResults[0].status?.startsWith('❌') ? 'rgba(239,68,68,0.3)' : 'rgba(245,158,11,0.3)'}`, borderRadius: '10px', color: waResults[0].status?.startsWith('✅') ? '#25d366' : waResults[0].status?.startsWith('❌') ? '#f87171' : '#f59e0b', fontSize: '0.85rem', fontWeight: 600 }}>
+                                                        {waResults[0].status} — <strong>{waResults[0].name}</strong> ({waResults[0].phone})
+                                                    </div>
+                                                )}
+                                            </div>
+                                        ) : (
+                                            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                                                <div style={{ padding: '12px 14px', background: '#1e293b', border: '1px solid #374151', borderRadius: '10px', fontSize: '0.78rem', color: '#9ca3af', fontFamily: 'monospace', lineHeight: 1.6 }}>
+                                                    {`Example format:\n[\n  { "name": "Akshaya", "email": "akshaya@example.com", "phone": "919876543210" },\n  { "name": "Chandra",  "email": "chandra@example.com",  "phone": "919876543211" }\n]`}
+                                                </div>
+                                                <div>
+                                                    <label style={{ display: 'block', color: '#9ca3af', fontSize: '0.78rem', fontWeight: 700, marginBottom: '4px', textTransform: 'uppercase' }}>Paste JSON List</label>
+                                                    <textarea value={waBulkJson} onChange={e => { setWABulkJson(e.target.value); setWAJsonError(''); setWAResults([]); }}
+                                                        rows={8} placeholder='[{"name":"...","email":"...","phone":"91..."}]'
+                                                        style={{ width: '100%', padding: '10px 14px', background: '#0d1117', border: `1px solid ${waJsonError ? '#ef4444' : '#374151'}`, borderRadius: '10px', color: '#e5e7eb', fontSize: '0.82rem', fontFamily: 'monospace', resize: 'vertical', boxSizing: 'border-box', outline: 'none' }} />
+                                                    {waJsonError && <div style={{ color: '#f87171', fontSize: '0.78rem', marginTop: '4px' }}>⚠️ {waJsonError}</div>}
+                                                </div>
+                                                <button onClick={sendBulk} disabled={!waBulkJson.trim() || waSending}
+                                                    style={{ padding: '12px', background: '#1d4ed8', border: 'none', borderRadius: '12px', color: 'white', fontWeight: 800, fontSize: '0.9rem', cursor: waBulkJson.trim() ? 'pointer' : 'not-allowed', opacity: waBulkJson.trim() ? 1 : 0.5 }}>
+                                                    📋 Preview Students
+                                                </button>
+                                                {waResults.length > 0 && (
+                                                    <div>
+                                                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+                                                            <div style={{ color: '#e5e7eb', fontWeight: 700, fontSize: '0.85rem' }}>
+                                                                {waResults.length} student{waResults.length !== 1 ? 's' : ''}
+                                                            </div>
+                                                            <div style={{ display: 'flex', gap: '8px' }}>
+                                                                <button onClick={sendAllBulk} disabled={waSending || waResults.every(r => r.status?.startsWith('✅') || !r.phone)}
+                                                                    style={{ padding: '8px 16px', background: waSending ? '#374151' : '#25d366', border: 'none', borderRadius: '8px', color: 'white', fontWeight: 700, cursor: waSending ? 'not-allowed' : 'pointer', fontSize: '0.82rem', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                                                    {waSending ? '⏳ Sending…' : '🚀 Send All Text'}
+                                                                </button>
+                                                                {waTestType === 'crt' && (
+                                                                    <button onClick={async () => { setWASending(true); for (let i = 0; i < waResults.length; i++) { if (waResults[i].phone && waResults[i].attemptId && !waResults[i].status?.startsWith('✅')) { await sendOneBulkPDF(i); await new Promise(r => setTimeout(r, 1500)); } } setWASending(false); }} disabled={waSending}
+                                                                        style={{ padding: '8px 16px', background: waSending ? '#374151' : '#7c3aed', border: 'none', borderRadius: '8px', color: 'white', fontWeight: 700, cursor: waSending ? 'not-allowed' : 'pointer', fontSize: '0.82rem', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                                                        {waSending ? '⏳' : '📄'} Send All PDF
+                                                                    </button>
+                                                                )}
+                                                            </div>
+                                                        </div>
+                                                        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', maxHeight: '260px', overflowY: 'auto' }}>
+                                                            {waResults.map((r, i) => (
+                                                                <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '10px 14px', background: '#1e293b', borderRadius: '10px', border: `1px solid ${r.status?.startsWith('✅') ? 'rgba(37,211,102,0.3)' : r.status?.startsWith('❌') ? 'rgba(239,68,68,0.3)' : '#374151'}` }}>
+                                                                    <div style={{ flex: 1 }}>
+                                                                        <div style={{ color: '#e5e7eb', fontWeight: 700, fontSize: '0.85rem' }}>{r.name}</div>
+                                                                        <div style={{ color: r.status?.startsWith('✅') ? '#25d366' : r.status?.startsWith('❌') ? '#f87171' : '#6b7280', fontSize: '0.72rem' }}>{r.phone || 'no phone'} · {r.status}</div>
+                                                                    </div>
+                                                                    {r.phone && !r.status?.startsWith('✅') && (
+                                                                        <div style={{ display: 'flex', gap: '6px', flexShrink: 0 }}>
+                                                                            <button onClick={() => sendOneBulkRow(i)} disabled={waSending || r.status === 'Sending…'}
+                                                                                style={{ padding: '7px 12px', background: '#25d366', border: 'none', borderRadius: '8px', color: 'white', fontSize: '0.75rem', fontWeight: 700, cursor: 'pointer' }}>
+                                                                                📲
+                                                                            </button>
+                                                                            {waTestType === 'crt' && r.attemptId && (
+                                                                                <button onClick={() => sendOneBulkPDF(i)} disabled={waSending || r.status?.includes('⏳')}
+                                                                                    style={{ padding: '7px 12px', background: '#7c3aed', border: 'none', borderRadius: '8px', color: 'white', fontSize: '0.75rem', fontWeight: 700, cursor: 'pointer' }}>
+                                                                                    📄
+                                                                                </button>
+                                                                            )}
+                                                                        </div>
+                                                                    )}
+                                                                    {r.status?.startsWith('✅') && <span style={{ color: '#25d366', fontSize: '1rem', flexShrink: 0 }}>✅</span>}
+                                                                    {r.status?.startsWith('❌') && <span style={{ color: '#f87171', fontSize: '1rem', flexShrink: 0 }}>❌</span>}
+                                                                </div>
+                                                            ))}
+                                                        </div>
+                                                    </div>
+                                                )}
+                                            </div>
+                                        )}
+
+                                        <div style={{ marginTop: '16px' }}>
+                                            <button onClick={() => setWAStep(3)} style={{ padding: '10px 20px', background: '#374151', border: 'none', borderRadius: '10px', color: '#e5e7eb', fontWeight: 600, cursor: 'pointer', fontSize: '0.9rem' }}>← Back</button>
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    </div>
+                )
+            })()}
         </div>
     )
 }
@@ -2216,6 +2587,53 @@ function AdminCRTReportModal({ submission, reportData, loading, onClose }) {
                                                 <div style={{ fontSize: '0.8rem', fontWeight: 700, opacity: 0.85, marginBottom: 6 }}>📊 Sections</div>
                                                 <div style={{ fontSize: '1.8rem', fontWeight: 900, lineHeight: 1 }}>{sections.length}</div>
                                                 <div style={{ fontSize: '0.78rem', fontWeight: 500, opacity: 0.75, marginTop: 4 }}>{truncSections}</div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                )
+                            })()}
+
+                            {/* ═══ QUESTION BREAKDOWN PANEL ═══ */}
+                            {answers.length > 0 && (() => {
+                                const totalQ = sections.reduce((s, sec) => s + (sectionScores[sec]?.total || 0), 0) || answers.length;
+                                const correctQ = answers.filter(a => a.is_correct).length;
+                                const attemptedQ = answers.filter(a => a.student_answer !== null && a.student_answer !== undefined && a.student_answer !== '').length;
+                                const wrongQ = answers.filter(a => !a.is_correct && a.student_answer !== null && a.student_answer !== undefined && a.student_answer !== '').length;
+                                const missedQ = totalQ - attemptedQ;
+                                const stats = [
+                                    { label: 'Total', value: totalQ, color: '#a855f7', bg: 'rgba(168,85,247,0.12)', border: 'rgba(168,85,247,0.3)', icon: '📋' },
+                                    { label: 'Attempted', value: attemptedQ, color: '#f59e0b', bg: 'rgba(245,158,11,0.12)', border: 'rgba(245,158,11,0.3)', icon: '✏️' },
+                                    { label: 'Correct', value: correctQ, color: '#10b981', bg: 'rgba(16,185,129,0.12)', border: 'rgba(16,185,129,0.3)', icon: '✅' },
+                                    { label: 'Wrong', value: wrongQ, color: '#ef4444', bg: 'rgba(239,68,68,0.12)', border: 'rgba(239,68,68,0.3)', icon: '❌' },
+                                    { label: 'Missed', value: missedQ < 0 ? 0 : missedQ, color: '#64748b', bg: 'rgba(100,116,139,0.12)', border: 'rgba(100,116,139,0.3)', icon: '⏭️' },
+                                ];
+                                return (
+                                    <div style={{ background: '#1e293b', borderRadius: '16px', border: '1px solid #374151', padding: '20px 24px', margin: '16px 0 0', boxShadow: '0 4px 12px rgba(0,0,0,0.15)' }}>
+                                        <h3 style={{ margin: '0 0 16px', fontSize: '0.95rem', fontWeight: 800, color: '#a855f7', textTransform: 'uppercase', letterSpacing: '0.5px', display: 'flex', alignItems: 'center', gap: 8 }}>
+                                            📊 Question Breakdown
+                                        </h3>
+                                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '12px' }}>
+                                            {stats.map((s, i) => (
+                                                <div key={i} style={{ background: s.bg, border: `1px solid ${s.border}`, borderRadius: '14px', padding: '16px 12px', textAlign: 'center' }}>
+                                                    <div style={{ fontSize: '1.5rem', marginBottom: '4px' }}>{s.icon}</div>
+                                                    <div style={{ fontSize: '1.8rem', fontWeight: 900, color: s.color, lineHeight: 1 }}>{s.value}</div>
+                                                    <div style={{ fontSize: '0.72rem', fontWeight: 700, color: '#9ca3af', textTransform: 'uppercase', marginTop: '6px', letterSpacing: '0.3px' }}>{s.label}</div>
+                                                </div>
+                                            ))}
+                                        </div>
+                                        {/* Progress bar */}
+                                        <div style={{ marginTop: '14px' }}>
+                                            <div style={{ display: 'flex', height: '8px', borderRadius: '8px', overflow: 'hidden', gap: '2px' }}>
+                                                {totalQ > 0 && <>
+                                                    <div style={{ width: `${(correctQ / totalQ) * 100}%`, background: '#10b981', borderRadius: '8px 0 0 8px', transition: 'width 1s ease' }} title={`Correct: ${correctQ}`}></div>
+                                                    <div style={{ width: `${(wrongQ / totalQ) * 100}%`, background: '#ef4444', transition: 'width 1s ease' }} title={`Wrong: ${wrongQ}`}></div>
+                                                    <div style={{ width: `${((missedQ < 0 ? 0 : missedQ) / totalQ) * 100}%`, background: '#374151', borderRadius: '0 8px 8px 0', transition: 'width 1s ease' }} title={`Missed: ${missedQ < 0 ? 0 : missedQ}`}></div>
+                                                </>}
+                                            </div>
+                                            <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '6px', fontSize: '0.7rem', fontWeight: 600, color: '#6b7280' }}>
+                                                <span style={{ color: '#10b981' }}>● Correct {totalQ > 0 ? Math.round((correctQ / totalQ) * 100) : 0}%</span>
+                                                <span style={{ color: '#ef4444' }}>● Wrong {totalQ > 0 ? Math.round((wrongQ / totalQ) * 100) : 0}%</span>
+                                                <span style={{ color: '#64748b' }}>● Missed {totalQ > 0 ? Math.round(((missedQ < 0 ? 0 : missedQ) / totalQ) * 100) : 0}%</span>
                                             </div>
                                         </div>
                                     </div>
@@ -8595,6 +9013,591 @@ function AdminAnalyticsDashboard() {
                             }}>
                                 <Code size={20} /> {t('download_json')}
                             </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+        </div>
+    )
+}
+
+function AdminLoginActivity() {
+    const [loading, setLoading] = useState(true)
+    const [search, setSearch] = useState('')
+    const [eventFilter, setEventFilter] = useState('all')
+    const [rangeFilter, setRangeFilter] = useState('all')
+    const [autoRefreshEnabled, setAutoRefreshEnabled] = useState(false)
+    const [refreshEverySec, setRefreshEverySec] = useState(30)
+    const [lastUpdatedAt, setLastUpdatedAt] = useState(null)
+    const [exportingCsv, setExportingCsv] = useState(false)
+    const [selectedStudent, setSelectedStudent] = useState(null)
+    const [data, setData] = useState({ summary: null, students: [], recentEvents: [] })
+    const studentScrollRef = useRef(null)
+    const eventScrollRef = useRef(null)
+
+    const fetchActivity = (query = search) => {
+        setLoading(true)
+        axios.get(`${API_BASE}/admin/login-activity`, { params: query.trim() ? { search: query.trim() } : {} })
+            .then(res => {
+                setData({
+                    summary: res.data?.summary || null,
+                    students: Array.isArray(res.data?.students) ? res.data.students : [],
+                    recentEvents: Array.isArray(res.data?.recentEvents) ? res.data.recentEvents : []
+                })
+                setLastUpdatedAt(new Date().toISOString())
+            })
+            .catch(() => {
+                setData({ summary: null, students: [], recentEvents: [] })
+            })
+            .finally(() => setLoading(false))
+    }
+
+    useEffect(() => {
+        const timer = setTimeout(() => fetchActivity(search), 250)
+        return () => clearTimeout(timer)
+    }, [search])
+
+    useEffect(() => {
+        if (!autoRefreshEnabled) return
+        const id = setInterval(() => fetchActivity(search), Math.max(15, Number(refreshEverySec || 30)) * 1000)
+        return () => clearInterval(id)
+    }, [autoRefreshEnabled, refreshEverySec, search])
+
+    const fmtDate = (value) => {
+        if (!value) return '—'
+        const dt = new Date(value)
+        if (Number.isNaN(dt.getTime())) return '—'
+        return dt.toLocaleString('en-IN', {
+            day: '2-digit',
+            month: 'short',
+            year: 'numeric',
+            hour: '2-digit',
+            minute: '2-digit'
+        })
+    }
+
+    const fmtDateCompact = (value) => {
+        if (!value) return '—'
+        const dt = new Date(value)
+        if (Number.isNaN(dt.getTime())) return '—'
+        return dt.toLocaleString('en-IN', {
+            day: '2-digit',
+            month: 'short',
+            hour: '2-digit',
+            minute: '2-digit'
+        })
+    }
+
+    const fmtDuration = (seconds) => {
+        const total = Number(seconds || 0)
+        if (!Number.isFinite(total) || total <= 0) return '0m'
+        const hours = Math.floor(total / 3600)
+        const minutes = Math.floor((total % 3600) / 60)
+        if (hours > 0) return `${hours}h ${minutes}m`
+        return `${Math.max(1, minutes)}m`
+    }
+
+    const summary = data.summary || { totalStudents: 0, activeToday: 0, loginEventsToday: 0, testEventsToday: 0, avgActivityMinutes: 0 }
+
+    const inTimeRange = (ts) => {
+        if (rangeFilter === 'all' || !ts) return true
+        const now = new Date()
+        const t = new Date(ts)
+        if (Number.isNaN(t.getTime())) return false
+        if (rangeFilter === 'today') {
+            const start = new Date(now)
+            start.setHours(0, 0, 0, 0)
+            return t >= start
+        }
+        if (rangeFilter === '7d') {
+            const start = new Date(now)
+            start.setDate(now.getDate() - 7)
+            return t >= start
+        }
+        if (rangeFilter === '30d') {
+            const start = new Date(now)
+            start.setDate(now.getDate() - 30)
+            return t >= start
+        }
+        return true
+    }
+
+    const filteredEvents = useMemo(() => {
+        return data.recentEvents.filter(event => {
+            const typeOk = eventFilter === 'all' ? true : event.eventType === eventFilter
+            const timeOk = inTimeRange(event.timestamp)
+            return typeOk && timeOk
+        })
+    }, [data.recentEvents, eventFilter, rangeFilter])
+
+    const topActiveStudent = useMemo(() => {
+        if (!data.students.length) return null
+        return [...data.students].sort((a, b) => (b.totalActivitySeconds || 0) - (a.totalActivitySeconds || 0))[0]
+    }, [data.students])
+
+    const scrollToTop = (ref) => {
+        if (!ref?.current) return
+        ref.current.scrollTo({ top: 0, behavior: 'smooth' })
+    }
+
+    const selectedStudentEvents = useMemo(() => {
+        if (!selectedStudent) return []
+        return data.recentEvents
+            .filter(event => event.studentId === selectedStudent.id)
+            .filter(event => (eventFilter === 'all' ? true : event.eventType === eventFilter))
+            .filter(event => inTimeRange(event.timestamp))
+            .sort((a, b) => new Date(b.timestamp || 0) - new Date(a.timestamp || 0))
+    }, [selectedStudent, data.recentEvents, eventFilter, rangeFilter])
+
+    const toCsvCell = (value) => {
+        const raw = value == null ? '' : String(value)
+        const escaped = raw.replace(/"/g, '""')
+        return `"${escaped}"`
+    }
+
+    const handleExportCsv = () => {
+        setExportingCsv(true)
+        try {
+            const studentHeader = ['Student ID', 'Name', 'Email', 'Status', 'Logins', 'Logouts', 'Tests', 'Time Spent (min)', 'Last Seen']
+            const studentRows = data.students.map(student => [
+                student.id,
+                student.name,
+                student.email || '',
+                student.status || '',
+                student.loginCount || 0,
+                student.logoutCount || 0,
+                student.testsAttended || 0,
+                Math.round(Number(student.totalActivitySeconds || 0) / 60),
+                fmtDate(student.lastSeenAt)
+            ])
+
+            const eventHeader = ['Student ID', 'Student Name', 'Type', 'Label', 'Timestamp', 'Duration (sec)', 'Score', 'Status', 'IP']
+            const eventRows = filteredEvents.map(event => [
+                event.studentId,
+                event.studentName,
+                event.eventType,
+                event.label || '',
+                event.timestamp || '',
+                event.durationSeconds || 0,
+                event.score == null ? '' : Math.round(event.score),
+                event.status || '',
+                event.ipAddress || ''
+            ])
+
+            const csvLines = []
+            csvLines.push('Student Activity Summary')
+            csvLines.push(studentHeader.map(toCsvCell).join(','))
+            studentRows.forEach(row => csvLines.push(row.map(toCsvCell).join(',')))
+            csvLines.push('')
+            csvLines.push('Filtered Recent Events')
+            csvLines.push(eventHeader.map(toCsvCell).join(','))
+            eventRows.forEach(row => csvLines.push(row.map(toCsvCell).join(',')))
+
+            const blob = new Blob([csvLines.join('\n')], { type: 'text/csv;charset=utf-8;' })
+            const url = URL.createObjectURL(blob)
+            const a = document.createElement('a')
+            a.href = url
+            const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-')
+            a.download = `login-activity-${stamp}.csv`
+            a.click()
+            URL.revokeObjectURL(url)
+        } finally {
+            setExportingCsv(false)
+        }
+    }
+
+    return (
+        <div className="animate-fadeIn" style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+            <div style={{
+                padding: '1rem 1.25rem',
+                borderRadius: '16px',
+                background: 'linear-gradient(135deg, rgba(59,130,246,0.12), rgba(16,185,129,0.08))',
+                border: '1px solid rgba(59,130,246,0.2)'
+            }}>
+                <div style={{ fontSize: '1.1rem', fontWeight: 800, color: 'var(--text-main)', marginBottom: '0.35rem' }}>Student Login Activity</div>
+                <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)', lineHeight: 1.6 }}>
+                    This tab tracks when students log in, log out, which tests they attended, and how much time they spent across Aptitude, Global, MCQ, and CRT activity.
+                </div>
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))', gap: '1rem' }}>
+                {[
+                    { label: 'Total Students', value: summary.totalStudents, color: '#3b82f6' },
+                    { label: 'Active Today', value: summary.activeToday, color: '#10b981' },
+                    { label: 'Logins Today', value: summary.loginEventsToday, color: '#8b5cf6' },
+                    { label: 'Tests Today', value: summary.testEventsToday, color: '#f59e0b' },
+                    { label: 'Avg Time Spent', value: `${summary.avgActivityMinutes || 0}m`, color: '#ef4444' }
+                ].map(card => (
+                    <div key={card.label} style={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: '16px', padding: '1rem 1.1rem' }}>
+                        <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 700, marginBottom: '0.55rem' }}>{card.label}</div>
+                        <div style={{ fontSize: '1.9rem', fontWeight: 900, color: card.color }}>{card.value}</div>
+                    </div>
+                ))}
+            </div>
+
+            <div style={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))',
+                gap: '1rem'
+            }}>
+                <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: '14px', padding: '0.9rem 1rem' }}>
+                    <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 700 }}>Top Active Student</div>
+                    <div style={{ marginTop: '0.35rem', fontWeight: 800, fontSize: '1rem' }}>{topActiveStudent?.name || '—'}</div>
+                    <div style={{ marginTop: '0.2rem', fontSize: '0.78rem', color: 'var(--text-muted)' }}>{topActiveStudent ? fmtDuration(topActiveStudent.totalActivitySeconds) : 'No activity yet'}</div>
+                </div>
+                <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: '14px', padding: '0.9rem 1rem' }}>
+                    <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 700 }}>Filtered Events</div>
+                    <div style={{ marginTop: '0.35rem', fontWeight: 800, fontSize: '1rem' }}>{filteredEvents.length}</div>
+                    <div style={{ marginTop: '0.2rem', fontSize: '0.78rem', color: 'var(--text-muted)' }}>Current filter: {eventFilter.toUpperCase()} · {rangeFilter.toUpperCase()}</div>
+                </div>
+            </div>
+
+            <div style={{ position: 'relative', maxWidth: '460px' }}>
+                <input
+                    value={search}
+                    onChange={e => setSearch(e.target.value)}
+                    placeholder="Search student name, email, or ID..."
+                    style={{
+                        width: '100%',
+                        padding: '0.9rem 1rem 0.9rem 2.8rem',
+                        borderRadius: '12px',
+                        border: '1px solid var(--border-color)',
+                        background: 'var(--bg-card)',
+                        color: 'var(--text-main)',
+                        outline: 'none',
+                        boxSizing: 'border-box'
+                    }}
+                />
+                <Search size={16} style={{ position: 'absolute', left: '0.9rem', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
+            </div>
+
+            <div style={{ display: 'flex', gap: '0.6rem', flexWrap: 'wrap', alignItems: 'center' }}>
+                {[
+                    { key: 'all', label: 'All Events' },
+                    { key: 'login', label: 'Logins' },
+                    { key: 'logout', label: 'Logouts' },
+                    { key: 'test', label: 'Tests' }
+                ].map(item => (
+                    <button
+                        key={item.key}
+                        onClick={() => setEventFilter(item.key)}
+                        style={{
+                            border: eventFilter === item.key ? '1px solid #3b82f6' : '1px solid var(--border-color)',
+                            background: eventFilter === item.key ? 'rgba(59,130,246,0.15)' : 'var(--bg-card)',
+                            color: eventFilter === item.key ? '#60a5fa' : 'var(--text-muted)',
+                            borderRadius: '999px',
+                            padding: '0.42rem 0.75rem',
+                            fontSize: '0.73rem',
+                            fontWeight: 700,
+                            cursor: 'pointer'
+                        }}
+                    >
+                        {item.label}
+                    </button>
+                ))}
+                <span style={{ marginLeft: '0.3rem', fontSize: '0.72rem', color: 'var(--text-muted)', fontWeight: 700 }}>Range:</span>
+                {[
+                    { key: 'all', label: 'All' },
+                    { key: 'today', label: 'Today' },
+                    { key: '7d', label: '7 Days' },
+                    { key: '30d', label: '30 Days' }
+                ].map(item => (
+                    <button
+                        key={item.key}
+                        onClick={() => setRangeFilter(item.key)}
+                        style={{
+                            border: rangeFilter === item.key ? '1px solid #10b981' : '1px solid var(--border-color)',
+                            background: rangeFilter === item.key ? 'rgba(16,185,129,0.15)' : 'var(--bg-card)',
+                            color: rangeFilter === item.key ? '#34d399' : 'var(--text-muted)',
+                            borderRadius: '999px',
+                            padding: '0.42rem 0.75rem',
+                            fontSize: '0.73rem',
+                            fontWeight: 700,
+                            cursor: 'pointer'
+                        }}
+                    >
+                        {item.label}
+                    </button>
+                ))}
+                <span style={{ marginLeft: '0.3rem', fontSize: '0.72rem', color: 'var(--text-muted)', fontWeight: 700 }}>Auto-refresh:</span>
+                <button
+                    onClick={() => setAutoRefreshEnabled(v => !v)}
+                    style={{
+                        border: autoRefreshEnabled ? '1px solid #22c55e' : '1px solid var(--border-color)',
+                        background: autoRefreshEnabled ? 'rgba(34,197,94,0.15)' : 'var(--bg-card)',
+                        color: autoRefreshEnabled ? '#4ade80' : 'var(--text-muted)',
+                        borderRadius: '999px',
+                        padding: '0.42rem 0.75rem',
+                        fontSize: '0.73rem',
+                        fontWeight: 700,
+                        cursor: 'pointer'
+                    }}
+                >
+                    {autoRefreshEnabled ? 'On' : 'Off'}
+                </button>
+                <select
+                    value={refreshEverySec}
+                    onChange={e => setRefreshEverySec(Number(e.target.value))}
+                    disabled={!autoRefreshEnabled}
+                    style={{
+                        border: '1px solid var(--border-color)',
+                        background: 'var(--bg-card)',
+                        color: 'var(--text-main)',
+                        borderRadius: '10px',
+                        padding: '0.35rem 0.55rem',
+                        fontSize: '0.73rem',
+                        fontWeight: 700,
+                        cursor: autoRefreshEnabled ? 'pointer' : 'not-allowed',
+                        opacity: autoRefreshEnabled ? 1 : 0.6
+                    }}
+                >
+                    <option value={15}>15s</option>
+                    <option value={30}>30s</option>
+                </select>
+                <button
+                    onClick={() => fetchActivity(search)}
+                    style={{
+                        border: '1px solid var(--border-color)',
+                        background: 'var(--bg-card)',
+                        color: 'var(--text-main)',
+                        borderRadius: '10px',
+                        padding: '0.42rem 0.75rem',
+                        fontSize: '0.73rem',
+                        fontWeight: 700,
+                        cursor: 'pointer'
+                    }}
+                >
+                    Refresh Now
+                </button>
+                <button
+                    onClick={handleExportCsv}
+                    disabled={exportingCsv}
+                    style={{
+                        border: '1px solid #06b6d4',
+                        background: 'rgba(6,182,212,0.15)',
+                        color: '#67e8f9',
+                        borderRadius: '10px',
+                        padding: '0.42rem 0.75rem',
+                        fontSize: '0.73rem',
+                        fontWeight: 700,
+                        cursor: exportingCsv ? 'not-allowed' : 'pointer',
+                        opacity: exportingCsv ? 0.7 : 1
+                    }}
+                >
+                    {exportingCsv ? 'Exporting...' : 'Export CSV'}
+                </button>
+                {lastUpdatedAt && (
+                    <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>
+                        Updated: {fmtDate(lastUpdatedAt)}
+                    </span>
+                )}
+            </div>
+
+            {loading ? (
+                <div className="dashboard-panel" style={{ textAlign: 'center', padding: '3rem', color: 'var(--text-muted)' }}>Loading login activity…</div>
+            ) : (
+                <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1.35fr) minmax(0, 1fr)', gap: '1.5rem', alignItems: 'start' }}>
+                    <div className="dashboard-panel" style={{ minWidth: 0 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1rem' }}>
+                            <h3 className="panel-title"><ClipboardList size={18} color="#3b82f6" /> Student Activity</h3>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.55rem' }}>
+                                <span style={{ color: 'var(--text-muted)', fontSize: '0.75rem' }}>{data.students.length} students</span>
+                                <button onClick={() => scrollToTop(studentScrollRef)} style={{ border: '1px solid var(--border-color)', background: 'var(--bg-card)', color: 'var(--text-muted)', borderRadius: '8px', padding: '0.28rem 0.48rem', fontSize: '0.7rem', cursor: 'pointer' }}>Top</button>
+                            </div>
+                        </div>
+
+                        <div
+                            ref={studentScrollRef}
+                            style={{
+                                overflowY: 'auto',
+                                maxHeight: '690px',
+                                scrollBehavior: 'smooth',
+                                scrollbarWidth: 'thin',
+                                display: 'flex',
+                                flexDirection: 'column',
+                                gap: '0.65rem',
+                                paddingRight: '0.2rem'
+                            }}
+                        >
+                            {data.students.map(student => (
+                                <button
+                                    key={student.id}
+                                    onClick={() => setSelectedStudent(student)}
+                                    title="Click to view detailed timeline"
+                                    style={{
+                                        width: '100%',
+                                        textAlign: 'left',
+                                        border: '1px solid var(--border-color)',
+                                        background: 'var(--bg-secondary)',
+                                        borderRadius: '12px',
+                                        padding: '0.85rem 0.9rem',
+                                        cursor: 'pointer'
+                                    }}
+                                >
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', gap: '0.75rem', alignItems: 'flex-start' }}>
+                                        <div style={{ minWidth: 0, flex: 1 }}>
+                                            <div style={{ fontWeight: 800, color: 'var(--text-main)', fontSize: '0.95rem' }}>{student.name}</div>
+                                            <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '0.15rem', wordBreak: 'break-word' }}>{student.email || `ID: ${student.id}`}</div>
+                                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.35rem', marginTop: '0.45rem' }}>
+                                                {student.batch && <span style={{ padding: '0.18rem 0.5rem', borderRadius: '999px', background: 'rgba(59,130,246,0.12)', color: '#60a5fa', fontSize: '0.68rem', fontWeight: 700 }}>{student.batch}</span>}
+                                                <span style={{ padding: '0.18rem 0.5rem', borderRadius: '999px', background: student.status === 'active' ? 'rgba(16,185,129,0.12)' : 'rgba(239,68,68,0.12)', color: student.status === 'active' ? '#10b981' : '#f87171', fontSize: '0.68rem', fontWeight: 700 }}>{student.status || 'unknown'}</span>
+                                            </div>
+                                        </div>
+                                        <div style={{ textAlign: 'right', minWidth: '110px', flexShrink: 0 }}>
+                                            <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)' }}>Last seen</div>
+                                            <div style={{ fontWeight: 700, fontSize: '0.78rem', color: 'var(--text-main)', marginTop: '0.15rem' }}>{fmtDateCompact(student.lastSeenAt)}</div>
+                                        </div>
+                                    </div>
+
+                                    <div style={{ marginTop: '0.55rem', display: 'grid', gridTemplateColumns: 'repeat(4, minmax(70px, 1fr))', gap: '0.45rem' }}>
+                                        <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: '8px', padding: '0.45rem', textAlign: 'center' }}>
+                                            <div style={{ fontSize: '0.64rem', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Logins</div>
+                                            <div style={{ fontWeight: 800, marginTop: '0.1rem', color: 'var(--text-main)' }}>{student.loginCount || 0}</div>
+                                        </div>
+                                        <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: '8px', padding: '0.45rem', textAlign: 'center' }}>
+                                            <div style={{ fontSize: '0.64rem', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Tests</div>
+                                            <div style={{ fontWeight: 800, marginTop: '0.1rem', color: 'var(--text-main)' }}>{student.testsAttended || 0}</div>
+                                        </div>
+                                        <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: '8px', padding: '0.45rem', textAlign: 'center' }}>
+                                            <div style={{ fontSize: '0.64rem', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Time</div>
+                                            <div style={{ fontWeight: 800, marginTop: '0.1rem', color: 'var(--text-main)' }}>{fmtDuration(student.totalActivitySeconds)}</div>
+                                        </div>
+                                        <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: '8px', padding: '0.45rem', textAlign: 'center' }}>
+                                            <div style={{ fontSize: '0.64rem', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Logout</div>
+                                            <div style={{ fontWeight: 800, marginTop: '0.1rem', color: 'var(--text-main)' }}>{student.logoutCount || 0}</div>
+                                        </div>
+                                    </div>
+
+                                    <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginTop: '0.55rem', lineHeight: 1.5, wordBreak: 'break-word' }}>
+                                        Aptitude: {student.testBreakdown?.aptitude || 0} · Global: {student.testBreakdown?.global || 0} · MCQ: {student.testBreakdown?.mcq || 0} · CRT: {student.testBreakdown?.crt || 0} · Last test: {fmtDateCompact(student.lastTestAt)}
+                                    </div>
+                                </button>
+                            ))}
+
+                            {data.students.length === 0 && (
+                                <div style={{ padding: '2rem', textAlign: 'center', color: 'var(--text-muted)' }}>No student activity found for the current filter.</div>
+                            )}
+                        </div>
+                    </div>
+
+                    <div className="dashboard-panel" style={{ minWidth: 0 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.75rem' }}>
+                            <h3 className="panel-title"><Activity size={18} color="#10b981" /> Recent Events</h3>
+                            <button onClick={() => scrollToTop(eventScrollRef)} style={{ border: '1px solid var(--border-color)', background: 'var(--bg-card)', color: 'var(--text-muted)', borderRadius: '8px', padding: '0.28rem 0.48rem', fontSize: '0.7rem', cursor: 'pointer' }}>Top</button>
+                        </div>
+                        <div
+                            ref={eventScrollRef}
+                            style={{
+                                display: 'flex',
+                                flexDirection: 'column',
+                                gap: '0.75rem',
+                                maxHeight: '760px',
+                                overflowY: 'auto',
+                                paddingRight: '0.25rem',
+                                scrollBehavior: 'smooth',
+                                scrollbarWidth: 'thin',
+                                scrollSnapType: 'y proximity'
+                            }}
+                        >
+                            {filteredEvents.map((event, index) => {
+                                const isLogin = event.eventType === 'login'
+                                const isLogout = event.eventType === 'logout'
+                                const tone = isLogin ? '#10b981' : isLogout ? '#ef4444' : '#3b82f6'
+                                const bg = isLogin ? 'rgba(16,185,129,0.12)' : isLogout ? 'rgba(239,68,68,0.12)' : 'rgba(59,130,246,0.12)'
+                                return (
+                                    <div key={`${event.studentId}-${event.timestamp}-${index}`} style={{ padding: '0.9rem', borderRadius: '12px', border: '1px solid var(--border-color)', background: 'var(--bg-secondary)', scrollSnapAlign: 'start' }}>
+                                        <div style={{ display: 'flex', justifyContent: 'space-between', gap: '0.5rem', alignItems: 'flex-start' }}>
+                                            <div>
+                                                <div style={{ fontWeight: 800, color: 'var(--text-main)' }}>{event.studentName}</div>
+                                                <div style={{ marginTop: '0.22rem', fontSize: '0.8rem', color: tone }}>{event.label}</div>
+                                            </div>
+                                            <span style={{ padding: '0.2rem 0.55rem', borderRadius: '999px', background: bg, color: tone, fontSize: '0.68rem', fontWeight: 700, textTransform: 'uppercase' }}>
+                                                {event.eventType === 'test' ? (event.testType || 'test') : event.eventType}
+                                            </span>
+                                        </div>
+                                        <div style={{ marginTop: '0.45rem', fontSize: '0.72rem', color: 'var(--text-muted)', lineHeight: 1.6 }}>
+                                            <div>{fmtDate(event.timestamp)}</div>
+                                            {event.eventType === 'test' && <div>Duration: {fmtDuration(event.durationSeconds)}{event.score != null ? ` · Score: ${Math.round(event.score)}%` : ''}{event.status ? ` · ${event.status}` : ''}</div>}
+                                            {event.ipAddress && <div>IP: {event.ipAddress}</div>}
+                                        </div>
+                                    </div>
+                                )
+                            })}
+                            {filteredEvents.length === 0 && (
+                                <div style={{ padding: '2rem', textAlign: 'center', color: 'var(--text-muted)' }}>No recent activity available.</div>
+                            )}
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {selectedStudent && (
+                <div
+                    style={{
+                        position: 'fixed',
+                        inset: 0,
+                        background: 'rgba(0,0,0,0.65)',
+                        zIndex: 2200,
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        padding: '1rem'
+                    }}
+                    onClick={() => setSelectedStudent(null)}
+                >
+                    <div
+                        onClick={e => e.stopPropagation()}
+                        style={{
+                            width: '100%',
+                            maxWidth: '900px',
+                            maxHeight: '88vh',
+                            overflow: 'hidden',
+                            borderRadius: '16px',
+                            border: '1px solid var(--border-color)',
+                            background: 'var(--bg-card)',
+                            boxShadow: '0 22px 60px rgba(0,0,0,0.45)',
+                            display: 'flex',
+                            flexDirection: 'column'
+                        }}
+                    >
+                        <div style={{ padding: '1rem 1.15rem', borderBottom: '1px solid var(--border-color)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.8rem' }}>
+                            <div>
+                                <div style={{ fontWeight: 900, fontSize: '1rem', color: 'var(--text-main)' }}>{selectedStudent.name} - Timeline</div>
+                                <div style={{ marginTop: '0.25rem', fontSize: '0.78rem', color: 'var(--text-muted)' }}>{selectedStudent.email || `ID: ${selectedStudent.id}`} · Total events: {selectedStudentEvents.length}</div>
+                            </div>
+                            <button
+                                onClick={() => setSelectedStudent(null)}
+                                style={{ border: '1px solid var(--border-color)', background: 'var(--bg-secondary)', color: 'var(--text-muted)', borderRadius: '8px', padding: '0.35rem 0.6rem', cursor: 'pointer' }}
+                            >
+                                Close
+                            </button>
+                        </div>
+
+                        <div style={{ padding: '0.85rem 1rem', overflowY: 'auto', maxHeight: '72vh', scrollBehavior: 'smooth', display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                            {selectedStudentEvents.map((event, index) => {
+                                const isLogin = event.eventType === 'login'
+                                const isLogout = event.eventType === 'logout'
+                                const tone = isLogin ? '#10b981' : isLogout ? '#ef4444' : '#3b82f6'
+                                const bg = isLogin ? 'rgba(16,185,129,0.12)' : isLogout ? 'rgba(239,68,68,0.12)' : 'rgba(59,130,246,0.12)'
+                                return (
+                                    <div key={`${event.studentId}-${event.timestamp}-${index}`} style={{ border: '1px solid var(--border-color)', background: 'var(--bg-secondary)', borderRadius: '12px', padding: '0.85rem 0.9rem' }}>
+                                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.8rem' }}>
+                                            <div style={{ fontSize: '0.86rem', fontWeight: 800, color: 'var(--text-main)' }}>{event.label}</div>
+                                            <span style={{ padding: '0.18rem 0.5rem', borderRadius: '999px', background: bg, color: tone, fontSize: '0.66rem', fontWeight: 800, textTransform: 'uppercase' }}>
+                                                {event.eventType === 'test' ? (event.testType || 'test') : event.eventType}
+                                            </span>
+                                        </div>
+                                        <div style={{ marginTop: '0.4rem', fontSize: '0.74rem', color: 'var(--text-muted)', lineHeight: 1.6 }}>
+                                            <div>{fmtDate(event.timestamp)}</div>
+                                            {event.eventType === 'test' && <div>Duration: {fmtDuration(event.durationSeconds)}{event.score != null ? ` · Score: ${Math.round(event.score)}%` : ''}{event.status ? ` · ${event.status}` : ''}</div>}
+                                            {event.ipAddress && <div>IP: {event.ipAddress}</div>}
+                                        </div>
+                                    </div>
+                                )
+                            })}
+                            {selectedStudentEvents.length === 0 && (
+                                <div style={{ padding: '2rem', textAlign: 'center', color: 'var(--text-muted)' }}>No timeline events for this filter.</div>
+                            )}
                         </div>
                     </div>
                 </div>

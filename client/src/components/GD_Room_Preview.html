@@ -1,0 +1,481 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>GD Room UI Preview</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: #0f172a;
+    font-family: 'Segoe UI', system-ui, sans-serif;
+    color: #f1f5f9;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    min-height: 100vh;
+    padding: 16px;
+  }
+
+  /* ── Top bar ── */
+  .top-bar {
+    width: 100%;
+    max-width: 760px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    background: linear-gradient(90deg, #1e1b4b, #1e293b);
+    border: 1px solid #6366f133;
+    border-radius: 12px;
+    padding: 10px 14px;
+    margin-bottom: 12px;
+  }
+  .top-bar .topic { flex: 1; font-size: 12px; color: #a5b4fc; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .top-bar .timer { font-size: 14px; font-weight: 800; color: #6366f1; display: flex; align-items: center; gap: 4px; }
+
+  /* ── Room container ── */
+  .room-wrap {
+    width: 100%;
+    max-width: 760px;
+    background: #1e293b;
+    border: 1px solid #334155;
+    border-radius: 18px;
+    padding: 20px;
+    position: relative;
+    margin-bottom: 12px;
+  }
+  .room-label {
+    font-size: 10px;
+    font-weight: 700;
+    color: #64748b;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+    text-align: center;
+    margin-bottom: 14px;
+  }
+
+  /* ── Room grid: top / middle / bottom rows ── */
+  .room-grid {
+    display: grid;
+    grid-template-rows: auto auto auto;
+    gap: 12px;
+  }
+  .room-row {
+    display: flex;
+    justify-content: center;
+    gap: 24px;
+  }
+  .room-middle {
+    display: grid;
+    grid-template-columns: auto 1fr auto;
+    align-items: center;
+    gap: 12px;
+  }
+
+  /* ── Conference Table ── */
+  .table {
+    background: linear-gradient(145deg, #1e293b, #0f172a);
+    border: 2px solid #334155;
+    border-radius: 60px;
+    min-height: 120px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 18px 28px;
+    box-shadow: inset 0 2px 12px #00000055, 0 0 0 6px #1e293b, 0 0 0 8px #334155;
+    position: relative;
+  }
+  .table-text {
+    font-size: 11px;
+    color: #475569;
+    font-weight: 600;
+    letter-spacing: .06em;
+    text-transform: uppercase;
+  }
+  .table-topic {
+    font-size: 12px;
+    color: #818cf8;
+    font-weight: 700;
+    text-align: center;
+    max-width: 220px;
+    line-height: 1.4;
+  }
+
+  /* ── Avatar card ── */
+  .avatar-card {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+    width: 80px;
+    position: relative;
+  }
+  .avatar-body {
+    width: 60px;
+    height: 74px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0;
+    position: relative;
+  }
+
+  /* SVG 2D avatar */
+  .avatar-svg {
+    width: 60px;
+    height: 74px;
+    filter: drop-shadow(0 0 8px var(--glow, transparent));
+    transition: filter .3s;
+  }
+  .avatar-card.speaking .avatar-svg {
+    filter: drop-shadow(0 0 14px var(--glow));
+  }
+  .avatar-ring {
+    position: absolute;
+    inset: -4px;
+    border-radius: 50%;
+    border: 2px solid var(--ring, transparent);
+    animation: ringPulse 1.2s ease-in-out infinite;
+    pointer-events: none;
+  }
+  @keyframes ringPulse {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50%       { opacity: .5; transform: scale(1.08); }
+  }
+
+  .avatar-name {
+    font-size: 11px;
+    font-weight: 600;
+    color: #94a3b8;
+    text-align: center;
+    max-width: 80px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    transition: color .3s;
+  }
+  .avatar-card.speaking .avatar-name { color: #f1f5f9; font-weight: 800; }
+
+  .avatar-badge {
+    font-size: 9px;
+    background: #6366f122;
+    color: #818cf8;
+    padding: 2px 7px;
+    border-radius: 6px;
+    font-weight: 700;
+    letter-spacing: .04em;
+  }
+  .avatar-badge.you { background: #10b98122; color: #34d399; }
+
+  /* waves */
+  .wave-row {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    height: 16px;
+  }
+  .wave-bar {
+    width: 3px;
+    border-radius: 2px;
+    background: #334155;
+    height: 4px;
+    transition: background .3s;
+  }
+  .speaking .wave-bar {
+    background: var(--wave-color, #6366f1);
+    animation: waveAnim 1s ease-in-out infinite alternate;
+  }
+  .speaking .wave-bar:nth-child(1) { animation-delay: 0s; }
+  .speaking .wave-bar:nth-child(2) { animation-delay: .12s; }
+  .speaking .wave-bar:nth-child(3) { animation-delay: .24s; }
+  .speaking .wave-bar:nth-child(4) { animation-delay: .36s; }
+  .speaking .wave-bar:nth-child(5) { animation-delay: .48s; }
+  @keyframes waveAnim {
+    0%   { height: 3px; }
+    50%  { height: 16px; }
+    100% { height: 6px; }
+  }
+
+  /* raised hand */
+  .hand-bubble {
+    position: absolute;
+    top: -10px;
+    right: -4px;
+    font-size: 14px;
+    z-index: 3;
+    animation: float .8s ease-in-out infinite alternate;
+  }
+  @keyframes float { from { transform: translateY(0); } to { transform: translateY(-4px); } }
+
+  /* ── Speaking bar ── */
+  .speak-bar {
+    width: 100%;
+    max-width: 760px;
+    background: #052e16;
+    border: 1px solid #10b98133;
+    border-radius: 10px;
+    padding: 8px 16px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    margin-bottom: 12px;
+    font-size: 13px;
+    font-weight: 700;
+    color: #34d399;
+  }
+  .listen-dot {
+    width: 8px; height: 8px; border-radius: 50%;
+    background: #ef4444;
+    animation: pulse 1s infinite;
+  }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.3} }
+
+  /* ── Action buttons ── */
+  .actions {
+    width: 100%;
+    max-width: 760px;
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 8px;
+  }
+  .btn {
+    padding: 14px 4px;
+    border: none;
+    border-radius: 12px;
+    color: #fff;
+    font-weight: 700;
+    font-size: 12px;
+    cursor: pointer;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 5px;
+  }
+  .btn-green  { background: #10b981; }
+  .btn-gray   { background: #334155; color: #94a3b8; }
+  .btn-turns  { background: #1e293b; border: 1px solid #334155; color: #64748b; }
+  .btn-red    { background: #450a0a; border: 1px solid #7f1d1d; }
+  .btn .count { font-size: 20px; font-weight: 900; color: #6366f1; }
+
+  /* ── Section label ── */
+  .section-note {
+    margin-top: 24px;
+    font-size: 12px;
+    color: #475569;
+    text-align: center;
+    max-width: 500px;
+  }
+  .section-note strong { color: #818cf8; }
+</style>
+</head>
+<body>
+
+<!-- TOP BAR -->
+<div class="top-bar">
+  <span style="color:#818cf8;font-size:13px">🎙</span>
+  <div class="topic">Should organizations rely on AI-driven algorithms for hiring decisions, balancing efficiency gains against the risk of bias and loss...</div>
+  <div class="timer">🕐 29:51</div>
+</div>
+
+<!-- ═══════════════ ROOM ═══════════════ -->
+<div class="room-wrap">
+  <div class="room-label">Conference Room · Group Discussion</div>
+
+  <div class="room-grid">
+
+    <!-- TOP ROW: Alex -->
+    <div class="room-row">
+      <div class="avatar-card speaking" style="--glow:#6366f1; --ring:#6366f1; --wave-color:#818cf8;">
+        <div class="avatar-body">
+          <div class="avatar-ring" style="--ring:#6366f1;"></div>
+          <svg class="avatar-svg" viewBox="0 0 60 74" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <!-- Head -->
+            <circle cx="30" cy="18" r="14" fill="#312e81" stroke="#6366f1" stroke-width="2"/>
+            <!-- Face -->
+            <circle cx="25" cy="16" r="2" fill="#818cf8"/>
+            <circle cx="35" cy="16" r="2" fill="#818cf8"/>
+            <path d="M24 23 Q30 27 36 23" stroke="#818cf8" stroke-width="1.5" stroke-linecap="round" fill="none"/>
+            <!-- Neck -->
+            <rect x="26" y="31" width="8" height="6" rx="3" fill="#312e81"/>
+            <!-- Body / jacket -->
+            <rect x="10" y="37" width="40" height="32" rx="12" fill="#1e1b4b" stroke="#6366f1" stroke-width="1.5"/>
+            <!-- Collar -->
+            <path d="M22 37 L30 50 L38 37" stroke="#6366f1" stroke-width="1.5" fill="none" stroke-linejoin="round"/>
+            <!-- Shoulders highlight -->
+            <ellipse cx="11" cy="44" rx="5" ry="8" fill="#312e81"/>
+            <ellipse cx="49" cy="44" rx="5" ry="8" fill="#312e81"/>
+            <!-- AI label badge -->
+            <rect x="18" y="56" width="24" height="10" rx="5" fill="#6366f133"/>
+            <text x="30" y="63.5" text-anchor="middle" font-size="7" fill="#818cf8" font-family="system-ui" font-weight="700">AI</text>
+          </svg>
+        </div>
+        <div class="avatar-name">Alex</div>
+        <div class="avatar-badge">AI Speaker</div>
+        <div class="wave-row">
+          <div class="wave-bar"></div><div class="wave-bar"></div><div class="wave-bar"></div>
+          <div class="wave-bar"></div><div class="wave-bar"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- MIDDLE ROW: Jordan | TABLE | Morgan -->
+    <div class="room-middle">
+
+      <!-- Jordan (left) -->
+      <div class="avatar-card" style="--glow:#6366f1; --ring:#6366f1; --wave-color:#818cf8;">
+        <div class="avatar-body">
+          <svg class="avatar-svg" viewBox="0 0 60 74" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <circle cx="30" cy="18" r="14" fill="#1e1b4b" stroke="#334155" stroke-width="2"/>
+            <circle cx="25" cy="16" r="2" fill="#64748b"/>
+            <circle cx="35" cy="16" r="2" fill="#64748b"/>
+            <path d="M24 23 Q30 26 36 23" stroke="#64748b" stroke-width="1.5" stroke-linecap="round" fill="none"/>
+            <rect x="26" y="31" width="8" height="6" rx="3" fill="#1e1b4b"/>
+            <rect x="10" y="37" width="40" height="32" rx="12" fill="#111827" stroke="#334155" stroke-width="1.5"/>
+            <path d="M22 37 L30 50 L38 37" stroke="#334155" stroke-width="1.5" fill="none" stroke-linejoin="round"/>
+            <ellipse cx="11" cy="44" rx="5" ry="8" fill="#1e293b"/>
+            <ellipse cx="49" cy="44" rx="5" ry="8" fill="#1e293b"/>
+            <rect x="18" y="56" width="24" height="10" rx="5" fill="#33415533"/>
+            <text x="30" y="63.5" text-anchor="middle" font-size="7" fill="#64748b" font-family="system-ui" font-weight="700">AI</text>
+          </svg>
+        </div>
+        <div class="avatar-name">Jordan</div>
+        <div class="avatar-badge">AI Speaker</div>
+        <div class="wave-row">
+          <div class="wave-bar"></div><div class="wave-bar"></div><div class="wave-bar"></div>
+          <div class="wave-bar"></div><div class="wave-bar"></div>
+        </div>
+      </div>
+
+      <!-- Conference Table -->
+      <div class="table">
+        <div class="table-text">Discussion Topic</div>
+        <div class="table-topic">"AI in Hiring Decisions"</div>
+        <div style="margin-top:8px; display:flex; gap:12px;">
+          <div style="text-align:center;">
+            <div style="font-size:18px; font-weight:900; color:#6366f1;">4</div>
+            <div style="font-size:9px; color:#64748b; text-transform:uppercase; letter-spacing:.05em;">People</div>
+          </div>
+          <div style="width:1px; background:#334155;"></div>
+          <div style="text-align:center;">
+            <div style="font-size:18px; font-weight:900; color:#10b981;">29:51</div>
+            <div style="font-size:9px; color:#64748b; text-transform:uppercase; letter-spacing:.05em;">Left</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Morgan (right) -->
+      <div class="avatar-card" style="--glow:#6366f1; --ring:#6366f1; --wave-color:#818cf8;">
+        <div class="avatar-body">
+          <svg class="avatar-svg" viewBox="0 0 60 74" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <circle cx="30" cy="18" r="14" fill="#1e1b4b" stroke="#334155" stroke-width="2"/>
+            <circle cx="25" cy="16" r="2" fill="#64748b"/>
+            <circle cx="35" cy="16" r="2" fill="#64748b"/>
+            <path d="M24 23 Q30 26 36 23" stroke="#64748b" stroke-width="1.5" stroke-linecap="round" fill="none"/>
+            <rect x="26" y="31" width="8" height="6" rx="3" fill="#1e1b4b"/>
+            <rect x="10" y="37" width="40" height="32" rx="12" fill="#111827" stroke="#334155" stroke-width="1.5"/>
+            <path d="M22 37 L30 50 L38 37" stroke="#334155" stroke-width="1.5" fill="none" stroke-linejoin="round"/>
+            <ellipse cx="11" cy="44" rx="5" ry="8" fill="#1e293b"/>
+            <ellipse cx="49" cy="44" rx="5" ry="8" fill="#1e293b"/>
+            <rect x="18" y="56" width="24" height="10" rx="5" fill="#33415533"/>
+            <text x="30" y="63.5" text-anchor="middle" font-size="7" fill="#64748b" font-family="system-ui" font-weight="700">AI</text>
+          </svg>
+        </div>
+        <div class="avatar-name">Morgan</div>
+        <div class="avatar-badge">AI Speaker</div>
+        <div class="wave-row">
+          <div class="wave-bar"></div><div class="wave-bar"></div><div class="wave-bar"></div>
+          <div class="wave-bar"></div><div class="wave-bar"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- BOTTOM ROW: You (student) -->
+    <div class="room-row">
+      <div class="avatar-card speaking" style="--glow:#10b981; --ring:#10b981; --wave-color:#34d399;">
+        <div class="wave-row">
+          <div class="wave-bar"></div><div class="wave-bar"></div><div class="wave-bar"></div>
+          <div class="wave-bar"></div><div class="wave-bar"></div>
+        </div>
+        <div class="avatar-badge you">Student · You</div>
+        <div class="avatar-name" style="color:#34d399; font-weight:800;">You</div>
+        <div class="avatar-body" style="position:relative;">
+          <div class="avatar-ring" style="--ring:#10b981;top:-4px;left:-4px;right:-4px;bottom:-4px;border-radius:50%;"></div>
+          <svg class="avatar-svg" viewBox="0 0 60 74" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <!-- Head -->
+            <circle cx="30" cy="18" r="14" fill="#052e16" stroke="#10b981" stroke-width="2.5"/>
+            <!-- Face glow -->
+            <circle cx="30" cy="18" r="14" fill="none" stroke="#10b98144" stroke-width="6"/>
+            <!-- Eyes -->
+            <circle cx="25" cy="16" r="2.5" fill="#34d399"/>
+            <circle cx="35" cy="16" r="2.5" fill="#34d399"/>
+            <!-- Smile -->
+            <path d="M23 23 Q30 28 37 23" stroke="#34d399" stroke-width="2" stroke-linecap="round" fill="none"/>
+            <!-- Microphone icon in centre -->
+            <rect x="28" y="10" width="4" height="9" rx="2" fill="#10b981"/>
+            <path d="M24 17 Q24 23 30 23 Q36 23 36 17" stroke="#10b981" stroke-width="1.5" fill="none"/>
+            <line x1="30" y1="23" x2="30" y2="27" stroke="#10b981" stroke-width="1.5"/>
+            <!-- Neck -->
+            <rect x="26" y="31" width="8" height="6" rx="3" fill="#052e16"/>
+            <!-- Body -->
+            <rect x="10" y="37" width="40" height="32" rx="12" fill="#064e3b" stroke="#10b981" stroke-width="2"/>
+            <path d="M22 37 L30 50 L38 37" stroke="#10b981" stroke-width="2" fill="none" stroke-linejoin="round"/>
+            <ellipse cx="11" cy="44" rx="5" ry="8" fill="#052e16"/>
+            <ellipse cx="49" cy="44" rx="5" ry="8" fill="#052e16"/>
+            <!-- YOU badge -->
+            <rect x="16" y="56" width="28" height="10" rx="5" fill="#10b98133"/>
+            <text x="30" y="63.5" text-anchor="middle" font-size="7" fill="#34d399" font-family="system-ui" font-weight="700">YOU</text>
+          </svg>
+        </div>
+      </div>
+    </div>
+
+  </div><!-- /room-grid -->
+</div><!-- /room-wrap -->
+
+<!-- 5-person example note -->
+<div style="width:100%; max-width:760px; margin-bottom:12px; background:#1e293b; border:1px solid #334155; border-radius:14px; padding:14px 18px;">
+  <div style="font-size:10px; color:#64748b; font-weight:700; letter-spacing:.06em; text-transform:uppercase; margin-bottom:10px;">5th person → sits on side (example)</div>
+  <div style="display:flex; align-items:center; gap:10px; color:#94a3b8; font-size:12px;">
+    <span>Top: Alex &nbsp;|&nbsp; Left: Jordan &nbsp;|&nbsp; Right: Morgan &nbsp;|&nbsp; Bottom: You &nbsp;→&nbsp;</span>
+    <span style="background:#6366f122; color:#818cf8; padding:3px 10px; border-radius:6px; font-weight:700; font-size:11px;">+ Riley (AI) at top-right corner</span>
+  </div>
+</div>
+
+<!-- SPEAKING BAR -->
+<div class="speak-bar">
+  <div class="listen-dot"></div>
+  Listening… speak now
+</div>
+
+<!-- ACTION BUTTONS -->
+<div class="actions">
+  <button class="btn btn-green">
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="1" y1="1" x2="23" y2="23"/><path d="M9 9v3a3 3 0 005.12 2.12M15 9.34V4a3 3 0 00-5.94-.6"/><path d="M17 16.95A7 7 0 015 12v-2m14 0v2a7 7 0 01-.11 1.23"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>
+    Done
+  </button>
+  <button class="btn btn-gray">
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 11V6a2 2 0 00-2-2v0a2 2 0 00-2 2v0"/><path d="M14 10V4a2 2 0 00-2-2v0a2 2 0 00-2 2v2"/><path d="M10 10.5V6a2 2 0 00-2-2v0a2 2 0 00-2 2v8"/><path d="M18 8a2 2 0 114 0v6a8 8 0 01-8 8h-2c-2.8 0-4.5-.86-5.99-2.34l-3.6-3.6a2 2 0 012.83-2.82L7 15"/></svg>
+    Raise Hand
+  </button>
+  <button class="btn btn-turns" style="display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;">
+    <span class="count">0</span>
+    <span style="font-size:10px;">Your turns</span>
+  </button>
+  <button class="btn btn-red">
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#ef4444" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><rect x="9" y="9" width="6" height="6"/></svg>
+    Conclude
+  </button>
+</div>
+
+<p class="section-note">
+  <strong>Room Layout:</strong> Participants sit around a virtual conference table —
+  one at top, left, right, and bottom. A 5th person wraps to the top row beside the first.
+  The active speaker gets a <strong style="color:#10b981">glowing ring + animated waves</strong>.
+  2D avatars with head + body + role badge are shown for each seat.
+</p>
+
+</body>
+</html>

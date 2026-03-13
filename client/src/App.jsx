@@ -187,7 +187,20 @@ function App() {
         }
     }
 
-    const logout = () => {
+    const logout = async () => {
+        try {
+            const token = localStorage.getItem('authToken')
+            if (token) {
+                await fetch(`${API_BASE}/auth/logout`, {
+                    method: 'POST',
+                    headers: { Authorization: `Bearer ${token}` },
+                    keepalive: true
+                })
+            }
+        } catch {
+            // Ignore logout audit failures and continue local logout.
+        }
+
         setUser(null)
         localStorage.removeItem('currentUser')
         localStorage.removeItem('authToken')

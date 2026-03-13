@@ -765,10 +765,40 @@ app.post('/api/auth/login', authLimiter, validate(loginSchema), async (req, res)
             }).catch(() => { });
         }
 
+        await logAudit(
+            user.id,
+            user.name || user.email,
+            user.role,
+            'USER_LOGIN',
+            'auth',
+            String(user.id),
+            { email: user.email, loginAt: new Date().toISOString() },
+            req.ip
+        );
+
         res.json({ success: true, token, user: responseUser });
     } catch (error) {
         console.error(error);
         res.status(500).json({ error: 'Server error' });
+    }
+});
+
+app.post('/api/auth/logout', authenticate, async (req, res) => {
+    try {
+        await logAudit(
+            req.user.id,
+            req.user.name || req.user.email || `user-${req.user.id}`,
+            req.user.role || 'user',
+            'USER_LOGOUT',
+            'auth',
+            String(req.user.id),
+            { logoutAt: new Date().toISOString() },
+            req.ip
+        );
+
+        res.json({ success: true });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
     }
 });
 
@@ -7309,6 +7339,276 @@ app.get('/api/admin/audit-logs/stats', async (req, res) => {
     }
 });
 
+app.get('/api/admin/login-activity', async (req, res) => {
+    try {
+        const { search = '' } = req.query;
+        const filters = [];
+        const params = [];
+
+        if (search.trim()) {
+            filters.push('(u.name LIKE ? OR u.email LIKE ? OR CAST(u.id AS CHAR) LIKE ?)');
+            const q = `%${search.trim()}%`;
+            params.push(q, q, q);
+        }
+
+        const whereClause = filters.length ? `AND ${filters.join(' AND ')}` : '';
+        const [students] = await pool.query(
+            `SELECT u.id, u.name, u.email, u.batch, u.status
+             FROM users u
+             WHERE u.role = 'student' ${whereClause}
+             ORDER BY u.name ASC`,
+            params
+        );
+
+        if (!students.length) {
+            return res.json({
+                summary: {
+                    totalStudents: 0,
+                    activeToday: 0,
+                    loginEventsToday: 0,
+                    testEventsToday: 0,
+                    avgActivityMinutes: 0
+                },
+                students: [],
+                recentEvents: []
+            });
+        }
+
+        const placeholders = students.map(() => '?').join(',');
+        const studentIds = students.map(s => s.id);
+
+        const safeJson = (value, fallback = null) => {
+            try {
+                return typeof value === 'string' ? JSON.parse(value) : (value ?? fallback);
+            } catch {
+                return fallback;
+            }
+        };
+
+        const toSeconds = (value) => {
+            const num = Number(value || 0);
+            return Number.isFinite(num) && num > 0 ? Math.round(num) : 0;
+        };
+
+        const [auditRows] = await pool.query(
+            `SELECT user_id, user_name, action, timestamp, details, ip_address
+             FROM audit_logs
+             WHERE user_role = 'student'
+               AND action IN ('USER_LOGIN', 'USER_LOGOUT')
+               AND user_id IN (${placeholders})
+             ORDER BY timestamp DESC
+             LIMIT 1000`,
+            studentIds
+        );
+
+        const [aptitudeRows] = await pool.query(
+            `SELECT s.student_id, u.name AS student_name, s.test_title AS activity_name,
+                    s.submitted_at AS activity_at, s.time_spent, s.score, s.status
+             FROM aptitude_submissions s
+             JOIN users u ON u.id = s.student_id
+             WHERE s.student_id IN (${placeholders})`,
+            studentIds
+        );
+
+        const [globalRows] = await pool.query(
+            `SELECT s.student_id, u.name AS student_name, s.test_title AS activity_name,
+                    s.submitted_at AS activity_at, s.time_spent, s.overall_percentage AS score, s.status
+             FROM global_test_submissions s
+             JOIN users u ON u.id = s.student_id
+             WHERE s.student_id IN (${placeholders})`,
+            studentIds
+        );
+
+        const [mcqRows] = await pool.query(
+            `SELECT s.student_id, COALESCE(s.student_name, u.name) AS student_name, s.mcq_title AS activity_name,
+                    s.submitted_at AS activity_at, s.time_taken, s.score, s.status
+             FROM mcq_submissions s
+             LEFT JOIN users u ON u.id = s.student_id
+             WHERE s.student_id IN (${placeholders})`,
+            studentIds
+        );
+
+        const [crtRows] = await pool.query(
+            `SELECT a.student_id, u.name AS student_name, t.title AS activity_name,
+                    a.started_at, a.completed_at, a.section_scores, a.overall_score AS score, a.status
+             FROM crt_attempts a
+             JOIN crt_tests t ON t.id = a.test_id
+             JOIN users u ON u.id = a.student_id
+             WHERE a.student_id IN (${placeholders})
+               AND a.status = 'completed'`,
+            studentIds
+        );
+
+        const studentMap = new Map(
+            students.map(student => [student.id, {
+                ...student,
+                loginCount: 0,
+                logoutCount: 0,
+                testsAttended: 0,
+                totalActivitySeconds: 0,
+                lastLogin: null,
+                lastLogout: null,
+                lastTestAt: null,
+                lastSeenAt: null,
+                testBreakdown: { aptitude: 0, global: 0, mcq: 0, crt: 0 }
+            }])
+        );
+
+        const events = [];
+        const pushEvent = (event) => {
+            events.push(event);
+            const row = studentMap.get(event.studentId);
+            if (!row) return;
+            if (!row.lastSeenAt || new Date(event.timestamp) > new Date(row.lastSeenAt)) {
+                row.lastSeenAt = event.timestamp;
+            }
+        };
+
+        auditRows.forEach(log => {
+            const details = safeJson(log.details, {});
+            const row = studentMap.get(log.user_id);
+            if (!row) return;
+            if (log.action === 'USER_LOGIN') {
+                row.loginCount += 1;
+                if (!row.lastLogin || new Date(log.timestamp) > new Date(row.lastLogin)) row.lastLogin = log.timestamp;
+            }
+            if (log.action === 'USER_LOGOUT') {
+                row.logoutCount += 1;
+                if (!row.lastLogout || new Date(log.timestamp) > new Date(row.lastLogout)) row.lastLogout = log.timestamp;
+            }
+            pushEvent({
+                studentId: log.user_id,
+                studentName: log.user_name || row.name,
+                eventType: log.action === 'USER_LOGIN' ? 'login' : 'logout',
+                label: log.action === 'USER_LOGIN' ? 'Logged In' : 'Logged Out',
+                timestamp: log.timestamp,
+                durationSeconds: 0,
+                score: null,
+                status: null,
+                meta: details,
+                ipAddress: log.ip_address || null
+            });
+        });
+
+        aptitudeRows.forEach(item => {
+            const row = studentMap.get(item.student_id);
+            if (!row) return;
+            const durationSeconds = toSeconds(item.time_spent);
+            row.testsAttended += 1;
+            row.totalActivitySeconds += durationSeconds;
+            row.testBreakdown.aptitude += 1;
+            if (!row.lastTestAt || new Date(item.activity_at) > new Date(row.lastTestAt)) row.lastTestAt = item.activity_at;
+            pushEvent({
+                studentId: item.student_id,
+                studentName: item.student_name,
+                eventType: 'test',
+                testType: 'aptitude',
+                label: item.activity_name || 'Aptitude Test',
+                timestamp: item.activity_at,
+                durationSeconds,
+                score: item.score,
+                status: item.status
+            });
+        });
+
+        globalRows.forEach(item => {
+            const row = studentMap.get(item.student_id);
+            if (!row) return;
+            const durationSeconds = toSeconds(item.time_spent);
+            row.testsAttended += 1;
+            row.totalActivitySeconds += durationSeconds;
+            row.testBreakdown.global += 1;
+            if (!row.lastTestAt || new Date(item.activity_at) > new Date(row.lastTestAt)) row.lastTestAt = item.activity_at;
+            pushEvent({
+                studentId: item.student_id,
+                studentName: item.student_name,
+                eventType: 'test',
+                testType: 'global',
+                label: item.activity_name || 'Global Test',
+                timestamp: item.activity_at,
+                durationSeconds,
+                score: item.score,
+                status: item.status
+            });
+        });
+
+        mcqRows.forEach(item => {
+            const row = studentMap.get(item.student_id);
+            if (!row) return;
+            const durationSeconds = toSeconds(item.time_taken);
+            row.testsAttended += 1;
+            row.totalActivitySeconds += durationSeconds;
+            row.testBreakdown.mcq += 1;
+            if (!row.lastTestAt || new Date(item.activity_at) > new Date(row.lastTestAt)) row.lastTestAt = item.activity_at;
+            pushEvent({
+                studentId: item.student_id,
+                studentName: item.student_name,
+                eventType: 'test',
+                testType: 'mcq',
+                label: item.activity_name || 'MCQ Test',
+                timestamp: item.activity_at,
+                durationSeconds,
+                score: item.score,
+                status: item.status
+            });
+        });
+
+        crtRows.forEach(item => {
+            const row = studentMap.get(item.student_id);
+            if (!row) return;
+            const sectionScores = safeJson(item.section_scores, {});
+            const trackedSeconds = Object.values(sectionScores || {}).reduce((sum, sec) => sum + Number(sec?.time_spent || 0), 0);
+            const fallbackSeconds = item.started_at && item.completed_at
+                ? Math.max(0, Math.floor((new Date(item.completed_at) - new Date(item.started_at)) / 1000))
+                : 0;
+            const durationSeconds = trackedSeconds || fallbackSeconds;
+            row.testsAttended += 1;
+            row.totalActivitySeconds += durationSeconds;
+            row.testBreakdown.crt += 1;
+            if (!row.lastTestAt || new Date(item.completed_at) > new Date(row.lastTestAt)) row.lastTestAt = item.completed_at;
+            pushEvent({
+                studentId: item.student_id,
+                studentName: item.student_name,
+                eventType: 'test',
+                testType: 'crt',
+                label: item.activity_name || 'Company Round Test',
+                timestamp: item.completed_at,
+                durationSeconds,
+                score: item.score,
+                status: item.status
+            });
+        });
+
+        const startOfDay = new Date();
+        startOfDay.setHours(0, 0, 0, 0);
+        const eventsToday = events.filter(event => event.timestamp && new Date(event.timestamp) >= startOfDay);
+        const testsWithDuration = events.filter(event => event.eventType === 'test' && event.durationSeconds > 0);
+
+        res.json({
+            summary: {
+                totalStudents: students.length,
+                activeToday: new Set(eventsToday.map(event => event.studentId)).size,
+                loginEventsToday: eventsToday.filter(event => event.eventType === 'login').length,
+                testEventsToday: eventsToday.filter(event => event.eventType === 'test').length,
+                avgActivityMinutes: testsWithDuration.length
+                    ? Math.round((testsWithDuration.reduce((sum, event) => sum + event.durationSeconds, 0) / testsWithDuration.length) / 60)
+                    : 0
+            },
+            students: Array.from(studentMap.values()).sort((a, b) => {
+                const aTime = a.lastSeenAt ? new Date(a.lastSeenAt).getTime() : 0;
+                const bTime = b.lastSeenAt ? new Date(b.lastSeenAt).getTime() : 0;
+                return bTime - aTime;
+            }),
+            recentEvents: events
+                .filter(event => event.timestamp)
+                .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))
+                .slice(0, 120)
+        });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
 // ============ AUDIT LOG DASHBOARD ENHANCEMENTS (Feature #4) ============
 
 // 🔍 GET /api/admin/audit-logs/search - Advanced search with full-text
@@ -8514,9 +8814,32 @@ app.get('/api/analytics/time-to-solve', async (req, res) => {
 
         const [rows] = await pool.query(query, params);
 
+        // Include CRT attempt flow as an additional source so admin analytics isn't empty
+        // when coding submissions table has no rows but CRT data exists.
+        let crtQuery = `
+            SELECT t.id as problem_id, t.title, t.difficulty, 'crt' as type, 'CRT' as problemLang,
+                   a.student_id, u.name as studentName,
+                   MIN(COALESCE(a.started_at, a.completed_at)) as firstAttempt,
+                   MAX(COALESCE(a.completed_at, a.started_at)) as lastAttempt,
+                 AVG(TIMESTAMPDIFF(SECOND, COALESCE(a.started_at, a.completed_at), COALESCE(a.completed_at, a.started_at))) as avgAttemptSecs,
+                   COUNT(a.id) as attempts,
+                   MAX(a.overall_score) as bestScore,
+                   MAX(CASE WHEN a.overall_score >= COALESCE(t.pass_percentage, 60) THEN 1 ELSE 0 END) as solved
+            FROM crt_attempts a
+            JOIN crt_tests t ON a.test_id = t.id
+            JOIN users u ON a.student_id = u.id
+            WHERE a.status = 'completed'
+        `;
+        const crtParams = [];
+        if (mentorId) { crtQuery += ' AND u.mentor_id = ?'; crtParams.push(mentorId); }
+        if (studentId) { crtQuery += ' AND a.student_id = ?'; crtParams.push(studentId); }
+        crtQuery += ' GROUP BY t.id, t.title, t.difficulty, a.student_id, u.name';
+        const [crtRows] = await pool.query(crtQuery, crtParams);
+        const allRows = [...rows, ...crtRows];
+
         // Calculate time metrics per problem
         const problemMetrics = {};
-        rows.forEach(r => {
+        allRows.forEach(r => {
             if (!problemMetrics[r.problem_id]) {
                 problemMetrics[r.problem_id] = {
                     problemId: r.problem_id,
@@ -8532,7 +8855,9 @@ app.get('/api/analytics/time-to-solve', async (req, res) => {
                 };
             }
             const timeMs = new Date(r.lastAttempt) - new Date(r.firstAttempt);
-            const timeMinutes = Math.max(1, Math.round(timeMs / 60000));
+            const derivedMinutes = Math.max(1, Math.round(timeMs / 60000));
+            const avgAttemptMinutes = r.avgAttemptSecs ? Math.max(1, Math.round(Number(r.avgAttemptSecs) / 60)) : null;
+            const timeMinutes = avgAttemptMinutes || derivedMinutes;
             problemMetrics[r.problem_id].students.push({
                 studentId: r.student_id,
                 studentName: r.studentName,
@@ -8566,17 +8891,22 @@ app.get('/api/analytics/time-to-solve', async (req, res) => {
         problemList.forEach(p => {
             const d = p.difficulty || 'unknown';
             if (!difficultySummary[d]) {
-                difficultySummary[d] = { difficulty: d, problems: 0, avgAttempts: 0, avgTimeMinutes: 0, avgSolveRate: 0, totalAttempts: 0 };
+                difficultySummary[d] = { difficulty: d, problems: 0, avgAttempts: 0, avgTimeMinutes: 0, avgSolveRate: 0, totalAttempts: 0, timedProblems: 0 };
             }
             difficultySummary[d].problems++;
             difficultySummary[d].totalAttempts += p.totalAttempts;
             difficultySummary[d].avgSolveRate += p.solveRate;
-            if (p.avgTimeMinutes) difficultySummary[d].avgTimeMinutes += p.avgTimeMinutes;
+            difficultySummary[d].avgAttempts += p.avgAttempts || 0;
+            if (p.avgTimeMinutes) {
+                difficultySummary[d].avgTimeMinutes += p.avgTimeMinutes;
+                difficultySummary[d].timedProblems += 1;
+            }
         });
         Object.values(difficultySummary).forEach(d => {
-            d.avgAttempts = d.problems > 0 ? Math.round(d.totalAttempts / d.problems * 10) / 10 : 0;
-            d.avgTimeMinutes = d.problems > 0 ? Math.round(d.avgTimeMinutes / d.problems) : 0;
+            d.avgAttempts = d.problems > 0 ? Math.round((d.avgAttempts / d.problems) * 10) / 10 : 0;
+            d.avgTimeMinutes = d.timedProblems > 0 ? Math.round(d.avgTimeMinutes / d.timedProblems) : 0;
             d.avgSolveRate = d.problems > 0 ? Math.round(d.avgSolveRate / d.problems) : 0;
+            delete d.timedProblems;
         });
 
         const result = {
@@ -8606,6 +8936,29 @@ app.get('/api/analytics/topics', async (req, res) => {
         const params = [];
         if (mentorId) { baseWhere += ' AND u.mentor_id = ?'; params.push(mentorId); }
         if (studentId) { baseWhere += ' AND s.student_id = ?'; params.push(studentId); }
+
+        const mergeByKey = (left, right, key) => {
+            const map = new Map();
+            [...left, ...right].forEach(item => {
+                const k = String(item[key] || '').toLowerCase();
+                if (!map.has(k)) {
+                    map.set(k, { ...item });
+                } else {
+                    const cur = map.get(k);
+                    cur.submissions = Number(cur.submissions || 0) + Number(item.submissions || 0);
+                    cur.passed = Number(cur.passed || 0) + Number(item.passed || 0);
+                    cur.failed = Number(cur.failed || 0) + Number(item.failed || 0);
+                    cur.uniqueStudents = Number(cur.uniqueStudents || 0) + Number(item.uniqueStudents || 0);
+                    const curAvg = Number(cur.avgScore || 0);
+                    const newAvg = Number(item.avgScore || 0);
+                    const curSub = Number(cur.submissions || 0);
+                    const newSub = Number(item.submissions || 0);
+                    const total = curSub + newSub;
+                    cur.avgScore = total > 0 ? ((curAvg * curSub) + (newAvg * newSub)) / total : 0;
+                }
+            });
+            return Array.from(map.values());
+        };
 
         // By problem type
         const [byType] = await pool.query(`
@@ -8668,8 +9021,66 @@ app.get('/api/analytics/topics', async (req, res) => {
             ORDER BY attempts DESC LIMIT 15
         `, params);
 
+        // CRT-derived analytics for environments where general coding submissions are sparse.
+        let crtWhere = "a.status = 'completed'";
+        const crtParams = [];
+        if (mentorId) { crtWhere += ' AND u.mentor_id = ?'; crtParams.push(mentorId); }
+        if (studentId) { crtWhere += ' AND a.student_id = ?'; crtParams.push(studentId); }
+
+        const [crtByType] = await pool.query(`
+            SELECT 'crt' as type,
+                   COUNT(a.id) as submissions,
+                   AVG(a.overall_score) as avgScore,
+                   SUM(CASE WHEN a.overall_score >= COALESCE(t.pass_percentage, 60) THEN 1 ELSE 0 END) as passed,
+                   SUM(CASE WHEN a.overall_score < COALESCE(t.pass_percentage, 60) THEN 1 ELSE 0 END) as failed,
+                   COUNT(DISTINCT a.student_id) as uniqueStudents
+            FROM crt_attempts a
+            JOIN crt_tests t ON a.test_id = t.id
+            JOIN users u ON a.student_id = u.id
+            WHERE ${crtWhere}
+        `, crtParams);
+
+        const [crtByDifficulty] = await pool.query(`
+            SELECT COALESCE(t.difficulty, 'medium') as difficulty,
+                   COUNT(a.id) as submissions,
+                   AVG(a.overall_score) as avgScore,
+                   SUM(CASE WHEN a.overall_score >= COALESCE(t.pass_percentage, 60) THEN 1 ELSE 0 END) as passed,
+                   SUM(CASE WHEN a.overall_score < COALESCE(t.pass_percentage, 60) THEN 1 ELSE 0 END) as failed,
+                   COUNT(DISTINCT a.student_id) as uniqueStudents
+            FROM crt_attempts a
+            JOIN crt_tests t ON a.test_id = t.id
+            JOIN users u ON a.student_id = u.id
+            WHERE ${crtWhere}
+            GROUP BY COALESCE(t.difficulty, 'medium')
+        `, crtParams);
+
+        const [crtTopProblems] = await pool.query(`
+            SELECT t.id, t.title, 'crt' as type, COALESCE(t.difficulty, 'medium') as difficulty,
+                   COUNT(a.id) as attempts,
+                   AVG(a.overall_score) as avgScore,
+                   SUM(CASE WHEN a.overall_score >= COALESCE(t.pass_percentage, 60) THEN 1 ELSE 0 END) as passCount
+            FROM crt_attempts a
+            JOIN crt_tests t ON a.test_id = t.id
+            JOIN users u ON a.student_id = u.id
+            WHERE ${crtWhere}
+            GROUP BY t.id, t.title, COALESCE(t.difficulty, 'medium')
+            ORDER BY attempts DESC LIMIT 15
+        `, crtParams);
+
+        const mergedByType = mergeByKey(byType, crtByType, 'type');
+        const mergedByDifficulty = mergeByKey(byDifficulty, crtByDifficulty, 'difficulty');
+        const mergedTop = [...topProblems, ...crtTopProblems]
+            .sort((a, b) => Number(b.attempts || 0) - Number(a.attempts || 0))
+            .slice(0, 15);
+
+        const effectiveByLanguage = byLanguage.length > 0
+            ? byLanguage
+            : (crtByType[0]?.submissions > 0
+                ? [{ language: 'CRT', submissions: crtByType[0].submissions, avgScore: crtByType[0].avgScore, passed: crtByType[0].passed, uniqueStudents: crtByType[0].uniqueStudents }]
+                : []);
+
         const result = {
-            byType: byType.map(t => ({
+            byType: mergedByType.map(t => ({
                 type: t.type,
                 submissions: t.submissions,
                 avgScore: Math.round(t.avgScore || 0),
@@ -8677,14 +9088,14 @@ app.get('/api/analytics/topics', async (req, res) => {
                 failRate: t.submissions > 0 ? Math.round((t.failed / t.submissions) * 100) : 0,
                 uniqueStudents: t.uniqueStudents
             })),
-            byLanguage: byLanguage.map(l => ({
+            byLanguage: effectiveByLanguage.map(l => ({
                 language: l.language,
                 submissions: l.submissions,
                 avgScore: Math.round(l.avgScore || 0),
                 passRate: l.submissions > 0 ? Math.round((l.passed / l.submissions) * 100) : 0,
                 uniqueStudents: l.uniqueStudents
             })),
-            byDifficulty: byDifficulty.map(d => ({
+            byDifficulty: mergedByDifficulty.map(d => ({
                 difficulty: d.difficulty,
                 submissions: d.submissions,
                 avgScore: Math.round(d.avgScore || 0),
@@ -8698,7 +9109,7 @@ app.get('/api/analytics/topics', async (req, res) => {
                 avgScore: Math.round(h.avgScore || 0),
                 passRate: h.submissions > 0 ? Math.round((h.passed / h.submissions) * 100) : 0
             })),
-            topProblems: topProblems.map(p => ({
+            topProblems: mergedTop.map(p => ({
                 id: p.id,
                 title: p.title,
                 type: p.type,
@@ -9062,6 +9473,443 @@ app.get('/api/admin/batches', async (req, res) => {
         const [rows] = await pool.query('SELECT DISTINCT batch FROM users WHERE batch IS NOT NULL AND batch != "" ORDER BY batch');
         res.json(rows.map(r => r.batch));
     } catch (error) { res.status(500).json({ error: error.message }); }
+});
+
+// ==================== WHATSAPP REPORT SENDER ====================
+app.post('/api/admin/send-whatsapp', async (req, res) => {
+    const { phone, message } = req.body;
+    if (!phone || !message) return res.status(400).json({ error: 'phone and message are required' });
+
+    const instanceId = process.env.ULTRAMSG_INSTANCE_ID;
+    const token = process.env.ULTRAMSG_TOKEN;
+
+    if (!instanceId || !token) {
+        return res.status(503).json({ error: 'WhatsApp API not configured. Set ULTRAMSG_INSTANCE_ID and ULTRAMSG_TOKEN in .env' });
+    }
+
+    // Normalise phone: strip non-digits, auto-prefix India code for 10-digit numbers
+    let cleanPhone = String(phone).replace(/\D/g, '');
+    if (cleanPhone.length === 10) cleanPhone = '91' + cleanPhone;   // bare 10-digit → add India code
+    const toPhone = '+' + cleanPhone;
+
+    try {
+        const params = new URLSearchParams();
+        params.append('token', token);
+        params.append('to', toPhone);
+        params.append('body', message);
+
+        const { data } = await axios.post(
+            `https://api.ultramsg.com/${instanceId}/messages/chat`,
+            params.toString(),
+            { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } }
+        );
+
+        if (data && (data.sent === 'true' || data.sent === true)) {
+            return res.json({ success: true, messageId: data.id });
+        }
+        return res.status(500).json({ error: data?.error || 'UltraMsg returned failure', raw: data });
+    } catch (err) {
+        const errMsg = err.response?.data?.error || err.message;
+        console.error('WhatsApp send error:', errMsg);
+        return res.status(500).json({ error: errMsg });
+    }
+});
+
+// ── PDF Report Generator ─────────────────────────────────────────────────────
+const PDFDocument = require('pdfkit');
+
+function generateCRTReportPDF(reportData) {
+    return new Promise((resolve, reject) => {
+        const { attempt, answers } = reportData;
+        const doc = new PDFDocument({ size: 'A4', margin: 0, compress: true });
+        const chunks = [];
+        doc.on('data', c => chunks.push(c));
+        doc.on('end', () => resolve(Buffer.concat(chunks)));
+        doc.on('error', reject);
+
+        const sections = attempt.sections || [];
+        const sectionScores = attempt.section_scores || {};
+        const score = Math.round(attempt.overall_score || 0);
+        const passed = score >= (attempt.pass_percentage || 60);
+        const W = 595, M = 36, CW = W - 2 * M;
+
+        // Colours
+        const PUR  = '#6d28d9', PURLT = '#ede9fe', DARK = '#1e1b4b';
+        const GRN  = '#059669', GRNLT = '#d1fae5';
+        const RED  = '#dc2626', REDLT = '#fee2e2';
+        const AMB  = '#d97706', AMBLT = '#fef3c7';
+        const GREY = '#6b7280', GREYLT = '#f3f4f6';
+
+        const scoreColor = passed ? GRN : RED;
+        const scoreBg    = passed ? GRNLT : REDLT;
+
+        const sectionLabels = { aptitude:'Aptitude', verbal:'Verbal', logical:'Logical', reasoning:'Reasoning', technical_mcq:'Technical MCQ', coding:'Coding', sql:'SQL', pseudocode:'Pseudocode', gd:'Group Discussion' };
+        const fmtSecs = (v) => {
+            const n = Number(v || 0);
+            if (!Number.isFinite(n) || n <= 0) return '0m';
+            const h = Math.floor(n / 3600);
+            const m = Math.floor((n % 3600) / 60);
+            const s = Math.floor(n % 60);
+            if (h > 0) return `${h}h ${m}m ${s}s`;
+            if (m > 0) return `${m}m ${s}s`;
+            return `${s}s`;
+        };
+
+        // ── HEADER ──────────────────────────────────────────────────────────
+        doc.rect(0, 0, W, 70).fill(DARK);
+        doc.fillColor('white').font('Helvetica-Bold').fontSize(16).text('AI MENTOR HUB', M, 14);
+        doc.fillColor('#a78bfa').font('Helvetica').fontSize(8).text('COMPANY ROUND TEST  ·  PERFORMANCE REPORT', M, 34);
+        doc.fillColor('#c4b5fd').font('Helvetica').fontSize(9)
+            .text(`Student: ${attempt.student_name || '—'}   |   ID: ${attempt.student_id || '—'}`, M, 50);
+        doc.rect(0, 68, W, 3).fill(PUR);
+
+        let y = 80;
+
+        // ── TEST INFO BAND ───────────────────────────────────────────────────
+        const dateStr = attempt.completed_at ? new Date(attempt.completed_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : '';
+        doc.rect(M, y, CW, 38).fill(PURLT).roundedRect(M, y, CW, 38, 6);
+        doc.fillColor(PUR).font('Helvetica-Bold').fontSize(13).text(attempt.title || 'Round Test', M + 10, y + 7, { width: CW - 20 });
+        const meta = [attempt.company_name, dateStr, attempt.difficulty, attempt.duration_minutes ? attempt.duration_minutes + ' min' : ''].filter(Boolean).join('  ·  ');
+        doc.fillColor(GREY).font('Helvetica').fontSize(8).text(meta, M + 10, y + 25, { width: CW - 20 });
+        y += 48;
+
+        // ── SCORE + STAT ROW ─────────────────────────────────────────────────
+        // Score card (big number left)
+        doc.roundedRect(M, y, 130, 85, 8).fill(DARK);
+        doc.fillColor(scoreColor).font('Helvetica-Bold').fontSize(46)
+            .text(`${score}%`, M, y + 10, { align: 'center', width: 130, lineBreak: false });
+        doc.fillColor(scoreBg).fontSize(10).font('Helvetica-Bold')
+            .text(passed ? '✓  PASSED' : '✗  FAILED', M, y + 62, { align: 'center', width: 130 });
+        // Score bar
+        const barBgW = 110, barX = M + 10, barY = y + 77;
+        doc.rect(barX, barY, barBgW, 5).fill('#374151');
+        doc.rect(barX, barY, Math.round(barBgW * score / 100), 5).fill(scoreColor);
+
+        // 3 stat cards to the right
+        const rightX = M + 140, rightW = CW - 140, cw3 = Math.floor((rightW - 8) / 3);
+        [
+            { label: 'RANK', val: attempt.rank != null ? `${attempt.rank}/${attempt.total_participants}` : '—', sub: attempt.percentile != null ? `${attempt.percentile}% ile` : '—', col: AMB, bg: AMBLT },
+            { label: 'CLASS AVG', val: attempt.class_average != null ? `${attempt.class_average}%` : '—', sub: 'Class average', col: '#2563eb', bg: '#dbeafe' },
+            { label: 'PASS MARK', val: `${attempt.pass_percentage || 60}%`, sub: passed ? 'You passed ✓' : 'Not cleared', col: scoreColor, bg: scoreBg },
+        ].forEach((s, i) => {
+            const cx = rightX + i * (cw3 + 4);
+            doc.roundedRect(cx, y, cw3, 85, 8).fill(s.bg);
+            doc.fillColor(s.col).font('Helvetica-Bold').fontSize(7).text(s.label, cx, y + 10, { align: 'center', width: cw3 });
+            doc.fillColor('#111827').font('Helvetica-Bold').fontSize(22).text(s.val, cx, y + 24, { align: 'center', width: cw3 });
+            doc.fillColor(GREY).font('Helvetica').fontSize(8).text(s.sub, cx, y + 62, { align: 'center', width: cw3 });
+        });
+        y += 96;
+
+        // ── QUESTION BREAKDOWN ────────────────────────────────────────────────
+        doc.rect(M, y, CW, 16).fill(DARK);
+        doc.fillColor('white').font('Helvetica-Bold').fontSize(9).text('QUESTION BREAKDOWN', M + 8, y + 4);
+        y += 18;
+
+        const totalQ     = sections.reduce((s, sec) => s + (sectionScores[sec]?.total || 0), 0) || answers.length;
+        const attemptedQ = answers.filter(a => a.student_answer !== null && a.student_answer !== undefined && a.student_answer !== '').length;
+        const correctQ   = answers.filter(a => a.is_correct).length;
+        const wrongQ     = answers.filter(a => !a.is_correct && a.student_answer !== null && a.student_answer !== undefined && a.student_answer !== '').length;
+        const missedQ    = Math.max(0, totalQ - attemptedQ);
+
+        const qc = CW / 5;
+        [
+            { label: 'Total',     val: totalQ,     col: PUR,  bg: PURLT  },
+            { label: 'Attempted', val: attemptedQ, col: AMB,  bg: AMBLT  },
+            { label: 'Correct',   val: correctQ,   col: GRN,  bg: GRNLT  },
+            { label: 'Wrong',     val: wrongQ,     col: RED,  bg: REDLT  },
+            { label: 'Missed',    val: missedQ,    col: GREY, bg: GREYLT },
+        ].forEach((q, i) => {
+            const qx = M + i * qc;
+            doc.rect(qx, y, qc - 1, 52).fill(q.bg);
+            doc.fillColor(q.col).font('Helvetica-Bold').fontSize(26).text(String(q.val), qx, y + 8, { align: 'center', width: qc - 1 });
+            doc.fillColor('#374151').font('Helvetica').fontSize(7).text(q.label.toUpperCase(), qx, y + 38, { align: 'center', width: qc - 1 });
+        });
+        y += 55;
+
+        // Progress bar
+        doc.rect(M, y, CW, 8).fill('#e5e7eb');
+        if (totalQ > 0) {
+            const gw = Math.round(CW * correctQ / totalQ);
+            const rw = Math.round(CW * wrongQ / totalQ);
+            if (gw > 0) doc.rect(M, y, gw, 8).fill(GRN);
+            if (rw > 0) doc.rect(M + gw, y, rw, 8).fill(RED);
+        }
+        y += 12;
+
+        // Legend
+        [
+            { c: GRN, l: `Correct (${totalQ > 0 ? Math.round(correctQ / totalQ * 100) : 0}%)` },
+            { c: RED, l: `Wrong (${totalQ > 0 ? Math.round(wrongQ / totalQ * 100) : 0}%)` },
+            { c: '#9ca3af', l: `Missed (${totalQ > 0 ? Math.round(missedQ / totalQ * 100) : 0}%)` },
+        ].forEach((item, i) => {
+            doc.rect(M + i * 130, y, 8, 8).fill(item.c);
+            doc.fillColor('#374151').font('Helvetica').fontSize(8).text(item.l, M + i * 130 + 12, y + 1);
+        });
+        y += 22;
+
+        // ── TIME ANALYSIS ───────────────────────────────────────────────────
+        const totalSpentSec = sections.reduce((sum, sec) => sum + Number(sectionScores[sec]?.time_spent || 0), 0);
+        const allowedBySection = attempt.section_time_limits || {};
+        const totalAllowedSec = sections.reduce((sum, sec) => sum + Number(allowedBySection[sec] || 0), 0)
+            || Number(attempt.duration_minutes || 0) * 60;
+        const startedAt = attempt.started_at ? new Date(attempt.started_at) : null;
+        const completedAt = attempt.completed_at ? new Date(attempt.completed_at) : null;
+        const actualWallClockSec = (startedAt && completedAt) ? Math.max(0, Math.floor((completedAt - startedAt) / 1000)) : 0;
+        const effectiveSpentSec = totalSpentSec || actualWallClockSec;
+        const timeUsagePct = totalAllowedSec > 0 ? Math.min(100, Math.round((effectiveSpentSec / totalAllowedSec) * 100)) : 0;
+
+        if (y > 720) { doc.addPage(); y = 40; }
+        doc.rect(M, y, CW, 16).fill(DARK);
+        doc.fillColor('white').font('Helvetica-Bold').fontSize(9).text('TIME ANALYSIS', M + 8, y + 4);
+        y += 18;
+
+        const timeCards = [
+            { label: 'Allowed Time', val: fmtSecs(totalAllowedSec), sub: `${attempt.duration_minutes || 0} min total`, col: '#2563eb', bg: '#dbeafe' },
+            { label: 'Time Spent', val: fmtSecs(effectiveSpentSec), sub: totalSpentSec > 0 ? 'From section tracking' : 'From start/end timestamps', col: PUR, bg: PURLT },
+            { label: 'Usage', val: `${timeUsagePct}%`, sub: timeUsagePct > 95 ? 'Near full time used' : 'Within time window', col: timeUsagePct > 95 ? RED : GRN, bg: timeUsagePct > 95 ? REDLT : GRNLT },
+        ];
+        const tGap = 6;
+        const tW = Math.floor((CW - tGap * 2) / 3);
+        timeCards.forEach((t, i) => {
+            const tx = M + (tW + tGap) * i;
+            doc.roundedRect(tx, y, tW, 58, 8).fill(t.bg);
+            doc.fillColor(t.col).font('Helvetica-Bold').fontSize(8).text(t.label.toUpperCase(), tx, y + 8, { align: 'center', width: tW });
+            doc.fillColor('#111827').font('Helvetica-Bold').fontSize(18).text(t.val, tx, y + 21, { align: 'center', width: tW });
+            doc.fillColor(GREY).font('Helvetica').fontSize(7).text(t.sub, tx, y + 44, { align: 'center', width: tW });
+        });
+        y += 66;
+
+        const timeBarW = CW;
+        doc.rect(M, y, timeBarW, 9).fill('#e5e7eb');
+        if (timeUsagePct > 0) doc.rect(M, y, Math.round(timeBarW * timeUsagePct / 100), 9).fill(timeUsagePct > 95 ? RED : '#2563eb');
+        y += 12;
+
+        const stampLine = [
+            startedAt ? `Start: ${startedAt.toLocaleString('en-IN')}` : '',
+            completedAt ? `End: ${completedAt.toLocaleString('en-IN')}` : '',
+            actualWallClockSec > 0 ? `Wall-clock: ${fmtSecs(actualWallClockSec)}` : ''
+        ].filter(Boolean).join('  |  ');
+        if (stampLine) {
+            doc.fillColor('#4b5563').font('Helvetica').fontSize(8).text(stampLine, M, y, { width: CW });
+            y += 14;
+        }
+
+        if (sections.length > 0) {
+            const rowH = 14;
+            if (y > 730) { doc.addPage(); y = 40; }
+            doc.rect(M, y, CW, 14).fill('#ede9fe');
+            doc.fillColor(PUR).font('Helvetica-Bold').fontSize(7)
+                .text('SECTION', M + 6, y + 4, { width: 120 })
+                .text('SPENT', M + 130, y + 4, { width: 90 })
+                .text('ALLOWED', M + 220, y + 4, { width: 90 })
+                .text('USAGE', M + 310, y + 4, { width: 60 })
+                .text('TIME BAR', M + 370, y + 4, { width: CW - 376 });
+            y += 14;
+
+            sections.forEach(sec => {
+                if (y > 790) { doc.addPage(); y = 40; }
+                const spent = Number(sectionScores[sec]?.time_spent || 0);
+                const allowed = Number(allowedBySection[sec] || 0);
+                const usage = allowed > 0 ? Math.round((spent / allowed) * 100) : 0;
+                const usageSafe = Math.max(0, Math.min(100, usage));
+                const usageColor = usage > 100 ? RED : (usage > 85 ? AMB : GRN);
+                const label = sectionLabels[sec] || sec;
+
+                doc.rect(M, y, CW, rowH).fill(y % 28 === 0 ? '#fafafa' : '#f3f4f6');
+                doc.fillColor('#111827').font('Helvetica').fontSize(8)
+                    .text(label, M + 6, y + 4, { width: 120, lineBreak: false, ellipsis: true })
+                    .text(fmtSecs(spent), M + 130, y + 4, { width: 90 })
+                    .text(allowed > 0 ? fmtSecs(allowed) : 'N/A', M + 220, y + 4, { width: 90 })
+                    .text(allowed > 0 ? `${usage}%` : 'N/A', M + 310, y + 4, { width: 60 });
+
+                const tbx = M + 370;
+                const tbw = CW - 376;
+                doc.rect(tbx, y + 4, tbw, 6).fill('#d1d5db');
+                if (allowed > 0 && usageSafe > 0) doc.rect(tbx, y + 4, Math.round(tbw * usageSafe / 100), 6).fill(usageColor);
+                y += rowH;
+            });
+            y += 10;
+        }
+
+        // ── SECTION ANALYSIS ─────────────────────────────────────────────────
+        doc.rect(M, y, CW, 16).fill(DARK);
+        doc.fillColor('white').font('Helvetica-Bold').fontSize(9).text('SECTION-WISE PERFORMANCE', M + 8, y + 4);
+        y += 20;
+
+        const barTotalW = CW - 160;
+        sections.forEach(sec => {
+            if (y > 770) { doc.addPage(); y = 40; }
+            const ss = sectionScores[sec] || {};
+            const pct = Math.round(ss.score || 0);
+            const bc = pct >= 80 ? GRN : pct >= 60 ? AMB : RED;
+            const label = sectionLabels[sec] || sec;
+
+            doc.fillColor('#111827').font('Helvetica-Bold').fontSize(10).text(label, M, y + 1, { width: 105 });
+            doc.fillColor(GREY).font('Helvetica').fontSize(9).text(`${ss.correct || 0}/${ss.total || 0}`, M + 108, y + 1, { width: 45 });
+
+            const bx = M + 155;
+            doc.rect(bx, y + 3, barTotalW, 11).fill('#e5e7eb');
+            if (pct > 0) doc.rect(bx, y + 3, Math.round(barTotalW * pct / 100), 11).fill(bc);
+            doc.fillColor(bc).font('Helvetica-Bold').fontSize(10)
+                .text(`${pct}%`, bx + barTotalW + 6, y + 1, { width: 35 });
+            y += 20;
+        });
+
+        // ── ANSWER SUMMARY TABLE (FULL) ─────────────────────────────────────
+        if (answers.length > 0) {
+            y += 8;
+            if (y > 750) { doc.addPage(); y = 40; }
+            doc.rect(M, y, CW, 16).fill(DARK);
+            doc.fillColor('white').font('Helvetica-Bold').fontSize(9).text('QUESTION-BY-QUESTION SUMMARY', M + 8, y + 4);
+            y += 18;
+
+            // Table header
+            const cols = [{ label: '#', w: 22 }, { label: 'Section', w: 75 }, { label: 'Result', w: 45 }, { label: 'Score', w: 40 }, { label: 'Student Answer', w: CW - 22 - 75 - 45 - 40 - 4 }];
+            let cx2 = M;
+            doc.rect(M, y, CW, 14).fill(PURLT);
+            cols.forEach(col => {
+                doc.fillColor(PUR).font('Helvetica-Bold').fontSize(7).text(col.label, cx2 + 2, y + 4, { width: col.w - 2 });
+                cx2 += col.w;
+            });
+            y += 14;
+
+            for (let i = 0; i < answers.length; i++) {
+                if (y > 790) {
+                    doc.addPage();
+                    y = 40;
+                    let cxr = M;
+                    doc.rect(M, y, CW, 14).fill(PURLT);
+                    cols.forEach(col => {
+                        doc.fillColor(PUR).font('Helvetica-Bold').fontSize(7).text(col.label, cxr + 2, y + 4, { width: col.w - 2 });
+                        cxr += col.w;
+                    });
+                    y += 14;
+                }
+                const a = answers[i];
+                const rowBg = a.is_correct ? GRNLT : (a.student_answer ? REDLT : GREYLT);
+                doc.rect(M, y, CW, 12).fill(rowBg);
+
+                const ansText = typeof a.student_answer === 'object'
+                    ? JSON.stringify(a.student_answer)
+                    : (a.student_answer != null ? String(a.student_answer) : 'Not answered');
+
+                const secLabel = sectionLabels[a.section] || (a.section || '—');
+                const rowCols = [
+                    { t: String(i + 1), w: 22 },
+                    { t: secLabel, w: 75 },
+                    { t: a.is_correct ? '✓ Correct' : (a.student_answer ? '✗ Wrong' : '— Missed'), w: 45, col: a.is_correct ? GRN : (a.student_answer ? RED : GREY) },
+                    { t: `${Math.round(a.score || 0)}%`, w: 40 },
+                    { t: ansText.slice(0, 60), w: CW - 22 - 75 - 45 - 40 - 4 },
+                ];
+                let rx = M;
+                rowCols.forEach(col => {
+                    doc.fillColor(col.col || '#1f2937').font('Helvetica').fontSize(7)
+                        .text(col.t, rx + 2, y + 3, { width: col.w - 3, lineBreak: false, ellipsis: true });
+                    rx += col.w;
+                });
+                y += 12;
+            }
+        }
+
+        // ── FOOTER ───────────────────────────────────────────────────────────
+        const footerY = 820;
+        doc.rect(0, footerY, W, 22).fill(DARK);
+        doc.fillColor('#a78bfa').font('Helvetica').fontSize(8)
+            .text('🔗  Login to AI Mentor Hub to view full interactive report with time analysis and answer details.', M, footerY + 7, { align: 'center', width: CW });
+
+        doc.end();
+    });
+}
+
+// ── Send WhatsApp PDF Report ──────────────────────────────────────────────────
+app.post('/api/admin/send-whatsapp-pdf', async (req, res) => {
+    const { attemptId, phone } = req.body;
+    if (!attemptId || !phone) return res.status(400).json({ error: 'attemptId and phone are required' });
+
+    const instanceId = process.env.ULTRAMSG_INSTANCE_ID;
+    const token      = process.env.ULTRAMSG_TOKEN;
+    if (!instanceId || !token) return res.status(503).json({ error: 'WhatsApp API not configured' });
+
+    try {
+        // Fetch attempt + answers
+        const [attempts] = await pool.query(
+            `SELECT a.*, t.company_name, t.title, t.sections, t.pass_percentage, t.difficulty, t.duration_minutes, t.section_time_limits
+             FROM crt_attempts a JOIN crt_tests t ON a.test_id = t.id WHERE a.id = ?`,
+            [attemptId]
+        );
+        if (!attempts.length) return res.status(404).json({ error: 'Attempt not found' });
+        const raw = attempts[0];
+
+        const [answers] = await pool.query(
+            `SELECT ans.*, q.question, q.section, q.question_type, q.correct_answer, q.options, q.test_cases
+             FROM crt_answers ans JOIN crt_questions q ON ans.question_id = q.id
+             WHERE ans.attempt_id = ? ORDER BY q.section, q.id`,
+            [attemptId]
+        );
+
+        // Rank / class average
+        const [allAttempts] = await pool.query(
+            `SELECT id, overall_score FROM crt_attempts WHERE test_id = ? AND status = 'completed'`,
+            [raw.test_id]
+        );
+        const totalP = allAttempts.length;
+        let rank = 1, classAvg = 0, percentile = 100;
+        if (totalP > 0) {
+            classAvg = Math.round(allAttempts.reduce((s, a) => s + (a.overall_score || 0), 0) / totalP);
+            allAttempts.sort((a, b) => (b.overall_score || 0) - (a.overall_score || 0));
+            const idx = allAttempts.findIndex(a => a.id === raw.id);
+            if (idx !== -1) rank = idx + 1;
+            if (totalP > 1) percentile = Math.round(((totalP - rank) / (totalP - 1)) * 10000) / 100;
+        }
+
+        const safeParsePDF = (v, def) => { try { return JSON.parse(v || JSON.stringify(def)); } catch { return def; } };
+
+        const attempt = {
+            ...raw,
+            sections: safeParsePDF(raw.sections, []),
+            section_scores: safeParsePDF(raw.section_scores, {}),
+            section_time_limits: safeParsePDF(raw.section_time_limits, {}),
+            rank, total_participants: totalP, class_average: classAvg, percentile
+        };
+        const parsedAnswers = answers.map(a => ({
+            ...a,
+            options: safeParsePDF(a.options, []),
+            test_cases: safeParsePDF(a.test_cases, []),
+        }));
+
+        // Generate PDF
+        const pdfBuffer = await generateCRTReportPDF({ attempt, answers: parsedAnswers });
+        const base64PDF = pdfBuffer.toString('base64');
+        const docData   = `data:application/pdf;base64,${base64PDF}`;
+
+        // Normalise phone
+        let cleanPhone = String(phone).replace(/\D/g, '');
+        if (cleanPhone.length === 10) cleanPhone = '91' + cleanPhone;
+
+        const params = new URLSearchParams();
+        params.append('token', token);
+        params.append('to', '+' + cleanPhone);
+        params.append('document', docData);
+        params.append('filename', `Report_${(attempt.student_name || 'Student').replace(/\s+/g, '_')}.pdf`);
+        params.append('caption', `🎓 AI Mentor Hub — ${attempt.title || 'Round Test'} Report for ${attempt.student_name || ''}`);
+
+        const { data } = await axios.post(
+            `https://api.ultramsg.com/${instanceId}/messages/document`,
+            params.toString(),
+            {
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                maxBodyLength: 20 * 1024 * 1024,
+                timeout: 90000
+            }
+        );
+
+        if (data?.sent === 'true' || data?.sent === true) return res.json({ success: true });
+        return res.status(500).json({ error: data?.error || 'UltraMsg document send failed', raw: data });
+    } catch (err) {
+        const msg = err.response?.data?.error || err.message;
+        console.error('WhatsApp PDF error:', msg);
+        return res.status(500).json({ error: msg });
+    }
 });
 
 // ==================== DIRECT MESSAGING (Mentor ↔ Student) ====================
