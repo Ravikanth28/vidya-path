@@ -9064,6 +9064,443 @@ app.get('/api/admin/batches', async (req, res) => {
     } catch (error) { res.status(500).json({ error: error.message }); }
 });
 
+// ==================== WHATSAPP REPORT SENDER ====================
+app.post('/api/admin/send-whatsapp', async (req, res) => {
+    const { phone, message } = req.body;
+    if (!phone || !message) return res.status(400).json({ error: 'phone and message are required' });
+
+    const instanceId = process.env.ULTRAMSG_INSTANCE_ID;
+    const token = process.env.ULTRAMSG_TOKEN;
+
+    if (!instanceId || !token) {
+        return res.status(503).json({ error: 'WhatsApp API not configured. Set ULTRAMSG_INSTANCE_ID and ULTRAMSG_TOKEN in .env' });
+    }
+
+    // Normalise phone: strip non-digits, auto-prefix India code for 10-digit numbers
+    let cleanPhone = String(phone).replace(/\D/g, '');
+    if (cleanPhone.length === 10) cleanPhone = '91' + cleanPhone;   // bare 10-digit → add India code
+    const toPhone = '+' + cleanPhone;
+
+    try {
+        const params = new URLSearchParams();
+        params.append('token', token);
+        params.append('to', toPhone);
+        params.append('body', message);
+
+        const { data } = await axios.post(
+            `https://api.ultramsg.com/${instanceId}/messages/chat`,
+            params.toString(),
+            { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } }
+        );
+
+        if (data && (data.sent === 'true' || data.sent === true)) {
+            return res.json({ success: true, messageId: data.id });
+        }
+        return res.status(500).json({ error: data?.error || 'UltraMsg returned failure', raw: data });
+    } catch (err) {
+        const errMsg = err.response?.data?.error || err.message;
+        console.error('WhatsApp send error:', errMsg);
+        return res.status(500).json({ error: errMsg });
+    }
+});
+
+// ── PDF Report Generator ─────────────────────────────────────────────────────
+const PDFDocument = require('pdfkit');
+
+function generateCRTReportPDF(reportData) {
+    return new Promise((resolve, reject) => {
+        const { attempt, answers } = reportData;
+        const doc = new PDFDocument({ size: 'A4', margin: 0, compress: true });
+        const chunks = [];
+        doc.on('data', c => chunks.push(c));
+        doc.on('end', () => resolve(Buffer.concat(chunks)));
+        doc.on('error', reject);
+
+        const sections = attempt.sections || [];
+        const sectionScores = attempt.section_scores || {};
+        const score = Math.round(attempt.overall_score || 0);
+        const passed = score >= (attempt.pass_percentage || 60);
+        const W = 595, M = 36, CW = W - 2 * M;
+
+        // Colours
+        const PUR  = '#6d28d9', PURLT = '#ede9fe', DARK = '#1e1b4b';
+        const GRN  = '#059669', GRNLT = '#d1fae5';
+        const RED  = '#dc2626', REDLT = '#fee2e2';
+        const AMB  = '#d97706', AMBLT = '#fef3c7';
+        const GREY = '#6b7280', GREYLT = '#f3f4f6';
+
+        const scoreColor = passed ? GRN : RED;
+        const scoreBg    = passed ? GRNLT : REDLT;
+
+        const sectionLabels = { aptitude:'Aptitude', verbal:'Verbal', logical:'Logical', reasoning:'Reasoning', technical_mcq:'Technical MCQ', coding:'Coding', sql:'SQL', pseudocode:'Pseudocode', gd:'Group Discussion' };
+        const fmtSecs = (v) => {
+            const n = Number(v || 0);
+            if (!Number.isFinite(n) || n <= 0) return '0m';
+            const h = Math.floor(n / 3600);
+            const m = Math.floor((n % 3600) / 60);
+            const s = Math.floor(n % 60);
+            if (h > 0) return `${h}h ${m}m ${s}s`;
+            if (m > 0) return `${m}m ${s}s`;
+            return `${s}s`;
+        };
+
+        // ── HEADER ──────────────────────────────────────────────────────────
+        doc.rect(0, 0, W, 70).fill(DARK);
+        doc.fillColor('white').font('Helvetica-Bold').fontSize(16).text('AI MENTOR HUB', M, 14);
+        doc.fillColor('#a78bfa').font('Helvetica').fontSize(8).text('COMPANY ROUND TEST  ·  PERFORMANCE REPORT', M, 34);
+        doc.fillColor('#c4b5fd').font('Helvetica').fontSize(9)
+            .text(`Student: ${attempt.student_name || '—'}   |   ID: ${attempt.student_id || '—'}`, M, 50);
+        doc.rect(0, 68, W, 3).fill(PUR);
+
+        let y = 80;
+
+        // ── TEST INFO BAND ───────────────────────────────────────────────────
+        const dateStr = attempt.completed_at ? new Date(attempt.completed_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : '';
+        doc.rect(M, y, CW, 38).fill(PURLT).roundedRect(M, y, CW, 38, 6);
+        doc.fillColor(PUR).font('Helvetica-Bold').fontSize(13).text(attempt.title || 'Round Test', M + 10, y + 7, { width: CW - 20 });
+        const meta = [attempt.company_name, dateStr, attempt.difficulty, attempt.duration_minutes ? attempt.duration_minutes + ' min' : ''].filter(Boolean).join('  ·  ');
+        doc.fillColor(GREY).font('Helvetica').fontSize(8).text(meta, M + 10, y + 25, { width: CW - 20 });
+        y += 48;
+
+        // ── SCORE + STAT ROW ─────────────────────────────────────────────────
+        // Score card (big number left)
+        doc.roundedRect(M, y, 130, 85, 8).fill(DARK);
+        doc.fillColor(scoreColor).font('Helvetica-Bold').fontSize(46)
+            .text(`${score}%`, M, y + 10, { align: 'center', width: 130, lineBreak: false });
+        doc.fillColor(scoreBg).fontSize(10).font('Helvetica-Bold')
+            .text(passed ? '✓  PASSED' : '✗  FAILED', M, y + 62, { align: 'center', width: 130 });
+        // Score bar
+        const barBgW = 110, barX = M + 10, barY = y + 77;
+        doc.rect(barX, barY, barBgW, 5).fill('#374151');
+        doc.rect(barX, barY, Math.round(barBgW * score / 100), 5).fill(scoreColor);
+
+        // 3 stat cards to the right
+        const rightX = M + 140, rightW = CW - 140, cw3 = Math.floor((rightW - 8) / 3);
+        [
+            { label: 'RANK', val: attempt.rank != null ? `${attempt.rank}/${attempt.total_participants}` : '—', sub: attempt.percentile != null ? `${attempt.percentile}% ile` : '—', col: AMB, bg: AMBLT },
+            { label: 'CLASS AVG', val: attempt.class_average != null ? `${attempt.class_average}%` : '—', sub: 'Class average', col: '#2563eb', bg: '#dbeafe' },
+            { label: 'PASS MARK', val: `${attempt.pass_percentage || 60}%`, sub: passed ? 'You passed ✓' : 'Not cleared', col: scoreColor, bg: scoreBg },
+        ].forEach((s, i) => {
+            const cx = rightX + i * (cw3 + 4);
+            doc.roundedRect(cx, y, cw3, 85, 8).fill(s.bg);
+            doc.fillColor(s.col).font('Helvetica-Bold').fontSize(7).text(s.label, cx, y + 10, { align: 'center', width: cw3 });
+            doc.fillColor('#111827').font('Helvetica-Bold').fontSize(22).text(s.val, cx, y + 24, { align: 'center', width: cw3 });
+            doc.fillColor(GREY).font('Helvetica').fontSize(8).text(s.sub, cx, y + 62, { align: 'center', width: cw3 });
+        });
+        y += 96;
+
+        // ── QUESTION BREAKDOWN ────────────────────────────────────────────────
+        doc.rect(M, y, CW, 16).fill(DARK);
+        doc.fillColor('white').font('Helvetica-Bold').fontSize(9).text('QUESTION BREAKDOWN', M + 8, y + 4);
+        y += 18;
+
+        const totalQ     = sections.reduce((s, sec) => s + (sectionScores[sec]?.total || 0), 0) || answers.length;
+        const attemptedQ = answers.filter(a => a.student_answer !== null && a.student_answer !== undefined && a.student_answer !== '').length;
+        const correctQ   = answers.filter(a => a.is_correct).length;
+        const wrongQ     = answers.filter(a => !a.is_correct && a.student_answer !== null && a.student_answer !== undefined && a.student_answer !== '').length;
+        const missedQ    = Math.max(0, totalQ - attemptedQ);
+
+        const qc = CW / 5;
+        [
+            { label: 'Total',     val: totalQ,     col: PUR,  bg: PURLT  },
+            { label: 'Attempted', val: attemptedQ, col: AMB,  bg: AMBLT  },
+            { label: 'Correct',   val: correctQ,   col: GRN,  bg: GRNLT  },
+            { label: 'Wrong',     val: wrongQ,     col: RED,  bg: REDLT  },
+            { label: 'Missed',    val: missedQ,    col: GREY, bg: GREYLT },
+        ].forEach((q, i) => {
+            const qx = M + i * qc;
+            doc.rect(qx, y, qc - 1, 52).fill(q.bg);
+            doc.fillColor(q.col).font('Helvetica-Bold').fontSize(26).text(String(q.val), qx, y + 8, { align: 'center', width: qc - 1 });
+            doc.fillColor('#374151').font('Helvetica').fontSize(7).text(q.label.toUpperCase(), qx, y + 38, { align: 'center', width: qc - 1 });
+        });
+        y += 55;
+
+        // Progress bar
+        doc.rect(M, y, CW, 8).fill('#e5e7eb');
+        if (totalQ > 0) {
+            const gw = Math.round(CW * correctQ / totalQ);
+            const rw = Math.round(CW * wrongQ / totalQ);
+            if (gw > 0) doc.rect(M, y, gw, 8).fill(GRN);
+            if (rw > 0) doc.rect(M + gw, y, rw, 8).fill(RED);
+        }
+        y += 12;
+
+        // Legend
+        [
+            { c: GRN, l: `Correct (${totalQ > 0 ? Math.round(correctQ / totalQ * 100) : 0}%)` },
+            { c: RED, l: `Wrong (${totalQ > 0 ? Math.round(wrongQ / totalQ * 100) : 0}%)` },
+            { c: '#9ca3af', l: `Missed (${totalQ > 0 ? Math.round(missedQ / totalQ * 100) : 0}%)` },
+        ].forEach((item, i) => {
+            doc.rect(M + i * 130, y, 8, 8).fill(item.c);
+            doc.fillColor('#374151').font('Helvetica').fontSize(8).text(item.l, M + i * 130 + 12, y + 1);
+        });
+        y += 22;
+
+        // ── TIME ANALYSIS ───────────────────────────────────────────────────
+        const totalSpentSec = sections.reduce((sum, sec) => sum + Number(sectionScores[sec]?.time_spent || 0), 0);
+        const allowedBySection = attempt.section_time_limits || {};
+        const totalAllowedSec = sections.reduce((sum, sec) => sum + Number(allowedBySection[sec] || 0), 0)
+            || Number(attempt.duration_minutes || 0) * 60;
+        const startedAt = attempt.started_at ? new Date(attempt.started_at) : null;
+        const completedAt = attempt.completed_at ? new Date(attempt.completed_at) : null;
+        const actualWallClockSec = (startedAt && completedAt) ? Math.max(0, Math.floor((completedAt - startedAt) / 1000)) : 0;
+        const effectiveSpentSec = totalSpentSec || actualWallClockSec;
+        const timeUsagePct = totalAllowedSec > 0 ? Math.min(100, Math.round((effectiveSpentSec / totalAllowedSec) * 100)) : 0;
+
+        if (y > 720) { doc.addPage(); y = 40; }
+        doc.rect(M, y, CW, 16).fill(DARK);
+        doc.fillColor('white').font('Helvetica-Bold').fontSize(9).text('TIME ANALYSIS', M + 8, y + 4);
+        y += 18;
+
+        const timeCards = [
+            { label: 'Allowed Time', val: fmtSecs(totalAllowedSec), sub: `${attempt.duration_minutes || 0} min total`, col: '#2563eb', bg: '#dbeafe' },
+            { label: 'Time Spent', val: fmtSecs(effectiveSpentSec), sub: totalSpentSec > 0 ? 'From section tracking' : 'From start/end timestamps', col: PUR, bg: PURLT },
+            { label: 'Usage', val: `${timeUsagePct}%`, sub: timeUsagePct > 95 ? 'Near full time used' : 'Within time window', col: timeUsagePct > 95 ? RED : GRN, bg: timeUsagePct > 95 ? REDLT : GRNLT },
+        ];
+        const tGap = 6;
+        const tW = Math.floor((CW - tGap * 2) / 3);
+        timeCards.forEach((t, i) => {
+            const tx = M + (tW + tGap) * i;
+            doc.roundedRect(tx, y, tW, 58, 8).fill(t.bg);
+            doc.fillColor(t.col).font('Helvetica-Bold').fontSize(8).text(t.label.toUpperCase(), tx, y + 8, { align: 'center', width: tW });
+            doc.fillColor('#111827').font('Helvetica-Bold').fontSize(18).text(t.val, tx, y + 21, { align: 'center', width: tW });
+            doc.fillColor(GREY).font('Helvetica').fontSize(7).text(t.sub, tx, y + 44, { align: 'center', width: tW });
+        });
+        y += 66;
+
+        const timeBarW = CW;
+        doc.rect(M, y, timeBarW, 9).fill('#e5e7eb');
+        if (timeUsagePct > 0) doc.rect(M, y, Math.round(timeBarW * timeUsagePct / 100), 9).fill(timeUsagePct > 95 ? RED : '#2563eb');
+        y += 12;
+
+        const stampLine = [
+            startedAt ? `Start: ${startedAt.toLocaleString('en-IN')}` : '',
+            completedAt ? `End: ${completedAt.toLocaleString('en-IN')}` : '',
+            actualWallClockSec > 0 ? `Wall-clock: ${fmtSecs(actualWallClockSec)}` : ''
+        ].filter(Boolean).join('  |  ');
+        if (stampLine) {
+            doc.fillColor('#4b5563').font('Helvetica').fontSize(8).text(stampLine, M, y, { width: CW });
+            y += 14;
+        }
+
+        if (sections.length > 0) {
+            const rowH = 14;
+            if (y > 730) { doc.addPage(); y = 40; }
+            doc.rect(M, y, CW, 14).fill('#ede9fe');
+            doc.fillColor(PUR).font('Helvetica-Bold').fontSize(7)
+                .text('SECTION', M + 6, y + 4, { width: 120 })
+                .text('SPENT', M + 130, y + 4, { width: 90 })
+                .text('ALLOWED', M + 220, y + 4, { width: 90 })
+                .text('USAGE', M + 310, y + 4, { width: 60 })
+                .text('TIME BAR', M + 370, y + 4, { width: CW - 376 });
+            y += 14;
+
+            sections.forEach(sec => {
+                if (y > 790) { doc.addPage(); y = 40; }
+                const spent = Number(sectionScores[sec]?.time_spent || 0);
+                const allowed = Number(allowedBySection[sec] || 0);
+                const usage = allowed > 0 ? Math.round((spent / allowed) * 100) : 0;
+                const usageSafe = Math.max(0, Math.min(100, usage));
+                const usageColor = usage > 100 ? RED : (usage > 85 ? AMB : GRN);
+                const label = sectionLabels[sec] || sec;
+
+                doc.rect(M, y, CW, rowH).fill(y % 28 === 0 ? '#fafafa' : '#f3f4f6');
+                doc.fillColor('#111827').font('Helvetica').fontSize(8)
+                    .text(label, M + 6, y + 4, { width: 120, lineBreak: false, ellipsis: true })
+                    .text(fmtSecs(spent), M + 130, y + 4, { width: 90 })
+                    .text(allowed > 0 ? fmtSecs(allowed) : 'N/A', M + 220, y + 4, { width: 90 })
+                    .text(allowed > 0 ? `${usage}%` : 'N/A', M + 310, y + 4, { width: 60 });
+
+                const tbx = M + 370;
+                const tbw = CW - 376;
+                doc.rect(tbx, y + 4, tbw, 6).fill('#d1d5db');
+                if (allowed > 0 && usageSafe > 0) doc.rect(tbx, y + 4, Math.round(tbw * usageSafe / 100), 6).fill(usageColor);
+                y += rowH;
+            });
+            y += 10;
+        }
+
+        // ── SECTION ANALYSIS ─────────────────────────────────────────────────
+        doc.rect(M, y, CW, 16).fill(DARK);
+        doc.fillColor('white').font('Helvetica-Bold').fontSize(9).text('SECTION-WISE PERFORMANCE', M + 8, y + 4);
+        y += 20;
+
+        const barTotalW = CW - 160;
+        sections.forEach(sec => {
+            if (y > 770) { doc.addPage(); y = 40; }
+            const ss = sectionScores[sec] || {};
+            const pct = Math.round(ss.score || 0);
+            const bc = pct >= 80 ? GRN : pct >= 60 ? AMB : RED;
+            const label = sectionLabels[sec] || sec;
+
+            doc.fillColor('#111827').font('Helvetica-Bold').fontSize(10).text(label, M, y + 1, { width: 105 });
+            doc.fillColor(GREY).font('Helvetica').fontSize(9).text(`${ss.correct || 0}/${ss.total || 0}`, M + 108, y + 1, { width: 45 });
+
+            const bx = M + 155;
+            doc.rect(bx, y + 3, barTotalW, 11).fill('#e5e7eb');
+            if (pct > 0) doc.rect(bx, y + 3, Math.round(barTotalW * pct / 100), 11).fill(bc);
+            doc.fillColor(bc).font('Helvetica-Bold').fontSize(10)
+                .text(`${pct}%`, bx + barTotalW + 6, y + 1, { width: 35 });
+            y += 20;
+        });
+
+        // ── ANSWER SUMMARY TABLE (FULL) ─────────────────────────────────────
+        if (answers.length > 0) {
+            y += 8;
+            if (y > 750) { doc.addPage(); y = 40; }
+            doc.rect(M, y, CW, 16).fill(DARK);
+            doc.fillColor('white').font('Helvetica-Bold').fontSize(9).text('QUESTION-BY-QUESTION SUMMARY', M + 8, y + 4);
+            y += 18;
+
+            // Table header
+            const cols = [{ label: '#', w: 22 }, { label: 'Section', w: 75 }, { label: 'Result', w: 45 }, { label: 'Score', w: 40 }, { label: 'Student Answer', w: CW - 22 - 75 - 45 - 40 - 4 }];
+            let cx2 = M;
+            doc.rect(M, y, CW, 14).fill(PURLT);
+            cols.forEach(col => {
+                doc.fillColor(PUR).font('Helvetica-Bold').fontSize(7).text(col.label, cx2 + 2, y + 4, { width: col.w - 2 });
+                cx2 += col.w;
+            });
+            y += 14;
+
+            for (let i = 0; i < answers.length; i++) {
+                if (y > 790) {
+                    doc.addPage();
+                    y = 40;
+                    let cxr = M;
+                    doc.rect(M, y, CW, 14).fill(PURLT);
+                    cols.forEach(col => {
+                        doc.fillColor(PUR).font('Helvetica-Bold').fontSize(7).text(col.label, cxr + 2, y + 4, { width: col.w - 2 });
+                        cxr += col.w;
+                    });
+                    y += 14;
+                }
+                const a = answers[i];
+                const rowBg = a.is_correct ? GRNLT : (a.student_answer ? REDLT : GREYLT);
+                doc.rect(M, y, CW, 12).fill(rowBg);
+
+                const ansText = typeof a.student_answer === 'object'
+                    ? JSON.stringify(a.student_answer)
+                    : (a.student_answer != null ? String(a.student_answer) : 'Not answered');
+
+                const secLabel = sectionLabels[a.section] || (a.section || '—');
+                const rowCols = [
+                    { t: String(i + 1), w: 22 },
+                    { t: secLabel, w: 75 },
+                    { t: a.is_correct ? '✓ Correct' : (a.student_answer ? '✗ Wrong' : '— Missed'), w: 45, col: a.is_correct ? GRN : (a.student_answer ? RED : GREY) },
+                    { t: `${Math.round(a.score || 0)}%`, w: 40 },
+                    { t: ansText.slice(0, 60), w: CW - 22 - 75 - 45 - 40 - 4 },
+                ];
+                let rx = M;
+                rowCols.forEach(col => {
+                    doc.fillColor(col.col || '#1f2937').font('Helvetica').fontSize(7)
+                        .text(col.t, rx + 2, y + 3, { width: col.w - 3, lineBreak: false, ellipsis: true });
+                    rx += col.w;
+                });
+                y += 12;
+            }
+        }
+
+        // ── FOOTER ───────────────────────────────────────────────────────────
+        const footerY = 820;
+        doc.rect(0, footerY, W, 22).fill(DARK);
+        doc.fillColor('#a78bfa').font('Helvetica').fontSize(8)
+            .text('🔗  Login to AI Mentor Hub to view full interactive report with time analysis and answer details.', M, footerY + 7, { align: 'center', width: CW });
+
+        doc.end();
+    });
+}
+
+// ── Send WhatsApp PDF Report ──────────────────────────────────────────────────
+app.post('/api/admin/send-whatsapp-pdf', async (req, res) => {
+    const { attemptId, phone } = req.body;
+    if (!attemptId || !phone) return res.status(400).json({ error: 'attemptId and phone are required' });
+
+    const instanceId = process.env.ULTRAMSG_INSTANCE_ID;
+    const token      = process.env.ULTRAMSG_TOKEN;
+    if (!instanceId || !token) return res.status(503).json({ error: 'WhatsApp API not configured' });
+
+    try {
+        // Fetch attempt + answers
+        const [attempts] = await pool.query(
+            `SELECT a.*, t.company_name, t.title, t.sections, t.pass_percentage, t.difficulty, t.duration_minutes, t.section_time_limits
+             FROM crt_attempts a JOIN crt_tests t ON a.test_id = t.id WHERE a.id = ?`,
+            [attemptId]
+        );
+        if (!attempts.length) return res.status(404).json({ error: 'Attempt not found' });
+        const raw = attempts[0];
+
+        const [answers] = await pool.query(
+            `SELECT ans.*, q.question, q.section, q.question_type, q.correct_answer, q.options, q.test_cases
+             FROM crt_answers ans JOIN crt_questions q ON ans.question_id = q.id
+             WHERE ans.attempt_id = ? ORDER BY q.section, q.id`,
+            [attemptId]
+        );
+
+        // Rank / class average
+        const [allAttempts] = await pool.query(
+            `SELECT id, overall_score FROM crt_attempts WHERE test_id = ? AND status = 'completed'`,
+            [raw.test_id]
+        );
+        const totalP = allAttempts.length;
+        let rank = 1, classAvg = 0, percentile = 100;
+        if (totalP > 0) {
+            classAvg = Math.round(allAttempts.reduce((s, a) => s + (a.overall_score || 0), 0) / totalP);
+            allAttempts.sort((a, b) => (b.overall_score || 0) - (a.overall_score || 0));
+            const idx = allAttempts.findIndex(a => a.id === raw.id);
+            if (idx !== -1) rank = idx + 1;
+            if (totalP > 1) percentile = Math.round(((totalP - rank) / (totalP - 1)) * 10000) / 100;
+        }
+
+        const safeParsePDF = (v, def) => { try { return JSON.parse(v || JSON.stringify(def)); } catch { return def; } };
+
+        const attempt = {
+            ...raw,
+            sections: safeParsePDF(raw.sections, []),
+            section_scores: safeParsePDF(raw.section_scores, {}),
+            section_time_limits: safeParsePDF(raw.section_time_limits, {}),
+            rank, total_participants: totalP, class_average: classAvg, percentile
+        };
+        const parsedAnswers = answers.map(a => ({
+            ...a,
+            options: safeParsePDF(a.options, []),
+            test_cases: safeParsePDF(a.test_cases, []),
+        }));
+
+        // Generate PDF
+        const pdfBuffer = await generateCRTReportPDF({ attempt, answers: parsedAnswers });
+        const base64PDF = pdfBuffer.toString('base64');
+        const docData   = `data:application/pdf;base64,${base64PDF}`;
+
+        // Normalise phone
+        let cleanPhone = String(phone).replace(/\D/g, '');
+        if (cleanPhone.length === 10) cleanPhone = '91' + cleanPhone;
+
+        const params = new URLSearchParams();
+        params.append('token', token);
+        params.append('to', '+' + cleanPhone);
+        params.append('document', docData);
+        params.append('filename', `Report_${(attempt.student_name || 'Student').replace(/\s+/g, '_')}.pdf`);
+        params.append('caption', `🎓 AI Mentor Hub — ${attempt.title || 'Round Test'} Report for ${attempt.student_name || ''}`);
+
+        const { data } = await axios.post(
+            `https://api.ultramsg.com/${instanceId}/messages/document`,
+            params.toString(),
+            {
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                maxBodyLength: 20 * 1024 * 1024,
+                timeout: 90000
+            }
+        );
+
+        if (data?.sent === 'true' || data?.sent === true) return res.json({ success: true });
+        return res.status(500).json({ error: data?.error || 'UltraMsg document send failed', raw: data });
+    } catch (err) {
+        const msg = err.response?.data?.error || err.message;
+        console.error('WhatsApp PDF error:', msg);
+        return res.status(500).json({ error: msg });
+    }
+});
+
 // ==================== DIRECT MESSAGING (Mentor ↔ Student) ====================
 
 // Get conversations list for a user (only messages from last 24 hours)

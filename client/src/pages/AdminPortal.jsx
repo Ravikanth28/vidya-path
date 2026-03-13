@@ -1405,6 +1405,20 @@ function AllSubmissions() {
     const [sortDir, setSortDir] = useState('desc')
     const [showFilters, setShowFilters] = useState(false)
 
+    // WhatsApp Send Report modal state
+    const [showWAModal, setShowWAModal] = useState(false)
+    const [waStep, setWAStep] = useState(1)        // 1=type, 2=title, 3=mode, 4=details
+    const [waTestType, setWATestType] = useState('crt')
+    const [waTestTitle, setWATestTitle] = useState('')
+    const [waSendMode, setWASendMode] = useState('individual') // 'individual' | 'bulk'
+    const [waIndivName, setWAIndivName] = useState('')
+    const [waIndivEmail, setWAIndivEmail] = useState('')
+    const [waIndivPhone, setWAIndivPhone] = useState('')
+    const [waBulkJson, setWABulkJson] = useState('')
+    const [waSending, setWASending] = useState(false)
+    const [waResults, setWAResults] = useState([])  // [{name, phone, status, link}]
+    const [waJsonError, setWAJsonError] = useState('')
+
     const fetchSubmissions = () => {
         setLoading(true)
         Promise.all([
@@ -1782,6 +1796,15 @@ function AllSubmissions() {
                     }}>
                         <Trash2 size={14} /> {resetting ? 'Resetting...' : 'Reset All'}
                     </button>
+
+                    {/* WhatsApp Send Report Button */}
+                    <button onClick={() => { setShowWAModal(true); setWAStep(1); setWATestType('crt'); setWATestTitle(''); setWASendMode('individual'); setWAIndivName(''); setWAIndivEmail(''); setWAIndivPhone(''); setWABulkJson(''); setWAResults([]); setWAJsonError(''); }} style={{
+                        padding: '0.5rem 0.75rem', background: 'rgba(37,211,102,0.12)', border: '1px solid rgba(37,211,102,0.4)',
+                        borderRadius: '8px', color: '#25d366', cursor: 'pointer', fontSize: '0.82rem', fontWeight: 600,
+                        display: 'flex', alignItems: 'center', gap: '5px'
+                    }}>
+                        <span style={{ fontSize: '1rem' }}>📲</span> Send Report
+                    </button>
                     
                     {/* Additional Reset Button explicitly for CRT/Round Tests ONLY */}
                     {activeTab === 'crt' && (
@@ -2075,6 +2098,369 @@ function AllSubmissions() {
                     onClose={() => { setViewCRTReport(null); setCrtReportData(null); }}
                 />
             )}
+
+            {/* ═══ WhatsApp Send Report Modal ═══ */}
+            {showWAModal && (() => {
+                // Derive available titles for chosen type
+                const typeMap = {
+                    crt: crtSubmissions,
+                    global: globalSubmissions,
+                    mcq: mcqSubmissions,
+                    aptitude: aptitudeSubmissions,
+                }
+                const pool = typeMap[waTestType] || []
+                const titleKey = waTestType === 'mcq' ? 'mcq_title' : waTestType === 'global' ? 'testTitle' : waTestType === 'aptitude' ? 'itemTitle' : 'test_title'
+                const availTitles = [...new Set(pool.map(s => s[titleKey] || s.itemTitle || s.testTitle || s.title || '').filter(Boolean))].sort()
+
+                // Build WhatsApp message for a single submission
+                const buildMessage = (sub) => {
+                    const name = sub.studentName || sub.student_name || 'Student'
+                    const title = sub[titleKey] || sub.itemTitle || sub.testTitle || sub.title || 'Test'
+                    const score = Math.round(Number(sub.score || sub.overallPercentage || 0))
+                    const status = (sub.status || '').toUpperCase() || (score >= (sub.pass_percentage || 60) ? 'PASSED' : 'FAILED')
+                    const rank = sub.rank ? `${sub.rank}/${sub.total_participants || '—'}` : '—'
+                    const date = sub.submittedAt || sub.submitted_at || sub.completed_at
+                        ? new Date(sub.submittedAt || sub.submitted_at || sub.completed_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })
+                        : ''
+                    const sectionScores = sub.section_scores || {}
+                    const sections = sub.sections || Object.keys(sectionScores)
+                    const totalQ = sections.reduce((s, sec) => s + (sectionScores[sec]?.total || 0), 0) || sub.total_questions || ''
+                    const correctQ = sections.reduce((s, sec) => s + (sectionScores[sec]?.correct || 0), 0) || sub.correct_answers || ''
+                    const wrongQ = correctQ !== '' && totalQ !== '' ? (sub.attempted_questions != null ? sub.attempted_questions - correctQ : '') : ''
+                    const missed = totalQ !== '' && sub.attempted_questions != null ? totalQ - sub.attempted_questions : ''
+
+                    let secLines = ''
+                    if (sections.length > 0) {
+                        secLines = '\n\n📚 *Section-wise Performance:*\n' + sections.map(sec => {
+                            const ss = sectionScores[sec] || {}
+                            const label = { aptitude: 'Aptitude', verbal: 'Verbal', logical: 'Logical', reasoning: 'Reasoning', technical_mcq: 'Technical MCQ', coding: 'Coding', sql: 'SQL' }[sec] || sec
+                            return `• ${label}: ${Math.round(ss.score || 0)}% (${ss.correct || 0}/${ss.total || 0})`
+                        }).join('\n')
+                    }
+
+                    return `🎓 *AI Mentor Hub – Test Report*\n\n👤 *Student:* ${name}\n📋 *Test:* ${title}${date ? `\n📅 *Date:* ${date}` : ''}\n\n📊 *Overall Score:* ${score}%\n🏆 *Status:* ${status}\n🎯 *Rank:* ${rank}${totalQ ? `\n\n📝 *Question Breakdown:*\n✅ Correct: ${correctQ}${wrongQ !== '' ? `\n❌ Wrong: ${wrongQ}` : ''}${missed !== '' ? `\n⏭️ Missed: ${missed}` : ''}\n📋 Total: ${totalQ}` : ''}${secLines}\n\n🔗 Login to AI Mentor Hub to view your full detailed report.`
+                }
+
+                // Find submission by email and title
+                const findSub = (email, title) => {
+                    const emailLc = (email || '').toLowerCase().trim()
+                    const titleLc = (title || '').toLowerCase().trim()
+                    return pool.find(s => {
+                        const sEmail = (s.studentEmail || s.student_email || s.email || '').toLowerCase().trim()
+                        const sTitle = (s[titleKey] || s.itemTitle || s.testTitle || s.title || '').toLowerCase().trim()
+                        return sEmail === emailLc && (titleLc === '' || sTitle === titleLc)
+                    })
+                }
+
+                // Send individual text — calls backend API directly
+                const sendIndividual = async () => {
+                    const sub = findSub(waIndivEmail, waTestTitle)
+                    const phone = waIndivPhone.replace(/\D/g, '')
+                    if (!phone) { alert('Please enter a valid phone number.'); return }
+                    const msg = sub ? buildMessage(sub) : `🎓 *AI Mentor Hub – Test Report*\n\n👤 *Student:* ${waIndivName || waIndivEmail}\n📋 *Test:* ${waTestTitle}\n\n⚠️ Detailed report data not available. Please log into the portal to view your results.`
+                    setWASending(true)
+                    setWAResults([{ name: waIndivName || waIndivEmail, phone, status: 'Sending…' }])
+                    try {
+                        await axios.post(`${API_BASE}/admin/send-whatsapp`, { phone, message: msg })
+                        setWAResults([{ name: waIndivName || waIndivEmail, phone, status: sub ? '✅ Text sent' : '✅ Text sent (no submission data found)' }])
+                    } catch (err) {
+                        const errMsg = err.response?.data?.error || err.message
+                        setWAResults([{ name: waIndivName || waIndivEmail, phone, status: `❌ Failed: ${errMsg}` }])
+                    } finally {
+                        setWASending(false)
+                    }
+                }
+
+                // Send individual PDF report
+                const sendIndividualPDF = async () => {
+                    const sub = findSub(waIndivEmail, waTestTitle)
+                    if (!sub) { alert('No CRT submission found for this email and test title. PDF reports are only available for Round Tests.'); return }
+                    const attemptId = sub.attemptId || sub.id
+                    if (!attemptId) { alert('Could not find attempt ID for this submission.'); return }
+                    const phone = waIndivPhone.replace(/\D/g, '')
+                    if (!phone) { alert('Please enter a valid phone number.'); return }
+                    setWASending(true)
+                    setWAResults([{ name: waIndivName || waIndivEmail, phone, status: '⏳ Generating PDF & sending…' }])
+                    try {
+                        await axios.post(`${API_BASE}/admin/send-whatsapp-pdf`, { attemptId, phone })
+                        setWAResults([{ name: waIndivName || waIndivEmail, phone, status: '✅ PDF report sent!' }])
+                    } catch (err) {
+                        const errMsg = err.response?.data?.error || err.message
+                        setWAResults([{ name: waIndivName || waIndivEmail, phone, status: `❌ PDF failed: ${errMsg}` }])
+                    } finally {
+                        setWASending(false)
+                    }
+                }
+
+                // Parse & prepare bulk — then allow per-row send or send-all
+                const sendBulk = () => {
+                    setWAJsonError('')
+                    let list
+                    try { list = JSON.parse(waBulkJson) } catch { setWAJsonError('Invalid JSON. Please fix and retry.'); return }
+                    if (!Array.isArray(list) || list.length === 0) { setWAJsonError('JSON must be a non-empty array of objects.'); return }
+                    const results = []
+                    list.forEach((item, i) => {
+                        const { name, email, phone: rawPhone } = item
+                        if (!rawPhone) { results.push({ name: name || email || `#${i+1}`, email, phone: '', msg: '', status: 'Skipped – no phone' }); return }
+                        const phone = String(rawPhone).replace(/\D/g, '')
+                        const sub = findSub(email, waTestTitle)
+                        const msgObj = sub ? { ...sub, studentName: name || sub.studentName } : null
+                        const msg = msgObj ? buildMessage(msgObj) : `🎓 *AI Mentor Hub – Test Report*\n\n👤 *Student:* ${name || email}\n📋 *Test:* ${waTestTitle}\n\n⚠️ Report data not available. Please log into the portal.`
+                        const attemptId = sub ? (sub.attemptId || sub.id) : null
+                        results.push({ name: name || email || `#${i+1}`, email, phone, msg, attemptId, status: 'Ready' })
+                    })
+                    setWAResults(results)
+                }
+
+                const sendOneBulkRow = async (idx) => {
+                    const row = waResults[idx]
+                    if (!row.phone || !row.msg) return
+                    setWAResults(prev => prev.map((r, i) => i === idx ? { ...r, status: 'Sending…' } : r))
+                    try {
+                        await axios.post(`${API_BASE}/admin/send-whatsapp`, { phone: row.phone, message: row.msg })
+                        setWAResults(prev => prev.map((r, i) => i === idx ? { ...r, status: '✅ Text sent' } : r))
+                    } catch (err) {
+                        const errMsg = err.response?.data?.error || err.message
+                        setWAResults(prev => prev.map((r, i) => i === idx ? { ...r, status: `❌ ${errMsg}` } : r))
+                    }
+                }
+
+                const sendOneBulkPDF = async (idx) => {
+                    const row = waResults[idx]
+                    if (!row.phone) return
+                    if (!row.attemptId) { setWAResults(prev => prev.map((r, i) => i === idx ? { ...r, status: '❌ No CRT attempt found' } : r)); return }
+                    setWAResults(prev => prev.map((r, i) => i === idx ? { ...r, status: '⏳ Generating PDF…' } : r))
+                    try {
+                        await axios.post(`${API_BASE}/admin/send-whatsapp-pdf`, { attemptId: row.attemptId, phone: row.phone })
+                        setWAResults(prev => prev.map((r, i) => i === idx ? { ...r, status: '✅ PDF sent' } : r))
+                    } catch (err) {
+                        const errMsg = err.response?.data?.error || err.message
+                        setWAResults(prev => prev.map((r, i) => i === idx ? { ...r, status: `❌ PDF: ${errMsg}` } : r))
+                    }
+                }
+
+                const sendAllBulk = async () => {
+                    setWASending(true)
+                    for (let i = 0; i < waResults.length; i++) {
+                        if (waResults[i].phone && waResults[i].msg && !waResults[i].status?.startsWith('✅')) {
+                            await sendOneBulkRow(i)
+                            await new Promise(r => setTimeout(r, 700)) // brief gap between sends
+                        }
+                    }
+                    setWASending(false)
+                }
+
+                const typeLabel = { crt: 'Round Test', global: 'Global Test', mcq: 'MCQ', aptitude: 'Aptitude' }
+
+                return (
+                    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.75)', zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '16px' }}
+                        onClick={() => setShowWAModal(false)}>
+                        <div onClick={e => e.stopPropagation()} style={{ background: '#111827', border: '1px solid #374151', borderRadius: '20px', width: '100%', maxWidth: '600px', maxHeight: '90vh', overflowY: 'auto', boxShadow: '0 25px 50px rgba(0,0,0,0.8)' }}>
+                            {/* Header */}
+                            <div style={{ background: 'linear-gradient(135deg, #075e54, #128c7e)', padding: '20px 24px', borderRadius: '20px 20px 0 0', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                                    <span style={{ fontSize: '1.8rem' }}>📲</span>
+                                    <div>
+                                        <div style={{ color: 'white', fontWeight: 900, fontSize: '1.1rem' }}>Send Report via WhatsApp</div>
+                                        <div style={{ color: 'rgba(255,255,255,0.75)', fontSize: '0.78rem', marginTop: '2px' }}>Step {waStep} of 4</div>
+                                    </div>
+                                </div>
+                                <button onClick={() => setShowWAModal(false)} style={{ background: 'rgba(255,255,255,0.15)', border: 'none', color: 'white', borderRadius: '50%', width: 32, height: 32, cursor: 'pointer', fontSize: '1.1rem', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>✕</button>
+                            </div>
+
+                            {/* Step indicator */}
+                            <div style={{ display: 'flex', padding: '16px 24px 0', gap: '6px' }}>
+                                {[1,2,3,4].map(n => (
+                                    <div key={n} style={{ flex: 1, height: '4px', borderRadius: '4px', background: waStep >= n ? '#25d366' : '#374151', transition: 'background 0.3s' }}></div>
+                                ))}
+                            </div>
+
+                            <div style={{ padding: '24px' }}>
+
+                                {/* Step 1: Test Type */}
+                                {waStep === 1 && (
+                                    <div>
+                                        <div style={{ color: '#e5e7eb', fontWeight: 800, fontSize: '1rem', marginBottom: '16px' }}>1. Choose Test Type</div>
+                                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                                            {[
+                                                { key: 'crt', label: 'Round Test', icon: '🏢', desc: `${crtSubmissions.length} submissions` },
+                                                { key: 'global', label: 'Global Test', icon: '🌐', desc: `${globalSubmissions.length} submissions` },
+                                                { key: 'mcq', label: 'MCQ', icon: '🔢', desc: `${mcqSubmissions.length} submissions` },
+                                                { key: 'aptitude', label: 'Aptitude', icon: '📝', desc: `${aptitudeSubmissions.length} submissions` },
+                                            ].map(t => (
+                                                <button key={t.key} onClick={() => { setWATestType(t.key); setWATestTitle('') }}
+                                                    style={{ padding: '16px', border: waTestType === t.key ? '2px solid #25d366' : '1px solid #374151', borderRadius: '14px', background: waTestType === t.key ? 'rgba(37,211,102,0.1)' : '#1e293b', cursor: 'pointer', textAlign: 'left', transition: 'all 0.2s' }}>
+                                                    <div style={{ fontSize: '1.6rem', marginBottom: '6px' }}>{t.icon}</div>
+                                                    <div style={{ color: waTestType === t.key ? '#25d366' : '#e5e7eb', fontWeight: 800, fontSize: '0.9rem' }}>{t.label}</div>
+                                                    <div style={{ color: '#6b7280', fontSize: '0.75rem', marginTop: '2px' }}>{t.desc}</div>
+                                                </button>
+                                            ))}
+                                        </div>
+                                        <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '20px' }}>
+                                            <button onClick={() => setWAStep(2)} style={{ padding: '10px 24px', background: '#25d366', border: 'none', borderRadius: '10px', color: 'white', fontWeight: 700, cursor: 'pointer', fontSize: '0.9rem' }}>Next →</button>
+                                        </div>
+                                    </div>
+                                )}
+
+                                {/* Step 2: Test Title */}
+                                {waStep === 2 && (
+                                    <div>
+                                        <div style={{ color: '#e5e7eb', fontWeight: 800, fontSize: '1rem', marginBottom: '16px' }}>2. Select Test Title <span style={{ color: '#6b7280', fontSize: '0.8rem', fontWeight: 500 }}>({typeLabel[waTestType]})</span></div>
+                                        {availTitles.length === 0 ? (
+                                            <div style={{ padding: '16px', background: 'rgba(239,68,68,0.1)', borderRadius: '10px', color: '#f87171', fontSize: '0.85rem' }}>No submissions found for this test type.</div>
+                                        ) : (
+                                            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', maxHeight: '260px', overflowY: 'auto' }}>
+                                                {availTitles.map(t => (
+                                                    <button key={t} onClick={() => setWATestTitle(t)}
+                                                        style={{ padding: '12px 16px', border: waTestTitle === t ? '2px solid #25d366' : '1px solid #374151', borderRadius: '10px', background: waTestTitle === t ? 'rgba(37,211,102,0.1)' : '#1e293b', cursor: 'pointer', textAlign: 'left', color: waTestTitle === t ? '#25d366' : '#e5e7eb', fontWeight: 600, fontSize: '0.88rem', transition: 'all 0.2s' }}>
+                                                        {t}
+                                                    </button>
+                                                ))}
+                                            </div>
+                                        )}
+                                        <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '20px' }}>
+                                            <button onClick={() => setWAStep(1)} style={{ padding: '10px 20px', background: '#374151', border: 'none', borderRadius: '10px', color: '#e5e7eb', fontWeight: 600, cursor: 'pointer', fontSize: '0.9rem' }}>← Back</button>
+                                            <button onClick={() => setWAStep(3)} disabled={!waTestTitle} style={{ padding: '10px 24px', background: waTestTitle ? '#25d366' : '#374151', border: 'none', borderRadius: '10px', color: 'white', fontWeight: 700, cursor: waTestTitle ? 'pointer' : 'not-allowed', fontSize: '0.9rem', opacity: waTestTitle ? 1 : 0.5 }}>Next →</button>
+                                        </div>
+                                    </div>
+                                )}
+
+                                {/* Step 3: Send Mode */}
+                                {waStep === 3 && (
+                                    <div>
+                                        <div style={{ color: '#e5e7eb', fontWeight: 800, fontSize: '1rem', marginBottom: '16px' }}>3. How do you want to send?</div>
+                                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
+                                            {[
+                                                { key: 'individual', label: 'Individual', icon: '👤', desc: 'Send to one student by entering their details' },
+                                                { key: 'bulk', label: 'Bulk Send', icon: '👥', desc: 'Upload a JSON list of students with phone numbers' },
+                                            ].map(m => (
+                                                <button key={m.key} onClick={() => setWASendMode(m.key)}
+                                                    style={{ padding: '20px 16px', border: waSendMode === m.key ? '2px solid #25d366' : '1px solid #374151', borderRadius: '14px', background: waSendMode === m.key ? 'rgba(37,211,102,0.1)' : '#1e293b', cursor: 'pointer', textAlign: 'left', transition: 'all 0.2s' }}>
+                                                    <div style={{ fontSize: '2rem', marginBottom: '8px' }}>{m.icon}</div>
+                                                    <div style={{ color: waSendMode === m.key ? '#25d366' : '#e5e7eb', fontWeight: 800, fontSize: '0.95rem', marginBottom: '6px' }}>{m.label}</div>
+                                                    <div style={{ color: '#9ca3af', fontSize: '0.78rem', lineHeight: 1.4 }}>{m.desc}</div>
+                                                </button>
+                                            ))}
+                                        </div>
+                                        <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '20px' }}>
+                                            <button onClick={() => setWAStep(2)} style={{ padding: '10px 20px', background: '#374151', border: 'none', borderRadius: '10px', color: '#e5e7eb', fontWeight: 600, cursor: 'pointer', fontSize: '0.9rem' }}>← Back</button>
+                                            <button onClick={() => { setWAResults([]); setWAStep(4); }} style={{ padding: '10px 24px', background: '#25d366', border: 'none', borderRadius: '10px', color: 'white', fontWeight: 700, cursor: 'pointer', fontSize: '0.9rem' }}>Next →</button>
+                                        </div>
+                                    </div>
+                                )}
+
+                                {/* Step 4: Details + Send */}
+                                {waStep === 4 && (
+                                    <div>
+                                        <div style={{ color: '#e5e7eb', fontWeight: 800, fontSize: '1rem', marginBottom: '4px' }}>4. {waSendMode === 'individual' ? 'Enter Student Details' : 'Upload Student List (JSON)'}</div>
+                                        <div style={{ color: '#6b7280', fontSize: '0.78rem', marginBottom: '16px' }}>Test: <strong style={{ color: '#a855f7' }}>{waTestTitle}</strong> ({typeLabel[waTestType]})</div>
+
+                                        {waSendMode === 'individual' ? (
+                                            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                                                <div>
+                                                    <label style={{ display: 'block', color: '#9ca3af', fontSize: '0.78rem', fontWeight: 700, marginBottom: '4px', textTransform: 'uppercase' }}>Student Name</label>
+                                                    <input value={waIndivName} onChange={e => setWAIndivName(e.target.value)} placeholder="e.g. Akshaya" style={{ width: '100%', padding: '10px 14px', background: '#1e293b', border: '1px solid #374151', borderRadius: '10px', color: 'white', fontSize: '0.9rem', boxSizing: 'border-box', outline: 'none' }} />
+                                                </div>
+                                                <div>
+                                                    <label style={{ display: 'block', color: '#9ca3af', fontSize: '0.78rem', fontWeight: 700, marginBottom: '4px', textTransform: 'uppercase' }}>Login Email (Username)</label>
+                                                    <input value={waIndivEmail} onChange={e => setWAIndivEmail(e.target.value)} placeholder="student@example.com" style={{ width: '100%', padding: '10px 14px', background: '#1e293b', border: '1px solid #374151', borderRadius: '10px', color: 'white', fontSize: '0.9rem', boxSizing: 'border-box', outline: 'none' }} />
+                                                </div>
+                                                <div>
+                                                    <label style={{ display: 'block', color: '#9ca3af', fontSize: '0.78rem', fontWeight: 700, marginBottom: '4px', textTransform: 'uppercase' }}>WhatsApp Phone Number</label>
+                                                    <input value={waIndivPhone} onChange={e => setWAIndivPhone(e.target.value)} placeholder="91XXXXXXXXXX (with country code)" style={{ width: '100%', padding: '10px 14px', background: '#1e293b', border: '1px solid #374151', borderRadius: '10px', color: 'white', fontSize: '0.9rem', boxSizing: 'border-box', outline: 'none' }} />
+                                                </div>
+                                                <button onClick={sendIndividual} disabled={!waIndivPhone || waSending}
+                                                    style={{ marginTop: '8px', padding: '14px', background: '#25d366', border: 'none', borderRadius: '12px', color: 'white', fontWeight: 800, fontSize: '0.95rem', cursor: (waIndivPhone && !waSending) ? 'pointer' : 'not-allowed', opacity: (waIndivPhone && !waSending) ? 1 : 0.5, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
+                                                    <span>{waSending ? '⏳' : '📲'}</span> {waSending ? 'Sending…' : 'Send Text Report'}
+                                                </button>
+                                                {waTestType === 'crt' && (
+                                                    <button onClick={sendIndividualPDF} disabled={!waIndivPhone || !waIndivEmail || waSending}
+                                                        style={{ padding: '14px', background: '#7c3aed', border: 'none', borderRadius: '12px', color: 'white', fontWeight: 800, fontSize: '0.95rem', cursor: (waIndivPhone && waIndivEmail && !waSending) ? 'pointer' : 'not-allowed', opacity: (waIndivPhone && waIndivEmail && !waSending) ? 1 : 0.5, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
+                                                        <span>{waSending ? '⏳' : '📄'}</span> {waSending ? 'Generating PDF…' : 'Send as PDF Report'}
+                                                    </button>
+                                                )}
+                                                {waResults.length > 0 && (
+                                                    <div style={{ padding: '12px 16px', background: waResults[0].status?.startsWith('✅') ? 'rgba(37,211,102,0.1)' : waResults[0].status?.startsWith('❌') ? 'rgba(239,68,68,0.1)' : 'rgba(245,158,11,0.1)', border: `1px solid ${waResults[0].status?.startsWith('✅') ? 'rgba(37,211,102,0.3)' : waResults[0].status?.startsWith('❌') ? 'rgba(239,68,68,0.3)' : 'rgba(245,158,11,0.3)'}`, borderRadius: '10px', color: waResults[0].status?.startsWith('✅') ? '#25d366' : waResults[0].status?.startsWith('❌') ? '#f87171' : '#f59e0b', fontSize: '0.85rem', fontWeight: 600 }}>
+                                                        {waResults[0].status} — <strong>{waResults[0].name}</strong> ({waResults[0].phone})
+                                                    </div>
+                                                )}
+                                            </div>
+                                        ) : (
+                                            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                                                <div style={{ padding: '12px 14px', background: '#1e293b', border: '1px solid #374151', borderRadius: '10px', fontSize: '0.78rem', color: '#9ca3af', fontFamily: 'monospace', lineHeight: 1.6 }}>
+                                                    {`Example format:\n[\n  { "name": "Akshaya", "email": "akshaya@example.com", "phone": "919876543210" },\n  { "name": "Chandra",  "email": "chandra@example.com",  "phone": "919876543211" }\n]`}
+                                                </div>
+                                                <div>
+                                                    <label style={{ display: 'block', color: '#9ca3af', fontSize: '0.78rem', fontWeight: 700, marginBottom: '4px', textTransform: 'uppercase' }}>Paste JSON List</label>
+                                                    <textarea value={waBulkJson} onChange={e => { setWABulkJson(e.target.value); setWAJsonError(''); setWAResults([]); }}
+                                                        rows={8} placeholder='[{"name":"...","email":"...","phone":"91..."}]'
+                                                        style={{ width: '100%', padding: '10px 14px', background: '#0d1117', border: `1px solid ${waJsonError ? '#ef4444' : '#374151'}`, borderRadius: '10px', color: '#e5e7eb', fontSize: '0.82rem', fontFamily: 'monospace', resize: 'vertical', boxSizing: 'border-box', outline: 'none' }} />
+                                                    {waJsonError && <div style={{ color: '#f87171', fontSize: '0.78rem', marginTop: '4px' }}>⚠️ {waJsonError}</div>}
+                                                </div>
+                                                <button onClick={sendBulk} disabled={!waBulkJson.trim() || waSending}
+                                                    style={{ padding: '12px', background: '#1d4ed8', border: 'none', borderRadius: '12px', color: 'white', fontWeight: 800, fontSize: '0.9rem', cursor: waBulkJson.trim() ? 'pointer' : 'not-allowed', opacity: waBulkJson.trim() ? 1 : 0.5 }}>
+                                                    📋 Preview Students
+                                                </button>
+                                                {waResults.length > 0 && (
+                                                    <div>
+                                                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+                                                            <div style={{ color: '#e5e7eb', fontWeight: 700, fontSize: '0.85rem' }}>
+                                                                {waResults.length} student{waResults.length !== 1 ? 's' : ''}
+                                                            </div>
+                                                            <div style={{ display: 'flex', gap: '8px' }}>
+                                                                <button onClick={sendAllBulk} disabled={waSending || waResults.every(r => r.status?.startsWith('✅') || !r.phone)}
+                                                                    style={{ padding: '8px 16px', background: waSending ? '#374151' : '#25d366', border: 'none', borderRadius: '8px', color: 'white', fontWeight: 700, cursor: waSending ? 'not-allowed' : 'pointer', fontSize: '0.82rem', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                                                    {waSending ? '⏳ Sending…' : '🚀 Send All Text'}
+                                                                </button>
+                                                                {waTestType === 'crt' && (
+                                                                    <button onClick={async () => { setWASending(true); for (let i = 0; i < waResults.length; i++) { if (waResults[i].phone && waResults[i].attemptId && !waResults[i].status?.startsWith('✅')) { await sendOneBulkPDF(i); await new Promise(r => setTimeout(r, 1500)); } } setWASending(false); }} disabled={waSending}
+                                                                        style={{ padding: '8px 16px', background: waSending ? '#374151' : '#7c3aed', border: 'none', borderRadius: '8px', color: 'white', fontWeight: 700, cursor: waSending ? 'not-allowed' : 'pointer', fontSize: '0.82rem', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                                                        {waSending ? '⏳' : '📄'} Send All PDF
+                                                                    </button>
+                                                                )}
+                                                            </div>
+                                                        </div>
+                                                        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', maxHeight: '260px', overflowY: 'auto' }}>
+                                                            {waResults.map((r, i) => (
+                                                                <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '10px 14px', background: '#1e293b', borderRadius: '10px', border: `1px solid ${r.status?.startsWith('✅') ? 'rgba(37,211,102,0.3)' : r.status?.startsWith('❌') ? 'rgba(239,68,68,0.3)' : '#374151'}` }}>
+                                                                    <div style={{ flex: 1 }}>
+                                                                        <div style={{ color: '#e5e7eb', fontWeight: 700, fontSize: '0.85rem' }}>{r.name}</div>
+                                                                        <div style={{ color: r.status?.startsWith('✅') ? '#25d366' : r.status?.startsWith('❌') ? '#f87171' : '#6b7280', fontSize: '0.72rem' }}>{r.phone || 'no phone'} · {r.status}</div>
+                                                                    </div>
+                                                                    {r.phone && !r.status?.startsWith('✅') && (
+                                                                        <div style={{ display: 'flex', gap: '6px', flexShrink: 0 }}>
+                                                                            <button onClick={() => sendOneBulkRow(i)} disabled={waSending || r.status === 'Sending…'}
+                                                                                style={{ padding: '7px 12px', background: '#25d366', border: 'none', borderRadius: '8px', color: 'white', fontSize: '0.75rem', fontWeight: 700, cursor: 'pointer' }}>
+                                                                                📲
+                                                                            </button>
+                                                                            {waTestType === 'crt' && r.attemptId && (
+                                                                                <button onClick={() => sendOneBulkPDF(i)} disabled={waSending || r.status?.includes('⏳')}
+                                                                                    style={{ padding: '7px 12px', background: '#7c3aed', border: 'none', borderRadius: '8px', color: 'white', fontSize: '0.75rem', fontWeight: 700, cursor: 'pointer' }}>
+                                                                                    📄
+                                                                                </button>
+                                                                            )}
+                                                                        </div>
+                                                                    )}
+                                                                    {r.status?.startsWith('✅') && <span style={{ color: '#25d366', fontSize: '1rem', flexShrink: 0 }}>✅</span>}
+                                                                    {r.status?.startsWith('❌') && <span style={{ color: '#f87171', fontSize: '1rem', flexShrink: 0 }}>❌</span>}
+                                                                </div>
+                                                            ))}
+                                                        </div>
+                                                    </div>
+                                                )}
+                                            </div>
+                                        )}
+
+                                        <div style={{ marginTop: '16px' }}>
+                                            <button onClick={() => setWAStep(3)} style={{ padding: '10px 20px', background: '#374151', border: 'none', borderRadius: '10px', color: '#e5e7eb', fontWeight: 600, cursor: 'pointer', fontSize: '0.9rem' }}>← Back</button>
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    </div>
+                )
+            })()}
         </div>
     )
 }
@@ -2216,6 +2602,53 @@ function AdminCRTReportModal({ submission, reportData, loading, onClose }) {
                                                 <div style={{ fontSize: '0.8rem', fontWeight: 700, opacity: 0.85, marginBottom: 6 }}>📊 Sections</div>
                                                 <div style={{ fontSize: '1.8rem', fontWeight: 900, lineHeight: 1 }}>{sections.length}</div>
                                                 <div style={{ fontSize: '0.78rem', fontWeight: 500, opacity: 0.75, marginTop: 4 }}>{truncSections}</div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                )
+                            })()}
+
+                            {/* ═══ QUESTION BREAKDOWN PANEL ═══ */}
+                            {answers.length > 0 && (() => {
+                                const totalQ = sections.reduce((s, sec) => s + (sectionScores[sec]?.total || 0), 0) || answers.length;
+                                const correctQ = answers.filter(a => a.is_correct).length;
+                                const attemptedQ = answers.filter(a => a.student_answer !== null && a.student_answer !== undefined && a.student_answer !== '').length;
+                                const wrongQ = answers.filter(a => !a.is_correct && a.student_answer !== null && a.student_answer !== undefined && a.student_answer !== '').length;
+                                const missedQ = totalQ - attemptedQ;
+                                const stats = [
+                                    { label: 'Total', value: totalQ, color: '#a855f7', bg: 'rgba(168,85,247,0.12)', border: 'rgba(168,85,247,0.3)', icon: '📋' },
+                                    { label: 'Attempted', value: attemptedQ, color: '#f59e0b', bg: 'rgba(245,158,11,0.12)', border: 'rgba(245,158,11,0.3)', icon: '✏️' },
+                                    { label: 'Correct', value: correctQ, color: '#10b981', bg: 'rgba(16,185,129,0.12)', border: 'rgba(16,185,129,0.3)', icon: '✅' },
+                                    { label: 'Wrong', value: wrongQ, color: '#ef4444', bg: 'rgba(239,68,68,0.12)', border: 'rgba(239,68,68,0.3)', icon: '❌' },
+                                    { label: 'Missed', value: missedQ < 0 ? 0 : missedQ, color: '#64748b', bg: 'rgba(100,116,139,0.12)', border: 'rgba(100,116,139,0.3)', icon: '⏭️' },
+                                ];
+                                return (
+                                    <div style={{ background: '#1e293b', borderRadius: '16px', border: '1px solid #374151', padding: '20px 24px', margin: '16px 0 0', boxShadow: '0 4px 12px rgba(0,0,0,0.15)' }}>
+                                        <h3 style={{ margin: '0 0 16px', fontSize: '0.95rem', fontWeight: 800, color: '#a855f7', textTransform: 'uppercase', letterSpacing: '0.5px', display: 'flex', alignItems: 'center', gap: 8 }}>
+                                            📊 Question Breakdown
+                                        </h3>
+                                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '12px' }}>
+                                            {stats.map((s, i) => (
+                                                <div key={i} style={{ background: s.bg, border: `1px solid ${s.border}`, borderRadius: '14px', padding: '16px 12px', textAlign: 'center' }}>
+                                                    <div style={{ fontSize: '1.5rem', marginBottom: '4px' }}>{s.icon}</div>
+                                                    <div style={{ fontSize: '1.8rem', fontWeight: 900, color: s.color, lineHeight: 1 }}>{s.value}</div>
+                                                    <div style={{ fontSize: '0.72rem', fontWeight: 700, color: '#9ca3af', textTransform: 'uppercase', marginTop: '6px', letterSpacing: '0.3px' }}>{s.label}</div>
+                                                </div>
+                                            ))}
+                                        </div>
+                                        {/* Progress bar */}
+                                        <div style={{ marginTop: '14px' }}>
+                                            <div style={{ display: 'flex', height: '8px', borderRadius: '8px', overflow: 'hidden', gap: '2px' }}>
+                                                {totalQ > 0 && <>
+                                                    <div style={{ width: `${(correctQ / totalQ) * 100}%`, background: '#10b981', borderRadius: '8px 0 0 8px', transition: 'width 1s ease' }} title={`Correct: ${correctQ}`}></div>
+                                                    <div style={{ width: `${(wrongQ / totalQ) * 100}%`, background: '#ef4444', transition: 'width 1s ease' }} title={`Wrong: ${wrongQ}`}></div>
+                                                    <div style={{ width: `${((missedQ < 0 ? 0 : missedQ) / totalQ) * 100}%`, background: '#374151', borderRadius: '0 8px 8px 0', transition: 'width 1s ease' }} title={`Missed: ${missedQ < 0 ? 0 : missedQ}`}></div>
+                                                </>}
+                                            </div>
+                                            <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '6px', fontSize: '0.7rem', fontWeight: 600, color: '#6b7280' }}>
+                                                <span style={{ color: '#10b981' }}>● Correct {totalQ > 0 ? Math.round((correctQ / totalQ) * 100) : 0}%</span>
+                                                <span style={{ color: '#ef4444' }}>● Wrong {totalQ > 0 ? Math.round((wrongQ / totalQ) * 100) : 0}%</span>
+                                                <span style={{ color: '#64748b' }}>● Missed {totalQ > 0 ? Math.round(((missedQ < 0 ? 0 : missedQ) / totalQ) * 100) : 0}%</span>
                                             </div>
                                         </div>
                                     </div>
