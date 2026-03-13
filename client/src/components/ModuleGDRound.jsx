@@ -546,7 +546,7 @@ function ChatBubble({ turn }) {
 /* ═══════════════════════════════════════════════════════════════════════════
    MAIN COMPONENT
    ═══════════════════════════════════════════════════════════════════════════ */
-export default function ModuleGDRound({ sessionId, testId, test, onComplete }) {
+export default function ModuleGDRound({ sessionId, testId, test, onComplete, forceSubmitToken = 0 }) {
     const [phase, setPhase] = useState('loading'); // loading | prep | discussion | concluding | done
     const [gd, setGd] = useState(null);            // { topic, topicId, participants, durationMins, prepSeconds, category }
     const [prepSec, setPrepSec] = useState(30);
@@ -571,9 +571,12 @@ export default function ModuleGDRound({ sessionId, testId, test, onComplete }) {
     const recRef = useRef(null);
     const accText = useRef('');          // accumulates interim results across multiple onresult events
     const autoStartTimerRef = useRef(null);
+    const nextAiTimerRef = useRef(null);
+    const postStudentTimerRef = useRef(null);
     const handRaisedRef = useRef(false);
     const phaseRef = useRef('loading');
     const speakStartRef = useRef(null);
+    const finalizingRef = useRef(false);
 
     gdRef.current = gd;
     turnsRef.current = turns;
@@ -582,6 +585,11 @@ export default function ModuleGDRound({ sessionId, testId, test, onComplete }) {
 
     /* ── cancel TTS helper ──────────────────────────────────────────────── */
     const cancelTTS = () => { try { window.speechSynthesis?.cancel(); } catch {} };
+    const clearQueuedTimers = () => {
+        clearTimeout(autoStartTimerRef.current);
+        clearTimeout(nextAiTimerRef.current);
+        clearTimeout(postStudentTimerRef.current);
+    };
 
     /* ── scroll chat to bottom ──────────────────────────────────────────── */
     useEffect(() => {
@@ -622,7 +630,7 @@ export default function ModuleGDRound({ sessionId, testId, test, onComplete }) {
         if (phase !== 'discussion') return;
         timerRef.current = setInterval(() => {
             setTimeLeft(t => {
-                if (t <= 1) { clearInterval(timerRef.current); doConclude(); return 0; }
+                if (t <= 1) { clearInterval(timerRef.current); finalizeDiscussion({ autoSubmitted: true }); return 0; }
                 return t - 1;
             });
         }, 1000);
@@ -637,6 +645,11 @@ export default function ModuleGDRound({ sessionId, testId, test, onComplete }) {
         }, 5000);
         return () => clearTimeout(autoStartTimerRef.current);
     }, [phase]);
+
+    useEffect(() => {
+        if (!forceSubmitToken || phaseRef.current === 'done') return;
+        finalizeDiscussion({ autoSubmitted: true, source: 'section-timer' });
+    }, [forceSubmitToken]);
 
     /* ══════════════════════════════════════════════════════════════════════
        SpeechRecognition — continuous mode, accumulates text
@@ -708,7 +721,13 @@ export default function ModuleGDRound({ sessionId, testId, test, onComplete }) {
         window.speechSynthesis?.getVoices();
         const h = () => window.speechSynthesis?.getVoices();
         window.speechSynthesis?.addEventListener?.('voiceschanged', h);
-        return () => { cancelTTS(); window.speechSynthesis?.removeEventListener?.('voiceschanged', h); };
+        return () => {
+            clearInterval(timerRef.current);
+            clearQueuedTimers();
+            cancelTTS();
+            stopMic();
+            window.speechSynthesis?.removeEventListener?.('voiceschanged', h);
+        };
     }, []);
 
     /* ══════════════════════════════════════════════════════════════════════
@@ -742,7 +761,7 @@ export default function ModuleGDRound({ sessionId, testId, test, onComplete }) {
                     handleSpeak();
                 } else if (phaseRef.current === 'discussion') {
                     // Schedule next AI after a pause (let student jump in)
-                    setTimeout(() => {
+                    nextAiTimerRef.current = setTimeout(() => {
                         if (phaseRef.current === 'discussion' && !handRaisedRef.current) {
                             const nextIdx = (aiIdx + 1) % g.participants.length;
                             triggerAI(nextIdx);
@@ -771,28 +790,32 @@ export default function ModuleGDRound({ sessionId, testId, test, onComplete }) {
     // Speak — student takes a turn (only when no one is speaking)
     function handleSpeak() {
         cancelTTS();
+        clearTimeout(nextAiTimerRef.current);
         speakStartRef.current = Date.now();
         setActiveSpeaker('student');
         setHandRaised(false);
         startMic();
     }
 
-    // Done speaking — evaluate with real metrics then submit
-    async function handleDone() {
-        stopMic();
+    const persistStudentTurn = useCallback(async ({ fallbackDurationSec } = {}) => {
         const text = (accText.current || finalText || liveText || '').trim();
-        if (!text) { setActiveSpeaker(null); setLiveText(''); return; }
-
+        stopMic();
+        if (!text) {
+            speakStartRef.current = null;
+            setActiveSpeaker(null);
+            setLiveText('');
+            setFinalText('');
+            accText.current = '';
+            return null;
+        }
         const durationSec = speakStartRef.current
             ? Math.max(3, Math.round((Date.now() - speakStartRef.current) / 1000))
-            : 15;
+            : Math.max(3, fallbackDurationSec || 15);
         speakStartRef.current = null;
 
-        // Compute rich content-aware scores locally
         const gdScores = computeLocalGDScores(text, durationSec, gdRef.current?.topic, turnsRef.current);
-
-        setSubmitting(true);
         const turnObj = { speaker: 'student', speaker_label: 'You', transcript: text, isStudent: true, gdScores };
+
         try {
             await axios.post(`${API}/comm-test/gd/turn`, {
                 sessionId, turnIndex: myTurnIdx, transcript: text,
@@ -807,14 +830,23 @@ export default function ModuleGDRound({ sessionId, testId, test, onComplete }) {
         setLiveText('');
         setFinalText('');
         accText.current = '';
+        return turnObj;
+    }, [finalText, liveText, myTurnIdx, sessionId]);
+
+    // Done speaking — evaluate with real metrics then submit
+    async function handleDone() {
+        setSubmitting(true);
+        const savedTurn = await persistStudentTurn();
         setSubmitting(false);
+
+        if (!savedTurn) return;
 
         if (phaseRef.current === 'discussion') {
             const g = gdRef.current;
             if (g) {
                 const totalTurns = turnsRef.current.length + 1;
                 const nextAiIdx = totalTurns % g.participants.length;
-                setTimeout(() => {
+                postStudentTimerRef.current = setTimeout(() => {
                     if (phaseRef.current === 'discussion') triggerAI(nextAiIdx);
                 }, 2200);
             }
@@ -836,18 +868,28 @@ export default function ModuleGDRound({ sessionId, testId, test, onComplete }) {
     // Conclude — enter concluding phase
     function doConclude() {
         clearInterval(timerRef.current);
+        clearQueuedTimers();
         cancelTTS();
         stopMic();
         setActiveSpeaker(null);
+        setHandRaised(false);
         setPhase('concluding');
         setConcludeText('');
     }
 
-    // Final submit — optional closing statement, then end test
-    async function handleFinalSubmit() {
+    const finalizeDiscussion = useCallback(async ({ autoSubmitted = false } = {}) => {
+        if (finalizingRef.current) return;
+        finalizingRef.current = true;
         setSubmitting(true);
-        // If student wrote/spoke a closing remark, save it as a turn
-        if (concludeText.trim()) {
+        clearInterval(timerRef.current);
+        clearQueuedTimers();
+        cancelTTS();
+        await persistStudentTurn({ fallbackDurationSec: 10 });
+        setActiveSpeaker(null);
+        setHandRaised(false);
+        setAiSpeakingText('');
+
+        if (!autoSubmitted && concludeText.trim()) {
             try {
                 await axios.post(`${API}/comm-test/gd/turn`, {
                     sessionId, turnIndex: myTurnIdx, transcript: concludeText.trim(),
@@ -855,16 +897,21 @@ export default function ModuleGDRound({ sessionId, testId, test, onComplete }) {
                 }, { headers: authH() });
             } catch {}
         }
-        // Conclude GD
+
         try {
             await axios.post(`${API}/comm-test/gd/conclude`, {
                 sessionId, topic: gdRef.current?.topic,
-                aiTurns: turns.filter(t => !t.isStudent).map(t => t.transcript),
+                aiTurns: turnsRef.current.filter(t => !t.isStudent).map(t => t.transcript),
             }, { headers: authH() });
         } catch {}
         setSubmitting(false);
         setPhase('done');
         onComplete();
+    }, [concludeText, myTurnIdx, onComplete, persistStudentTurn, sessionId]);
+
+    // Final submit — optional closing statement, then end test
+    async function handleFinalSubmit() {
+        await finalizeDiscussion({ autoSubmitted: false });
     }
 
     /* ── Helpers ─────────────────────────────────────────────────────────── */
