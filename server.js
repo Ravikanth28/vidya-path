@@ -14331,12 +14331,68 @@ async function ensureCommTestTables() {
     }
 }
 
+async function ensureFrontendEvalTables() {
+    try {
+        await pool.query(`
+            CREATE TABLE IF NOT EXISTS frontend_eval_tests (
+                id VARCHAR(50) PRIMARY KEY,
+                title VARCHAR(200) NOT NULL,
+                description TEXT,
+                requirements TEXT,
+                status ENUM('draft','active','ended') DEFAULT 'draft',
+                attempt_limit INT DEFAULT NULL,
+                created_by VARCHAR(50),
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                activated_at DATETIME NULL,
+                ended_at DATETIME NULL,
+                INDEX idx_fe_tests_status (status)
+            )
+        `);
+        await pool.query(`
+            CREATE TABLE IF NOT EXISTS frontend_eval_assignments (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                test_id VARCHAR(50) NOT NULL,
+                student_id VARCHAR(50) NOT NULL,
+                assigned_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE KEY uq_fe_assign (test_id, student_id),
+                INDEX idx_fe_assign_student (student_id)
+            )
+        `);
+        await pool.query(`
+            CREATE TABLE IF NOT EXISTS frontend_eval_submissions (
+                id VARCHAR(50) PRIMARY KEY,
+                test_id VARCHAR(50) NOT NULL,
+                student_id VARCHAR(50) NOT NULL,
+                submission_type ENUM('zip','files') NOT NULL,
+                original_name VARCHAR(255),
+                stored_path TEXT,
+                extracted_path TEXT,
+                score DECIMAL(5,2) DEFAULT 0,
+                runtime_status ENUM('passed','failed','skipped') DEFAULT 'skipped',
+                runtime_summary TEXT,
+                runtime_output MEDIUMTEXT,
+                report_json JSON,
+                breakdown_json JSON,
+                file_tree_json JSON,
+                submitted_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                INDEX idx_fe_sub_test (test_id),
+                INDEX idx_fe_sub_student (student_id),
+                INDEX idx_fe_submitted (submitted_at)
+            )
+        `);
+        console.log('frontend evaluation tables ready');
+    } catch (error) {
+        console.error('Error creating frontend evaluation tables:', error.message);
+    }
+}
+
 // Start server
 (async () => {
     await ensureTestAllocationsTable();
     await ensureResourceLinksTable();
     await ensureMCQTables();
     await ensureCommTestTables();
+    await ensureFrontendEvalTables();
 
     // Register Advanced Features Routes
     const advancedFeaturesRouter = require('./routes/advanced_features');
@@ -14345,6 +14401,9 @@ async function ensureCommTestTables() {
     // Register Communication Test Routes
     const communicationRouter = require('./routes/communication_routes');
     app.use('/api', communicationRouter(pool, authenticate, cerebrasChat));
+
+    const frontendEvalRouter = require('./routes/frontend_eval_routes');
+    app.use('/api', frontendEvalRouter(pool, authenticate, cerebrasChat));
 
     httpServer.listen(PORT, '0.0.0.0', () => {
         console.log(`🚀 Server running on http://127.0.0.1:${PORT}`);

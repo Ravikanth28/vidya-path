@@ -32,6 +32,7 @@ import { RiskScoreCard, RecommendationsPanel } from '@/components/AnalyticsCompo
 import StudentResourceLinks from '@/components/StudentResourceLinks'
 import StudentMCQ from '@/components/StudentMCQ'
 import CommunicationTest from '@/components/CommunicationTest'
+import FrontendEvaluationPortal from '@/components/FrontendEvaluationPortal'
 import CertificatePortal from '@/components/CertificatePortal'
 import { StudentAIReviewDashboard } from '@/components/AICodeReview'
 import { CompanyRoadmap, CompanyPrep } from '@/components/CompanyFeatures'
@@ -160,6 +161,14 @@ function StudentPortal() {
                 setTitle('Communication Test')
                 setSubtitle('AI-powered English speaking & grammar assessment')
                 break
+            case 'frontend-evals':
+                setTitle('Frontend Evaluation')
+                setSubtitle('Complete assigned frontend use cases and upload your project')
+                break
+            case 'frontend-submissions':
+                setTitle('Frontend Submissions')
+                setSubtitle('Review your frontend evaluation reports')
+                break
             default:
                 setTitle(t('dashboard'))
                 setSubtitle(t('welcome_back_name', { name: user?.name || '' }))
@@ -184,7 +193,8 @@ function StudentPortal() {
                 { path: '/student/youtube', label: 'YouTube Resources', icon: <BookOpen size={20} /> },
                 { path: '/student/resource-links', label: 'Resource Links', icon: <Link2 size={20} /> },
                 { path: '/student/mcq', label: 'MCQ Tests', icon: <Brain size={20} /> },
-                { path: '/student/comm-test', label: 'Comm Test', icon: <Mic size={20} /> }
+                { path: '/student/comm-test', label: 'Comm Test', icon: <Mic size={20} /> },
+                { path: '/student/frontend-evals', label: 'Frontend Eval', icon: <Code size={20} /> }
             ]
         },
         {
@@ -198,7 +208,8 @@ function StudentPortal() {
                 { path: '/student/leaderboard', label: 'Leaderboard', icon: <Trophy size={20} /> },
                 { path: '/student/badges', label: 'Skill Badges', icon: <Award size={20} /> },
                 { path: '/student/certificates', label: 'My Certificates', icon: <Award size={20} /> },
-                { path: '/student/reports', label: 'Export Reports', icon: <Download size={20} /> }
+                { path: '/student/reports', label: 'Export Reports', icon: <Download size={20} /> },
+                { path: '/student/frontend-submissions', label: 'Frontend Submissions', icon: <Code size={20} /> }
             ]
         },
         {
@@ -252,6 +263,8 @@ function StudentPortal() {
                 <Route path="/resource-links" element={<StudentResourceLinks user={user} />} />
                 <Route path="/mcq" element={<StudentMCQ user={user} />} />
                 <Route path="/comm-test" element={<CommunicationTest user={user} />} />
+                <Route path="/frontend-evals" element={<FrontendEvaluationPortal initialTab="tests" />} />
+                <Route path="/frontend-submissions" element={<FrontendEvaluationPortal initialTab="submissions" />} />
             </Routes>
         </DashboardLayout>
     )
