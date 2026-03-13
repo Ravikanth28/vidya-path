@@ -1,4 +1,4 @@
-﻿import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
     Mic, Plus, Trash2, Edit3, Users, Play, Square, BarChart2,
     X, Search, CheckCircle, CheckCircle2, Clock, BookOpen, Volume2, MessageSquare,
@@ -8,7 +8,7 @@ import {
     BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer
 } from 'recharts';
 
-const API = '/api';
+const API = (import.meta.env.VITE_API_URL || 'http://localhost:3000') + '/api';
 const authHeader = () => ({ Authorization: `Bearer ${localStorage.getItem('authToken')}`, 'Content-Type': 'application/json' });
 
 const MODULE_DEFS = [

@@ -358,8 +358,12 @@ function ModuleTopicSpeak({ sessionId, testId, onComplete }) {
     const [submitting, setSubmitting] = useState(false)
     const [completed, setCompleted] = useState([])
     const { isListening, transcript, error, supported, start, stop, reset } = useSpeechRecognition()
+    const cancelBrowserSpeech = useCallback(() => {
+        try { window.speechSynthesis?.cancel() } catch {}
+    }, [])
 
     const fetchTopic = async () => {
+        cancelBrowserSpeech()
         setLoading(true); setResult(null); reset()
         try {
             const { data } = await axios.get(`${API_BASE}/comm-test/tests/${testId}/questions`, {
@@ -370,10 +374,18 @@ function ModuleTopicSpeak({ sessionId, testId, onComplete }) {
         setLoading(false)
     }
 
-    useEffect(() => { fetchTopic() }, [])
+    useEffect(() => {
+        fetchTopic()
+        return () => {
+            stop()
+            cancelBrowserSpeech()
+        }
+    }, [cancelBrowserSpeech, stop])
 
     const submit = async () => {
         if (!transcript || transcript.trim().length < 5) return
+        stop()
+        cancelBrowserSpeech()
         setSubmitting(true)
         try {
             const { data } = await axios.post(`${API_BASE}/comm-test/submit/topic-speak`, {
@@ -457,7 +469,7 @@ function ModuleTopicSpeak({ sessionId, testId, onComplete }) {
                                 </div>
                                 <div style={{ display: 'flex', gap: 10 }}>
                                     <button onClick={fetchTopic} style={{ flex: 1, padding: 10, background: '#1e293b', border: '1px solid #334155', borderRadius: 10, color: '#a855f7', fontWeight: 700, cursor: 'pointer' }}>Try Another Topic</button>
-                                    <button onClick={onComplete} style={{ flex: 1, padding: 10, background: 'linear-gradient(135deg, #7c3aed, #a855f7)', border: 'none', borderRadius: 10, color: 'white', fontWeight: 700, cursor: 'pointer' }}>
+                                    <button onClick={() => { stop(); cancelBrowserSpeech(); onComplete() }} style={{ flex: 1, padding: 10, background: 'linear-gradient(135deg, #7c3aed, #a855f7)', border: 'none', borderRadius: 10, color: 'white', fontWeight: 700, cursor: 'pointer' }}>
                                         Next Module <ArrowRight size={14} style={{ marginLeft: 4 }} />
                                     </button>
                                 </div>
@@ -532,26 +544,20 @@ function ModuleGrammarQuiz({ sessionId, testId, onComplete }) {
                         <div style={{ display: 'flex', alignItems: 'center', gap: 20, marginBottom: 20 }}>
                             <ScoreBadge score={result.score} size="lg" />
                             <div>
-                                <div style={{ fontSize: '1.2rem', fontWeight: 900, color: '#f1f5f9' }}>{result.correct}/{result.total} Correct</div>
-                                <div style={{ fontSize: '0.85rem', color: '#94a3b8' }}>Score: {result.percentage}%</div>
+                                <div style={{ fontSize: '1.2rem', fontWeight: 900, color: '#f1f5f9' }}>Quiz Submitted</div>
+                                <div style={{ fontSize: '0.85rem', color: '#94a3b8' }}>Score saved: {result.percentage}%</div>
                             </div>
                         </div>
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 20 }}>
-                            {result.review?.map((r, i) => (
-                                <div key={i} style={{ background: r.isCorrect ? 'rgba(16,185,129,0.08)' : 'rgba(239,68,68,0.08)', border: `1px solid ${r.isCorrect ? '#10b981' : '#ef4444'}33`, borderRadius: 10, padding: '12px 16px' }}>
-                                    <div style={{ fontSize: '0.85rem', color: '#f1f5f9', marginBottom: 6 }}>{r.sentence}</div>
-                                    <div style={{ display: 'flex', gap: 16, fontSize: '0.78rem' }}>
-                                        <span>Your: <strong style={{ color: r.isCorrect ? '#10b981' : '#ef4444' }}>"{r.userAnswer}"</strong></span>
-                                        {!r.isCorrect && <span>Correct: <strong style={{ color: '#10b981' }}>"{r.correctAnswer}"</strong></span>}
-                                        {r.isCorrect && <CheckCircle size={14} color="#10b981" />}
-                                    </div>
-                                </div>
-                            ))}
+                        <div style={{ background: '#0f172a', borderRadius: 12, padding: '16px 18px', border: '1px solid rgba(16,185,129,0.25)', marginBottom: 20 }}>
+                            <div style={{ color: '#10b981', fontWeight: 800, fontSize: '0.95rem', marginBottom: 6 }}>Answers recorded successfully</div>
+                            <div style={{ color: '#94a3b8', fontSize: '0.83rem', lineHeight: 1.6 }}>
+                                This section is complete. The detailed answer review is hidden during the live communication test so the correct responses are not revealed before you continue.
+                            </div>
                         </div>
                         <div style={{ display: 'flex', gap: 10 }}>
                             <button onClick={fetchQuiz} style={{ flex: 1, padding: 10, background: '#1e293b', border: '1px solid #334155', borderRadius: 10, color: '#a855f7', fontWeight: 700, cursor: 'pointer' }}>Try Again</button>
                             <button onClick={onComplete} style={{ flex: 1, padding: 10, background: 'linear-gradient(135deg, #7c3aed, #a855f7)', border: 'none', borderRadius: 10, color: 'white', fontWeight: 700, cursor: 'pointer' }}>
-                                View Report <BarChart2 size={14} style={{ marginLeft: 4 }} />
+                                Next Module <ArrowRight size={14} style={{ marginLeft: 4 }} />
                             </button>
                         </div>
                     </div>
@@ -1145,6 +1151,7 @@ export default function CommunicationTest({ user }) {
     const [exitSectionModal, setExitSectionModal] = useState(false)
     const [fsWarning, setFsWarning] = useState(false)
     const [sectionTimeLeft, setSectionTimeLeft] = useState(null)  // seconds remaining for current section
+    const [gdForceSubmitToken, setGdForceSubmitToken] = useState(0)
     const sectionTimerRef = useRef(null)
 
     useEffect(() => {
@@ -1189,7 +1196,11 @@ export default function CommunicationTest({ user }) {
             setSectionTimeLeft(secs)
             if (secs <= 0) {
                 clearInterval(sectionTimerRef.current)
-                nextModule()
+                if (currentKey === 'gd-round') {
+                    setGdForceSubmitToken(t => t + 1)
+                } else {
+                    nextModule()
+                }
             }
         }, 1000)
         return () => clearInterval(sectionTimerRef.current)
@@ -1247,6 +1258,7 @@ export default function CommunicationTest({ user }) {
         setSessionId(null)
         setModuleIndex(0)
         setSelectedTest(null)
+        setGdForceSubmitToken(0)
         loadAssignedTests()
         loadHistory()
     }
@@ -1517,7 +1529,7 @@ export default function CommunicationTest({ user }) {
                     {currentModule.id === 'gd-round' ? (
                         /* GD gets its own full-height container — no scroll, no padding */
                         <div style={{ flex: 1, position: 'relative', minHeight: 0, overflow: 'hidden' }}>
-                            <ModuleGDRound sessionId={sessionId} testId={selectedTest?.id} test={selectedTest} onComplete={nextModule} />
+                            <ModuleGDRound sessionId={sessionId} testId={selectedTest?.id} test={selectedTest} onComplete={nextModule} forceSubmitToken={gdForceSubmitToken} />
                         </div>
                     ) : (
                         <div style={{ flex: 1, overflowY: 'auto', padding: '28px 20px' }}>
