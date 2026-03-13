@@ -1,6 +1,6 @@
 ﻿import { useState, useEffect, useRef, useMemo } from 'react'
 import { Routes, Route, useLocation } from 'react-router-dom'
-import { LayoutDashboard, Users, Trophy, Award, List, Search, Send, Activity, CheckCircle, Check, TrendingUp, Clock, Globe, FileCode, Plus, X, Code, ChevronRight, Upload, AlertTriangle, Zap, Target, Sparkles, Bot, Wand2, Eye, FileText, BarChart2, RefreshCw, Calendar, HelpCircle, Trash2, Save, Brain, XCircle, Shield, Download, ClipboardList, Settings, Database, Mail, MessageSquare, Github, ExternalLink, BarChart3, Video, Building2, Filter, ChevronDown, Hash, Percent, ArrowUpDown, Link2, Layers, Mic } from 'lucide-react'
+import { LayoutDashboard, Users, Trophy, Award, List, Search, Send, Activity, CheckCircle, Check, TrendingUp, Clock, Globe, FileCode, Plus, X, Code, ChevronRight, Upload, AlertTriangle, Zap, Target, Sparkles, Bot, Wand2, Eye, FileText, BarChart2, RefreshCw, Calendar, HelpCircle, Trash2, Save, Brain, XCircle, Shield, Download, ClipboardList, Settings, Database, MessageSquare, Github, ExternalLink, BarChart3, Video, Building2, Filter, ChevronDown, Hash, Percent, ArrowUpDown, Link2, Layers, Mic } from 'lucide-react'
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, BarChart, Bar, Legend } from 'recharts'
 import DashboardLayout from '../components/DashboardLayout'
 import { AIChatbot, AIFloatingButton } from '../components/AIChatbot'
@@ -11,7 +11,6 @@ import LocalTestCasesManager from '../components/LocalTestCasesManager'
 import AdminLiveMonitoring from '../components/AdminLiveMonitoring'
 import AdminOperations from '../components/AdminOperations'
 import UserManagement from '../components/UserManagement'
-import DirectMessaging from '../components/DirectMessaging'
 import FileUpload from '../components/FileUpload'
 import SkillTestManager from '../components/SkillTestManager'
 import SkillSubmissions from '../components/SkillSubmissions'
@@ -36,7 +35,6 @@ import './Portal.css'
 const API_BASE = (import.meta.env.VITE_API_URL || 'http://localhost:3000') + '/api'
 
 const COLORS = ['#3b82f6', '#8b5cf6', '#06b6d4', '#10b981', '#f59e0b']
-const ADMIN_ID = 'admin-001'
 
 
 function AdminPortal() {
@@ -45,21 +43,6 @@ function AdminPortal() {
     const location = useLocation()
     const [title, setTitle] = useState('')
     const [subtitle, setSubtitle] = useState('')
-    const [unreadCount, setUnreadCount] = useState(0)
-
-    // Poll for unread messages
-    useEffect(() => {
-        const userId = user?.id || user?.userId || ADMIN_ID
-        const fetchUnread = async () => {
-            try {
-                const res = await axios.get(`${API_BASE}/messages/unread/${userId}`)
-                setUnreadCount(res.data.unreadCount || 0)
-            } catch (e) { /* ignore */ }
-        }
-        fetchUnread()
-        const interval = setInterval(fetchUnread, 15000)
-        return () => clearInterval(interval)
-    }, [user])
 
     useEffect(() => {
         const path = location.pathname.split('/').pop()
@@ -108,9 +91,10 @@ function AdminPortal() {
                 setTitle('User Management')
                 setSubtitle('Create, edit, and manage platform users')
                 break
+            case 'login-activity':
             case 'messaging':
-                setTitle('Messaging')
-                setSubtitle('Chat with students and mentors')
+                setTitle('Login Activity')
+                setSubtitle('Track student logins, logouts, tests attended, and time spent')
                 break
             case 'analytics':
                 setTitle(t('analytics'))
@@ -219,7 +203,7 @@ function AdminPortal() {
             children: [
                 { path: '/admin/operations', label: t('admin_operations'), icon: <Settings size={20} /> },
                 { path: '/admin/user-management', label: 'User Management', icon: <Shield size={20} /> },
-                { path: '/admin/messaging', label: 'Messaging', icon: <Mail size={20} />, badge: unreadCount },
+                { path: '/admin/login-activity', label: 'Login Activity', icon: <ClipboardList size={20} /> },
                 { path: '/admin/certificates', label: 'Issue Certificates', icon: <Award size={20} /> },
                 { path: '/admin/webhooks', label: 'Webhook Manager', icon: <Zap size={20} /> },
                 { path: '/admin/reports', label: 'Export Reports', icon: <Download size={20} /> }
@@ -246,7 +230,8 @@ function AdminPortal() {
                 <Route path="/analytics" element={<AdminAnalyticsDashboard />} />
                 <Route path="/operations" element={<AdminOperations />} />
                 <Route path="/user-management" element={<UserManagement />} />
-                <Route path="/messaging" element={<DirectMessaging currentUser={{ ...user, role: 'admin' }} />} />
+                <Route path="/login-activity" element={<AdminLoginActivity />} />
+                <Route path="/messaging" element={<AdminLoginActivity />} />
                 <Route path="/webhooks" element={<WebhookManager />} />
                 <Route path="/certificates" element={<AdminCertificateManager />} />
                 <Route path="/plagiarism" element={<AdminPlagiarismDashboard adminId={user?.id} adminName={user?.name} />} />
@@ -9028,6 +9013,591 @@ function AdminAnalyticsDashboard() {
                             }}>
                                 <Code size={20} /> {t('download_json')}
                             </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+        </div>
+    )
+}
+
+function AdminLoginActivity() {
+    const [loading, setLoading] = useState(true)
+    const [search, setSearch] = useState('')
+    const [eventFilter, setEventFilter] = useState('all')
+    const [rangeFilter, setRangeFilter] = useState('all')
+    const [autoRefreshEnabled, setAutoRefreshEnabled] = useState(false)
+    const [refreshEverySec, setRefreshEverySec] = useState(30)
+    const [lastUpdatedAt, setLastUpdatedAt] = useState(null)
+    const [exportingCsv, setExportingCsv] = useState(false)
+    const [selectedStudent, setSelectedStudent] = useState(null)
+    const [data, setData] = useState({ summary: null, students: [], recentEvents: [] })
+    const studentScrollRef = useRef(null)
+    const eventScrollRef = useRef(null)
+
+    const fetchActivity = (query = search) => {
+        setLoading(true)
+        axios.get(`${API_BASE}/admin/login-activity`, { params: query.trim() ? { search: query.trim() } : {} })
+            .then(res => {
+                setData({
+                    summary: res.data?.summary || null,
+                    students: Array.isArray(res.data?.students) ? res.data.students : [],
+                    recentEvents: Array.isArray(res.data?.recentEvents) ? res.data.recentEvents : []
+                })
+                setLastUpdatedAt(new Date().toISOString())
+            })
+            .catch(() => {
+                setData({ summary: null, students: [], recentEvents: [] })
+            })
+            .finally(() => setLoading(false))
+    }
+
+    useEffect(() => {
+        const timer = setTimeout(() => fetchActivity(search), 250)
+        return () => clearTimeout(timer)
+    }, [search])
+
+    useEffect(() => {
+        if (!autoRefreshEnabled) return
+        const id = setInterval(() => fetchActivity(search), Math.max(15, Number(refreshEverySec || 30)) * 1000)
+        return () => clearInterval(id)
+    }, [autoRefreshEnabled, refreshEverySec, search])
+
+    const fmtDate = (value) => {
+        if (!value) return '—'
+        const dt = new Date(value)
+        if (Number.isNaN(dt.getTime())) return '—'
+        return dt.toLocaleString('en-IN', {
+            day: '2-digit',
+            month: 'short',
+            year: 'numeric',
+            hour: '2-digit',
+            minute: '2-digit'
+        })
+    }
+
+    const fmtDateCompact = (value) => {
+        if (!value) return '—'
+        const dt = new Date(value)
+        if (Number.isNaN(dt.getTime())) return '—'
+        return dt.toLocaleString('en-IN', {
+            day: '2-digit',
+            month: 'short',
+            hour: '2-digit',
+            minute: '2-digit'
+        })
+    }
+
+    const fmtDuration = (seconds) => {
+        const total = Number(seconds || 0)
+        if (!Number.isFinite(total) || total <= 0) return '0m'
+        const hours = Math.floor(total / 3600)
+        const minutes = Math.floor((total % 3600) / 60)
+        if (hours > 0) return `${hours}h ${minutes}m`
+        return `${Math.max(1, minutes)}m`
+    }
+
+    const summary = data.summary || { totalStudents: 0, activeToday: 0, loginEventsToday: 0, testEventsToday: 0, avgActivityMinutes: 0 }
+
+    const inTimeRange = (ts) => {
+        if (rangeFilter === 'all' || !ts) return true
+        const now = new Date()
+        const t = new Date(ts)
+        if (Number.isNaN(t.getTime())) return false
+        if (rangeFilter === 'today') {
+            const start = new Date(now)
+            start.setHours(0, 0, 0, 0)
+            return t >= start
+        }
+        if (rangeFilter === '7d') {
+            const start = new Date(now)
+            start.setDate(now.getDate() - 7)
+            return t >= start
+        }
+        if (rangeFilter === '30d') {
+            const start = new Date(now)
+            start.setDate(now.getDate() - 30)
+            return t >= start
+        }
+        return true
+    }
+
+    const filteredEvents = useMemo(() => {
+        return data.recentEvents.filter(event => {
+            const typeOk = eventFilter === 'all' ? true : event.eventType === eventFilter
+            const timeOk = inTimeRange(event.timestamp)
+            return typeOk && timeOk
+        })
+    }, [data.recentEvents, eventFilter, rangeFilter])
+
+    const topActiveStudent = useMemo(() => {
+        if (!data.students.length) return null
+        return [...data.students].sort((a, b) => (b.totalActivitySeconds || 0) - (a.totalActivitySeconds || 0))[0]
+    }, [data.students])
+
+    const scrollToTop = (ref) => {
+        if (!ref?.current) return
+        ref.current.scrollTo({ top: 0, behavior: 'smooth' })
+    }
+
+    const selectedStudentEvents = useMemo(() => {
+        if (!selectedStudent) return []
+        return data.recentEvents
+            .filter(event => event.studentId === selectedStudent.id)
+            .filter(event => (eventFilter === 'all' ? true : event.eventType === eventFilter))
+            .filter(event => inTimeRange(event.timestamp))
+            .sort((a, b) => new Date(b.timestamp || 0) - new Date(a.timestamp || 0))
+    }, [selectedStudent, data.recentEvents, eventFilter, rangeFilter])
+
+    const toCsvCell = (value) => {
+        const raw = value == null ? '' : String(value)
+        const escaped = raw.replace(/"/g, '""')
+        return `"${escaped}"`
+    }
+
+    const handleExportCsv = () => {
+        setExportingCsv(true)
+        try {
+            const studentHeader = ['Student ID', 'Name', 'Email', 'Status', 'Logins', 'Logouts', 'Tests', 'Time Spent (min)', 'Last Seen']
+            const studentRows = data.students.map(student => [
+                student.id,
+                student.name,
+                student.email || '',
+                student.status || '',
+                student.loginCount || 0,
+                student.logoutCount || 0,
+                student.testsAttended || 0,
+                Math.round(Number(student.totalActivitySeconds || 0) / 60),
+                fmtDate(student.lastSeenAt)
+            ])
+
+            const eventHeader = ['Student ID', 'Student Name', 'Type', 'Label', 'Timestamp', 'Duration (sec)', 'Score', 'Status', 'IP']
+            const eventRows = filteredEvents.map(event => [
+                event.studentId,
+                event.studentName,
+                event.eventType,
+                event.label || '',
+                event.timestamp || '',
+                event.durationSeconds || 0,
+                event.score == null ? '' : Math.round(event.score),
+                event.status || '',
+                event.ipAddress || ''
+            ])
+
+            const csvLines = []
+            csvLines.push('Student Activity Summary')
+            csvLines.push(studentHeader.map(toCsvCell).join(','))
+            studentRows.forEach(row => csvLines.push(row.map(toCsvCell).join(',')))
+            csvLines.push('')
+            csvLines.push('Filtered Recent Events')
+            csvLines.push(eventHeader.map(toCsvCell).join(','))
+            eventRows.forEach(row => csvLines.push(row.map(toCsvCell).join(',')))
+
+            const blob = new Blob([csvLines.join('\n')], { type: 'text/csv;charset=utf-8;' })
+            const url = URL.createObjectURL(blob)
+            const a = document.createElement('a')
+            a.href = url
+            const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-')
+            a.download = `login-activity-${stamp}.csv`
+            a.click()
+            URL.revokeObjectURL(url)
+        } finally {
+            setExportingCsv(false)
+        }
+    }
+
+    return (
+        <div className="animate-fadeIn" style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+            <div style={{
+                padding: '1rem 1.25rem',
+                borderRadius: '16px',
+                background: 'linear-gradient(135deg, rgba(59,130,246,0.12), rgba(16,185,129,0.08))',
+                border: '1px solid rgba(59,130,246,0.2)'
+            }}>
+                <div style={{ fontSize: '1.1rem', fontWeight: 800, color: 'var(--text-main)', marginBottom: '0.35rem' }}>Student Login Activity</div>
+                <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)', lineHeight: 1.6 }}>
+                    This tab tracks when students log in, log out, which tests they attended, and how much time they spent across Aptitude, Global, MCQ, and CRT activity.
+                </div>
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))', gap: '1rem' }}>
+                {[
+                    { label: 'Total Students', value: summary.totalStudents, color: '#3b82f6' },
+                    { label: 'Active Today', value: summary.activeToday, color: '#10b981' },
+                    { label: 'Logins Today', value: summary.loginEventsToday, color: '#8b5cf6' },
+                    { label: 'Tests Today', value: summary.testEventsToday, color: '#f59e0b' },
+                    { label: 'Avg Time Spent', value: `${summary.avgActivityMinutes || 0}m`, color: '#ef4444' }
+                ].map(card => (
+                    <div key={card.label} style={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: '16px', padding: '1rem 1.1rem' }}>
+                        <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 700, marginBottom: '0.55rem' }}>{card.label}</div>
+                        <div style={{ fontSize: '1.9rem', fontWeight: 900, color: card.color }}>{card.value}</div>
+                    </div>
+                ))}
+            </div>
+
+            <div style={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))',
+                gap: '1rem'
+            }}>
+                <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: '14px', padding: '0.9rem 1rem' }}>
+                    <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 700 }}>Top Active Student</div>
+                    <div style={{ marginTop: '0.35rem', fontWeight: 800, fontSize: '1rem' }}>{topActiveStudent?.name || '—'}</div>
+                    <div style={{ marginTop: '0.2rem', fontSize: '0.78rem', color: 'var(--text-muted)' }}>{topActiveStudent ? fmtDuration(topActiveStudent.totalActivitySeconds) : 'No activity yet'}</div>
+                </div>
+                <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: '14px', padding: '0.9rem 1rem' }}>
+                    <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 700 }}>Filtered Events</div>
+                    <div style={{ marginTop: '0.35rem', fontWeight: 800, fontSize: '1rem' }}>{filteredEvents.length}</div>
+                    <div style={{ marginTop: '0.2rem', fontSize: '0.78rem', color: 'var(--text-muted)' }}>Current filter: {eventFilter.toUpperCase()} · {rangeFilter.toUpperCase()}</div>
+                </div>
+            </div>
+
+            <div style={{ position: 'relative', maxWidth: '460px' }}>
+                <input
+                    value={search}
+                    onChange={e => setSearch(e.target.value)}
+                    placeholder="Search student name, email, or ID..."
+                    style={{
+                        width: '100%',
+                        padding: '0.9rem 1rem 0.9rem 2.8rem',
+                        borderRadius: '12px',
+                        border: '1px solid var(--border-color)',
+                        background: 'var(--bg-card)',
+                        color: 'var(--text-main)',
+                        outline: 'none',
+                        boxSizing: 'border-box'
+                    }}
+                />
+                <Search size={16} style={{ position: 'absolute', left: '0.9rem', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
+            </div>
+
+            <div style={{ display: 'flex', gap: '0.6rem', flexWrap: 'wrap', alignItems: 'center' }}>
+                {[
+                    { key: 'all', label: 'All Events' },
+                    { key: 'login', label: 'Logins' },
+                    { key: 'logout', label: 'Logouts' },
+                    { key: 'test', label: 'Tests' }
+                ].map(item => (
+                    <button
+                        key={item.key}
+                        onClick={() => setEventFilter(item.key)}
+                        style={{
+                            border: eventFilter === item.key ? '1px solid #3b82f6' : '1px solid var(--border-color)',
+                            background: eventFilter === item.key ? 'rgba(59,130,246,0.15)' : 'var(--bg-card)',
+                            color: eventFilter === item.key ? '#60a5fa' : 'var(--text-muted)',
+                            borderRadius: '999px',
+                            padding: '0.42rem 0.75rem',
+                            fontSize: '0.73rem',
+                            fontWeight: 700,
+                            cursor: 'pointer'
+                        }}
+                    >
+                        {item.label}
+                    </button>
+                ))}
+                <span style={{ marginLeft: '0.3rem', fontSize: '0.72rem', color: 'var(--text-muted)', fontWeight: 700 }}>Range:</span>
+                {[
+                    { key: 'all', label: 'All' },
+                    { key: 'today', label: 'Today' },
+                    { key: '7d', label: '7 Days' },
+                    { key: '30d', label: '30 Days' }
+                ].map(item => (
+                    <button
+                        key={item.key}
+                        onClick={() => setRangeFilter(item.key)}
+                        style={{
+                            border: rangeFilter === item.key ? '1px solid #10b981' : '1px solid var(--border-color)',
+                            background: rangeFilter === item.key ? 'rgba(16,185,129,0.15)' : 'var(--bg-card)',
+                            color: rangeFilter === item.key ? '#34d399' : 'var(--text-muted)',
+                            borderRadius: '999px',
+                            padding: '0.42rem 0.75rem',
+                            fontSize: '0.73rem',
+                            fontWeight: 700,
+                            cursor: 'pointer'
+                        }}
+                    >
+                        {item.label}
+                    </button>
+                ))}
+                <span style={{ marginLeft: '0.3rem', fontSize: '0.72rem', color: 'var(--text-muted)', fontWeight: 700 }}>Auto-refresh:</span>
+                <button
+                    onClick={() => setAutoRefreshEnabled(v => !v)}
+                    style={{
+                        border: autoRefreshEnabled ? '1px solid #22c55e' : '1px solid var(--border-color)',
+                        background: autoRefreshEnabled ? 'rgba(34,197,94,0.15)' : 'var(--bg-card)',
+                        color: autoRefreshEnabled ? '#4ade80' : 'var(--text-muted)',
+                        borderRadius: '999px',
+                        padding: '0.42rem 0.75rem',
+                        fontSize: '0.73rem',
+                        fontWeight: 700,
+                        cursor: 'pointer'
+                    }}
+                >
+                    {autoRefreshEnabled ? 'On' : 'Off'}
+                </button>
+                <select
+                    value={refreshEverySec}
+                    onChange={e => setRefreshEverySec(Number(e.target.value))}
+                    disabled={!autoRefreshEnabled}
+                    style={{
+                        border: '1px solid var(--border-color)',
+                        background: 'var(--bg-card)',
+                        color: 'var(--text-main)',
+                        borderRadius: '10px',
+                        padding: '0.35rem 0.55rem',
+                        fontSize: '0.73rem',
+                        fontWeight: 700,
+                        cursor: autoRefreshEnabled ? 'pointer' : 'not-allowed',
+                        opacity: autoRefreshEnabled ? 1 : 0.6
+                    }}
+                >
+                    <option value={15}>15s</option>
+                    <option value={30}>30s</option>
+                </select>
+                <button
+                    onClick={() => fetchActivity(search)}
+                    style={{
+                        border: '1px solid var(--border-color)',
+                        background: 'var(--bg-card)',
+                        color: 'var(--text-main)',
+                        borderRadius: '10px',
+                        padding: '0.42rem 0.75rem',
+                        fontSize: '0.73rem',
+                        fontWeight: 700,
+                        cursor: 'pointer'
+                    }}
+                >
+                    Refresh Now
+                </button>
+                <button
+                    onClick={handleExportCsv}
+                    disabled={exportingCsv}
+                    style={{
+                        border: '1px solid #06b6d4',
+                        background: 'rgba(6,182,212,0.15)',
+                        color: '#67e8f9',
+                        borderRadius: '10px',
+                        padding: '0.42rem 0.75rem',
+                        fontSize: '0.73rem',
+                        fontWeight: 700,
+                        cursor: exportingCsv ? 'not-allowed' : 'pointer',
+                        opacity: exportingCsv ? 0.7 : 1
+                    }}
+                >
+                    {exportingCsv ? 'Exporting...' : 'Export CSV'}
+                </button>
+                {lastUpdatedAt && (
+                    <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>
+                        Updated: {fmtDate(lastUpdatedAt)}
+                    </span>
+                )}
+            </div>
+
+            {loading ? (
+                <div className="dashboard-panel" style={{ textAlign: 'center', padding: '3rem', color: 'var(--text-muted)' }}>Loading login activity…</div>
+            ) : (
+                <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1.35fr) minmax(0, 1fr)', gap: '1.5rem', alignItems: 'start' }}>
+                    <div className="dashboard-panel" style={{ minWidth: 0 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1rem' }}>
+                            <h3 className="panel-title"><ClipboardList size={18} color="#3b82f6" /> Student Activity</h3>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.55rem' }}>
+                                <span style={{ color: 'var(--text-muted)', fontSize: '0.75rem' }}>{data.students.length} students</span>
+                                <button onClick={() => scrollToTop(studentScrollRef)} style={{ border: '1px solid var(--border-color)', background: 'var(--bg-card)', color: 'var(--text-muted)', borderRadius: '8px', padding: '0.28rem 0.48rem', fontSize: '0.7rem', cursor: 'pointer' }}>Top</button>
+                            </div>
+                        </div>
+
+                        <div
+                            ref={studentScrollRef}
+                            style={{
+                                overflowY: 'auto',
+                                maxHeight: '690px',
+                                scrollBehavior: 'smooth',
+                                scrollbarWidth: 'thin',
+                                display: 'flex',
+                                flexDirection: 'column',
+                                gap: '0.65rem',
+                                paddingRight: '0.2rem'
+                            }}
+                        >
+                            {data.students.map(student => (
+                                <button
+                                    key={student.id}
+                                    onClick={() => setSelectedStudent(student)}
+                                    title="Click to view detailed timeline"
+                                    style={{
+                                        width: '100%',
+                                        textAlign: 'left',
+                                        border: '1px solid var(--border-color)',
+                                        background: 'var(--bg-secondary)',
+                                        borderRadius: '12px',
+                                        padding: '0.85rem 0.9rem',
+                                        cursor: 'pointer'
+                                    }}
+                                >
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', gap: '0.75rem', alignItems: 'flex-start' }}>
+                                        <div style={{ minWidth: 0, flex: 1 }}>
+                                            <div style={{ fontWeight: 800, color: 'var(--text-main)', fontSize: '0.95rem' }}>{student.name}</div>
+                                            <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '0.15rem', wordBreak: 'break-word' }}>{student.email || `ID: ${student.id}`}</div>
+                                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.35rem', marginTop: '0.45rem' }}>
+                                                {student.batch && <span style={{ padding: '0.18rem 0.5rem', borderRadius: '999px', background: 'rgba(59,130,246,0.12)', color: '#60a5fa', fontSize: '0.68rem', fontWeight: 700 }}>{student.batch}</span>}
+                                                <span style={{ padding: '0.18rem 0.5rem', borderRadius: '999px', background: student.status === 'active' ? 'rgba(16,185,129,0.12)' : 'rgba(239,68,68,0.12)', color: student.status === 'active' ? '#10b981' : '#f87171', fontSize: '0.68rem', fontWeight: 700 }}>{student.status || 'unknown'}</span>
+                                            </div>
+                                        </div>
+                                        <div style={{ textAlign: 'right', minWidth: '110px', flexShrink: 0 }}>
+                                            <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)' }}>Last seen</div>
+                                            <div style={{ fontWeight: 700, fontSize: '0.78rem', color: 'var(--text-main)', marginTop: '0.15rem' }}>{fmtDateCompact(student.lastSeenAt)}</div>
+                                        </div>
+                                    </div>
+
+                                    <div style={{ marginTop: '0.55rem', display: 'grid', gridTemplateColumns: 'repeat(4, minmax(70px, 1fr))', gap: '0.45rem' }}>
+                                        <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: '8px', padding: '0.45rem', textAlign: 'center' }}>
+                                            <div style={{ fontSize: '0.64rem', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Logins</div>
+                                            <div style={{ fontWeight: 800, marginTop: '0.1rem', color: 'var(--text-main)' }}>{student.loginCount || 0}</div>
+                                        </div>
+                                        <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: '8px', padding: '0.45rem', textAlign: 'center' }}>
+                                            <div style={{ fontSize: '0.64rem', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Tests</div>
+                                            <div style={{ fontWeight: 800, marginTop: '0.1rem', color: 'var(--text-main)' }}>{student.testsAttended || 0}</div>
+                                        </div>
+                                        <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: '8px', padding: '0.45rem', textAlign: 'center' }}>
+                                            <div style={{ fontSize: '0.64rem', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Time</div>
+                                            <div style={{ fontWeight: 800, marginTop: '0.1rem', color: 'var(--text-main)' }}>{fmtDuration(student.totalActivitySeconds)}</div>
+                                        </div>
+                                        <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: '8px', padding: '0.45rem', textAlign: 'center' }}>
+                                            <div style={{ fontSize: '0.64rem', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Logout</div>
+                                            <div style={{ fontWeight: 800, marginTop: '0.1rem', color: 'var(--text-main)' }}>{student.logoutCount || 0}</div>
+                                        </div>
+                                    </div>
+
+                                    <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginTop: '0.55rem', lineHeight: 1.5, wordBreak: 'break-word' }}>
+                                        Aptitude: {student.testBreakdown?.aptitude || 0} · Global: {student.testBreakdown?.global || 0} · MCQ: {student.testBreakdown?.mcq || 0} · CRT: {student.testBreakdown?.crt || 0} · Last test: {fmtDateCompact(student.lastTestAt)}
+                                    </div>
+                                </button>
+                            ))}
+
+                            {data.students.length === 0 && (
+                                <div style={{ padding: '2rem', textAlign: 'center', color: 'var(--text-muted)' }}>No student activity found for the current filter.</div>
+                            )}
+                        </div>
+                    </div>
+
+                    <div className="dashboard-panel" style={{ minWidth: 0 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.75rem' }}>
+                            <h3 className="panel-title"><Activity size={18} color="#10b981" /> Recent Events</h3>
+                            <button onClick={() => scrollToTop(eventScrollRef)} style={{ border: '1px solid var(--border-color)', background: 'var(--bg-card)', color: 'var(--text-muted)', borderRadius: '8px', padding: '0.28rem 0.48rem', fontSize: '0.7rem', cursor: 'pointer' }}>Top</button>
+                        </div>
+                        <div
+                            ref={eventScrollRef}
+                            style={{
+                                display: 'flex',
+                                flexDirection: 'column',
+                                gap: '0.75rem',
+                                maxHeight: '760px',
+                                overflowY: 'auto',
+                                paddingRight: '0.25rem',
+                                scrollBehavior: 'smooth',
+                                scrollbarWidth: 'thin',
+                                scrollSnapType: 'y proximity'
+                            }}
+                        >
+                            {filteredEvents.map((event, index) => {
+                                const isLogin = event.eventType === 'login'
+                                const isLogout = event.eventType === 'logout'
+                                const tone = isLogin ? '#10b981' : isLogout ? '#ef4444' : '#3b82f6'
+                                const bg = isLogin ? 'rgba(16,185,129,0.12)' : isLogout ? 'rgba(239,68,68,0.12)' : 'rgba(59,130,246,0.12)'
+                                return (
+                                    <div key={`${event.studentId}-${event.timestamp}-${index}`} style={{ padding: '0.9rem', borderRadius: '12px', border: '1px solid var(--border-color)', background: 'var(--bg-secondary)', scrollSnapAlign: 'start' }}>
+                                        <div style={{ display: 'flex', justifyContent: 'space-between', gap: '0.5rem', alignItems: 'flex-start' }}>
+                                            <div>
+                                                <div style={{ fontWeight: 800, color: 'var(--text-main)' }}>{event.studentName}</div>
+                                                <div style={{ marginTop: '0.22rem', fontSize: '0.8rem', color: tone }}>{event.label}</div>
+                                            </div>
+                                            <span style={{ padding: '0.2rem 0.55rem', borderRadius: '999px', background: bg, color: tone, fontSize: '0.68rem', fontWeight: 700, textTransform: 'uppercase' }}>
+                                                {event.eventType === 'test' ? (event.testType || 'test') : event.eventType}
+                                            </span>
+                                        </div>
+                                        <div style={{ marginTop: '0.45rem', fontSize: '0.72rem', color: 'var(--text-muted)', lineHeight: 1.6 }}>
+                                            <div>{fmtDate(event.timestamp)}</div>
+                                            {event.eventType === 'test' && <div>Duration: {fmtDuration(event.durationSeconds)}{event.score != null ? ` · Score: ${Math.round(event.score)}%` : ''}{event.status ? ` · ${event.status}` : ''}</div>}
+                                            {event.ipAddress && <div>IP: {event.ipAddress}</div>}
+                                        </div>
+                                    </div>
+                                )
+                            })}
+                            {filteredEvents.length === 0 && (
+                                <div style={{ padding: '2rem', textAlign: 'center', color: 'var(--text-muted)' }}>No recent activity available.</div>
+                            )}
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {selectedStudent && (
+                <div
+                    style={{
+                        position: 'fixed',
+                        inset: 0,
+                        background: 'rgba(0,0,0,0.65)',
+                        zIndex: 2200,
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        padding: '1rem'
+                    }}
+                    onClick={() => setSelectedStudent(null)}
+                >
+                    <div
+                        onClick={e => e.stopPropagation()}
+                        style={{
+                            width: '100%',
+                            maxWidth: '900px',
+                            maxHeight: '88vh',
+                            overflow: 'hidden',
+                            borderRadius: '16px',
+                            border: '1px solid var(--border-color)',
+                            background: 'var(--bg-card)',
+                            boxShadow: '0 22px 60px rgba(0,0,0,0.45)',
+                            display: 'flex',
+                            flexDirection: 'column'
+                        }}
+                    >
+                        <div style={{ padding: '1rem 1.15rem', borderBottom: '1px solid var(--border-color)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.8rem' }}>
+                            <div>
+                                <div style={{ fontWeight: 900, fontSize: '1rem', color: 'var(--text-main)' }}>{selectedStudent.name} - Timeline</div>
+                                <div style={{ marginTop: '0.25rem', fontSize: '0.78rem', color: 'var(--text-muted)' }}>{selectedStudent.email || `ID: ${selectedStudent.id}`} · Total events: {selectedStudentEvents.length}</div>
+                            </div>
+                            <button
+                                onClick={() => setSelectedStudent(null)}
+                                style={{ border: '1px solid var(--border-color)', background: 'var(--bg-secondary)', color: 'var(--text-muted)', borderRadius: '8px', padding: '0.35rem 0.6rem', cursor: 'pointer' }}
+                            >
+                                Close
+                            </button>
+                        </div>
+
+                        <div style={{ padding: '0.85rem 1rem', overflowY: 'auto', maxHeight: '72vh', scrollBehavior: 'smooth', display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                            {selectedStudentEvents.map((event, index) => {
+                                const isLogin = event.eventType === 'login'
+                                const isLogout = event.eventType === 'logout'
+                                const tone = isLogin ? '#10b981' : isLogout ? '#ef4444' : '#3b82f6'
+                                const bg = isLogin ? 'rgba(16,185,129,0.12)' : isLogout ? 'rgba(239,68,68,0.12)' : 'rgba(59,130,246,0.12)'
+                                return (
+                                    <div key={`${event.studentId}-${event.timestamp}-${index}`} style={{ border: '1px solid var(--border-color)', background: 'var(--bg-secondary)', borderRadius: '12px', padding: '0.85rem 0.9rem' }}>
+                                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.8rem' }}>
+                                            <div style={{ fontSize: '0.86rem', fontWeight: 800, color: 'var(--text-main)' }}>{event.label}</div>
+                                            <span style={{ padding: '0.18rem 0.5rem', borderRadius: '999px', background: bg, color: tone, fontSize: '0.66rem', fontWeight: 800, textTransform: 'uppercase' }}>
+                                                {event.eventType === 'test' ? (event.testType || 'test') : event.eventType}
+                                            </span>
+                                        </div>
+                                        <div style={{ marginTop: '0.4rem', fontSize: '0.74rem', color: 'var(--text-muted)', lineHeight: 1.6 }}>
+                                            <div>{fmtDate(event.timestamp)}</div>
+                                            {event.eventType === 'test' && <div>Duration: {fmtDuration(event.durationSeconds)}{event.score != null ? ` · Score: ${Math.round(event.score)}%` : ''}{event.status ? ` · ${event.status}` : ''}</div>}
+                                            {event.ipAddress && <div>IP: {event.ipAddress}</div>}
+                                        </div>
+                                    </div>
+                                )
+                            })}
+                            {selectedStudentEvents.length === 0 && (
+                                <div style={{ padding: '2rem', textAlign: 'center', color: 'var(--text-muted)' }}>No timeline events for this filter.</div>
+                            )}
                         </div>
                     </div>
                 </div>
