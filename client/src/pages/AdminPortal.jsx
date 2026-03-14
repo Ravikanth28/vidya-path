@@ -26,6 +26,7 @@ import { AdminCertificateManager } from '../components/CertificatePortal'
 import { CompanyTestManager } from '../components/CompanyFeatures'
 import CompanyRoundManager from '../components/CompanyRoundManager'
 import AdminCommTest from '../components/AdminCommTest'
+import AdminFrontendEval from '../components/AdminFrontendEval'
 import { useAuth } from '../App'
 import { useI18n } from '../services/i18n.jsx'
 import axios from 'axios'
@@ -140,6 +141,14 @@ function AdminPortal() {
                 setTitle('Communication Test')
                 setSubtitle('Manage content, view student reports & analytics')
                 break
+            case 'frontend-evals':
+                setTitle('Frontend Evaluation')
+                setSubtitle('Create frontend use cases and assign them to students')
+                break
+            case 'frontend-submissions':
+                setTitle('Frontend Submissions')
+                setSubtitle('Review uploaded frontend projects and AI reports')
+                break
             default:
                 setTitle(t('dashboard'))
                 setSubtitle(t('system_administration'))
@@ -162,7 +171,8 @@ function AdminPortal() {
                 { path: '/admin/company-round-tests', label: 'Round Tests', icon: <Target size={20} /> },
                 { path: '/admin/resource-links', label: 'Resource Links', icon: <Link2 size={20} /> },
                 { path: '/admin/mcq', label: 'MCQ Manager', icon: <Brain size={20} /> },
-                { path: '/admin/comm-test', label: 'Comm Test', icon: <Mic size={20} /> }
+                { path: '/admin/comm-test', label: 'Comm Test', icon: <Mic size={20} /> },
+                { path: '/admin/frontend-evals', label: 'Frontend Eval', icon: <Code size={20} /> }
             ]
         },
         {
@@ -189,6 +199,7 @@ function AdminPortal() {
             children: [
                 { path: '/admin/all-submissions', label: t('all_submissions'), icon: <List size={20} /> },
                 { path: '/admin/skill-submissions', label: 'Skill Submissions', icon: <Brain size={20} /> },
+                { path: '/admin/frontend-submissions', label: 'Frontend Submissions', icon: <Code size={20} /> },
                 { path: '/admin/live-monitoring', label: t('live_monitoring'), icon: <Activity size={20} /> },
                 { path: '/admin/analytics', label: t('analytics'), icon: <TrendingUp size={20} /> },
                 { path: '/admin/plagiarism', label: 'Plagiarism Dashboard', icon: <Shield size={20} /> },
@@ -243,6 +254,8 @@ function AdminPortal() {
                 <Route path="/resource-links" element={<AdminResourceLinks />} />
                 <Route path="/mcq" element={<AdminMCQ />} />
                 <Route path="/comm-test" element={<AdminCommTest />} />
+                <Route path="/frontend-evals" element={<AdminFrontendEval initialTab="tests" />} />
+                <Route path="/frontend-submissions" element={<AdminFrontendEval initialTab="submissions" />} />
             </Routes>
         </DashboardLayout>
     )

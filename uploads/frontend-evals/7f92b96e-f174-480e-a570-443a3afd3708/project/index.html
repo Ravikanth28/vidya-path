@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Simple Shopping Website</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+  <header>
+    <div class="logo">ShopEasy</div>
+    <div class="cart-icon">
+      Cart: <span id="cart-count">0</span>
+    </div>
+  </header>
+
+  <section class="hero">
+    <h1>Welcome to ShopEasy</h1>
+    <p>Your simple shopping website like Amazon</p>
+  </section>
+
+  <main>
+    <section class="category">
+      <h2>Electronics</h2>
+      <div class="product-grid">
+        <div class="product-card">
+          <img src="https://via.placeholder.com/200x150" alt="Headphones">
+          <h3>Wireless Headphones</h3>
+          <p>₹1,999</p>
+          <button onclick="addToCart('Wireless Headphones', 1999)">Add to Cart</button>
+        </div>
+
+        <div class="product-card">
+          <img src="https://via.placeholder.com/200x150" alt="Smart Watch">
+          <h3>Smart Watch</h3>
+          <p>₹2,499</p>
+          <button onclick="addToCart('Smart Watch', 2499)">Add to Cart</button>
+        </div>
+
+        <div class="product-card">
+          <img src="https://via.placeholder.com/200x150" alt="Speaker">
+          <h3>Bluetooth Speaker</h3>
+          <p>₹1,499</p>
+          <button onclick="addToCart('Bluetooth Speaker', 1499)">Add to Cart</button>
+        </div>
+      </div>
+    </section>
+
+    <section class="category">
+      <h2>Fashion</h2>
+      <div class="product-grid">
+        <div class="product-card">
+          <img src="https://via.placeholder.com/200x150" alt="T-Shirt">
+          <h3>Casual T-Shirt</h3>
+          <p>₹699</p>
+          <button onclick="addToCart('Casual T-Shirt', 699)">Add to Cart</button>
+        </div>
+
+        <div class="product-card">
+          <img src="https://via.placeholder.com/200x150" alt="Shoes">
+          <h3>Running Shoes</h3>
+          <p>₹1,899</p>
+          <button onclick="addToCart('Running Shoes', 1899)">Add to Cart</button>
+        </div>
+
+        <div class="product-card">
+          <img src="https://via.placeholder.com/200x150" alt="Jacket">
+          <h3>Winter Jacket</h3>
+          <p>₹2,999</p>
+          <button onclick="addToCart('Winter Jacket', 2999)">Add to Cart</button>
+        </div>
+      </div>
+    </section>
+
+    <section class="category">
+      <h2>Home Appliances</h2>
+      <div class="product-grid">
+        <div class="product-card">
+          <img src="https://via.placeholder.com/200x150" alt="Mixer">
+          <h3>Mixer Grinder</h3>
+          <p>₹3,499</p>
+          <button onclick="addToCart('Mixer Grinder', 3499)">Add to Cart</button>
+        </div>
+
+        <div class="product-card">
+          <img src="https://via.placeholder.com/200x150" alt="Iron Box">
+          <h3>Iron Box</h3>
+          <p>₹1,299</p>
+          <button onclick="addToCart('Iron Box', 1299)">Add to Cart</button>
+        </div>
+
+        <div class="product-card">
+          <img src="https://via.placeholder.com/200x150" alt="Vacuum Cleaner">
+          <h3>Vacuum Cleaner</h3>
+          <p>₹4,999</p>
+          <button onclick="addToCart('Vacuum Cleaner', 4999)">Add to Cart</button>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <section class="cart-section">
+    <h2>Shopping Cart</h2>
+    <ul id="cart-items"></ul>
+    <h3>Total: ₹<span id="cart-total">0</span></h3>
+  </section>
+
+  <script src="script.js"></script>
+</body>
+</html>
