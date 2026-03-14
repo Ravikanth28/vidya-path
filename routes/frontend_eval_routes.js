@@ -153,43 +153,187 @@ function summarizeStats(files, packageJson) {
     };
 }
 
-function computeLocalBreakdown(stats, sourceText, requirementsText) {
+function normalizeText(value) {
+    return String(value || '')
+        .toLowerCase()
+        .replace(/[^a-z0-9\s]/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+}
+
+function extractRequirementLines(requirementsText) {
+    return String(requirementsText || '')
+        .split(/\n+/)
+        .map(line => line.replace(/^[-*\d.)\s]+/, '').trim())
+        .filter(Boolean)
+        .filter(line => line.length >= 6);
+}
+
+function requirementCoverageScore(sourceText, requirementsText, rubricWeights = {}) {
+    const normalizedSource = normalizeText(sourceText);
+    const lines = extractRequirementLines(requirementsText);
+    if (!lines.length) return { score: 0, matchedCount: 0, totalCount: 0, mustScore: 100, niceScore: 100, missing: [] };
+
+    let mustHit = 0, mustTotal = 0, niceHit = 0, niceTotal = 0;
+    const missing = [];
+
+    for (const line of lines) {
+        const weight = rubricWeights[line] === 'nice' ? 'nice' : 'must';
+        const normalizedLine = normalizeText(line);
+        const tokens = normalizedLine.split(' ').filter(token => token.length >= 4);
+        let matched = false;
+        if (tokens.length) {
+            const hits = tokens.filter(token => normalizedSource.includes(token)).length;
+            matched = hits / tokens.length >= 0.5 || normalizedSource.includes(normalizedLine.slice(0, Math.min(normalizedLine.length, 24)));
+        }
+        if (matched) {
+            if (weight === 'must') mustHit++; else niceHit++;
+        } else {
+            missing.push({ text: line, weight });
+        }
+        if (weight === 'must') mustTotal++; else niceTotal++;
+    }
+
+    const mustScore = mustTotal ? Math.round((mustHit / mustTotal) * 100) : 100;
+    const niceScore = niceTotal ? Math.round((niceHit / niceTotal) * 100) : 100;
+    const score = Math.round(mustScore * 0.75 + niceScore * 0.25);
+    const matchedCount = mustHit + niceHit;
+    const totalCount = lines.length;
+    return { score, matchedCount, totalCount, mustScore, niceScore, missing };
+}
+
+function runStaticLintChecks(snippets) {
+    const htmlIssues = [];
+    const cssWarnings = [];
+    const jsWarnings = [];
+
+    for (const snippet of snippets) {
+        const content = snippet.content || '';
+        const ext = String(snippet.path || '').split('.').pop().toLowerCase();
+
+        if (ext === 'html' || ext === 'htm') {
+            if (!content.match(/<!doctype/i)) {
+                htmlIssues.push(`${snippet.path}: Missing <!DOCTYPE html> declaration`);
+            }
+            if (!content.match(/<html[^>]*lang=/i)) {
+                htmlIssues.push(`${snippet.path}: Missing lang attribute on <html> (accessibility)`);
+            }
+            const inlineStyleCount = (content.match(/\bstyle\s*=/gi) || []).length;
+            if (inlineStyleCount > 5) {
+                htmlIssues.push(`${snippet.path}: ${inlineStyleCount} inline style attributes (consider CSS classes)`);
+            }
+            if (content.match(/<(font|center|marquee|blink)\b/i)) {
+                htmlIssues.push(`${snippet.path}: Deprecated HTML tags detected`);
+            }
+            if (!content.match(/<meta[^>]*charset/i)) {
+                htmlIssues.push(`${snippet.path}: Missing charset meta tag`);
+            }
+        }
+
+        if (ext === 'css') {
+            const importantCount = (content.match(/!important/g) || []).length;
+            if (importantCount > 3) {
+                cssWarnings.push(`${snippet.path}: ${importantCount} !important overrides (specificity concern)`);
+            }
+        }
+
+        if (ext === 'js' || ext === 'jsx' || ext === 'ts' || ext === 'tsx') {
+            if (content.includes('eval(')) {
+                jsWarnings.push(`${snippet.path}: eval() usage detected (security risk)`);
+            }
+            const varCount = (content.match(/\bvar\b/g) || []).length;
+            if (varCount > 3) {
+                jsWarnings.push(`${snippet.path}: ${varCount} var declarations (prefer const/let)`);
+            }
+            const looseEqCount = (content.match(/[^!=<>]==[^=]/g) || []).length;
+            if (looseEqCount > 3) {
+                jsWarnings.push(`${snippet.path}: ${looseEqCount} loose equality checks (use === instead)`);
+            }
+            const consoleCount = (content.match(/console\.log\(/g) || []).length;
+            if (consoleCount > 5) {
+                jsWarnings.push(`${snippet.path}: ${consoleCount} console.log statements (remove for production)`);
+            }
+            if (content.includes('document.write(')) {
+                jsWarnings.push(`${snippet.path}: document.write() usage detected`);
+            }
+        }
+    }
+
+    const totalIssues = htmlIssues.length + cssWarnings.length + jsWarnings.length;
+    const lintScore = Math.max(10, 100 - totalIssues * 10);
+    return { htmlIssues, cssWarnings, jsWarnings, totalIssues, lintScore };
+}
+
+function computeConfidenceScore({ aiUsed, runtimeResult, lintResults, stats, coverage }) {
+    let score = 0;
+    if (stats.hasIndexHtml || stats.hasPackageJson) score += 10;
+    if (stats.fileCount >= 3) score += 8;
+    if (stats.fileCount >= 8) score += 5;
+    if (aiUsed) score += 22; else score += 8;
+    if (runtimeResult.attempted && runtimeResult.success) score += 20;
+    else if (runtimeResult.success) score += 12;
+    else if (runtimeResult.attempted) score += 5;
+    if (Array.isArray(runtimeResult.smokeTests) && runtimeResult.smokeTests.length) {
+        const passed = runtimeResult.smokeTests.filter(t => t.success).length;
+        score += Math.min(15, passed * 8);
+    }
+    if (coverage && coverage.totalCount > 0) {
+        score += Math.round(coverage.score * 0.1);
+    }
+    if (lintResults) {
+        score += Math.max(0, 10 - lintResults.totalIssues);
+    }
+    return Math.min(100, Math.round(score));
+}
+
+function computeLocalBreakdown(stats, sourceText, requirementsText, rubricWeights = {}) {
     const joined = sourceText.toLowerCase();
-    const requirements = String(requirementsText || '').toLowerCase();
     const mediaQueries = (joined.match(/@media/g) || []).length;
     const semanticTags = (joined.match(/<(header|main|section|nav|footer|article|aside)\b/g) || []).length;
     const eventHandlers = (joined.match(/addEventListener|\bonclick=|\bonsubmit=|\bfetch\(|axios\.|XMLHttpRequest/g) || []).length;
     const comments = (joined.match(/\/\*|\/\/|<!--/g) || []).length;
-    const requirementHits = requirements
-        ? requirements.split(/\n+/).map(line => line.trim()).filter(Boolean).filter(line => joined.includes(line.slice(0, 20))).length
-        : 0;
+    const coverage = requirementCoverageScore(sourceText, requirementsText, rubricWeights);
 
-    const structure = Math.min(100, 35
-        + (stats.hasIndexHtml ? 20 : 0)
+    const structure = Math.min(100, 32
+        + (stats.hasIndexHtml ? 18 : 0)
         + (stats.hasPackageJson ? 10 : 0)
         + Math.min(stats.cssCount * 6, 18)
-        + Math.min(stats.jsCount * 6, 18));
+        + Math.min(stats.jsCount * 6, 18)
+        + Math.round(coverage.score * 0.08));
 
-    const functionality = Math.min(100, 28
-        + (stats.hasIndexHtml || stats.hasPackageJson ? 18 : 0)
-        + Math.min(eventHandlers * 8, 24)
-        + Math.min(requirementHits * 8, 18));
+    const functionality = Math.min(100, 24
+        + (stats.hasIndexHtml || stats.hasPackageJson ? 14 : 0)
+        + Math.min(eventHandlers * 7, 22)
+        + Math.round(coverage.score * 0.4));
 
-    const uiUx = Math.min(100, 30
+    const uiUx = Math.min(100, 28
         + Math.min(stats.cssCount * 10, 25)
         + Math.min(semanticTags * 6, 18)
-        + (joined.includes('aria-') ? 8 : 0));
+        + (joined.includes('aria-') ? 8 : 0)
+        + Math.round(coverage.score * 0.1));
 
     const responsiveness = Math.min(100, 20
         + Math.min(mediaQueries * 18, 45)
         + (joined.includes('viewport') ? 15 : 0)
         + (joined.includes('flex') || joined.includes('grid') ? 12 : 0));
 
-    const codeQuality = Math.min(100, 30
+    const codeQuality = Math.min(100, 28
         + Math.min(comments * 4, 12)
         + Math.min(stats.jsCount * 8, 20)
         + (joined.includes('const ') || joined.includes('let ') ? 12 : 0)
-        + (joined.includes('async ') || joined.includes('await ') ? 8 : 0));
+        + (joined.includes('async ') || joined.includes('await ') ? 8 : 0)
+        + (stats.fileCount > 8 ? 6 : 0));
+
+    if (coverage.totalCount >= 3 && (coverage.mustScore ?? coverage.score) < 40) {
+        return {
+            structure: Math.max(0, structure - 8),
+            functionality: Math.max(0, functionality - 15),
+            uiUx,
+            responsiveness,
+            codeQuality,
+            coverage,
+        };
+    }
 
     return {
         structure,
@@ -197,6 +341,7 @@ function computeLocalBreakdown(stats, sourceText, requirementsText) {
         uiUx,
         responsiveness,
         codeQuality,
+        coverage,
     };
 }
 
@@ -219,31 +364,47 @@ async function tryRuntimeEvaluation(projectRoot, packageJson, stats) {
     const hasNodeModules = fs.existsSync(path.join(projectRoot, 'node_modules'));
     const npmBin = process.platform === 'win32' ? 'npm.cmd' : 'npm';
 
-    const preferredScript = ['build', 'test', 'start'].find(name => scripts[name]);
-    if (!preferredScript || !hasNodeModules) {
-        result.summary = result.summary || 'package.json found, but runtime execution was skipped because dependencies are not installed or scripts are unavailable.';
+    const candidateScripts = ['build', 'test', 'lint'].filter(name => scripts[name]);
+    const smokeTests = [];
+    if (!candidateScripts.length || !hasNodeModules) {
+        result.summary = result.summary || 'package.json found, but runtime execution was skipped because dependencies are not installed or no recognized scripts are available.';
+        result.smokeTests = smokeTests;
         return result;
     }
 
     result.attempted = true;
-    try {
-        const { stdout, stderr } = await execFileAsync(npmBin, ['run', preferredScript], {
-            cwd: projectRoot,
-            timeout: RUNTIME_TIMEOUT_MS,
-            windowsHide: true,
-            maxBuffer: 1024 * 1024,
-        });
-        result.success = true;
-        result.summary = `Runtime check succeeded using \`npm run ${preferredScript}\`.`;
-        result.output = trimContent((stdout || '') + '\n' + (stderr || ''), 2500);
-    } catch (error) {
-        result.success = false;
-        const stdout = error.stdout || '';
-        const stderr = error.stderr || '';
-        result.summary = `Runtime check failed while running \`npm run ${preferredScript}\`.`;
-        result.output = trimContent(`${stdout}\n${stderr}\n${error.message || ''}`, 2500);
+    const scriptsToTry = candidateScripts.slice(0, 2);
+    for (const scriptName of scriptsToTry) {
+        const smokeStart = Date.now();
+        try {
+            const { stdout, stderr } = await execFileAsync(npmBin, ['run', scriptName], {
+                cwd: projectRoot,
+                timeout: RUNTIME_TIMEOUT_MS,
+                windowsHide: true,
+                maxBuffer: 1024 * 1024,
+            });
+            const duration = Date.now() - smokeStart;
+            smokeTests.push({ script: scriptName, success: true, duration, output: trimContent((stdout || '') + (stderr || ''), 600) });
+            if (!result.success) {
+                result.success = true;
+                result.output = trimContent((stdout || '') + '\n' + (stderr || ''), 2500);
+            }
+        } catch (error) {
+            const duration = Date.now() - smokeStart;
+            smokeTests.push({ script: scriptName, success: false, duration, output: trimContent(`${error.stdout || ''}\n${error.stderr || ''}\n${error.message || ''}`, 600) });
+            if (!result.output) {
+                result.output = trimContent(`${error.stdout || ''}\n${error.stderr || ''}\n${error.message || ''}`, 2500);
+            }
+        }
     }
-
+    result.smokeTests = smokeTests;
+    const anySuccess = smokeTests.some(t => t.success);
+    const scriptNames = smokeTests.map(t => `\`npm run ${t.script}\``).join(', ');
+    if (anySuccess) {
+        result.summary = `Smoke-run checks passed for ${scriptNames}.`;
+    } else {
+        result.summary = `Smoke-run checks were attempted (${scriptNames}) but encountered errors.`;
+    }
     return result;
 }
 
@@ -255,31 +416,45 @@ function fallbackAiReport(localBreakdown, stats, runtimeResult) {
         (localBreakdown.responsiveness * 0.16) +
         (localBreakdown.codeQuality * 0.22)
     );
+    const coverage = localBreakdown.coverage || { score: 0, matchedCount: 0, totalCount: 0, missing: [] };
+    const coverageLine = coverage.totalCount
+        ? `Requirement coverage: ${coverage.matchedCount}/${coverage.totalCount} (${coverage.score}%).`
+        : 'Requirement coverage was not measurable from the prompt content.';
+
     return {
         overallScore,
-        breakdown: localBreakdown,
+        breakdown: {
+            structure: localBreakdown.structure,
+            functionality: localBreakdown.functionality,
+            uiUx: localBreakdown.uiUx,
+            responsiveness: localBreakdown.responsiveness,
+            codeQuality: localBreakdown.codeQuality,
+        },
         summary: runtimeResult.success
-            ? 'Project structure is solid and the runtime check succeeded.'
-            : 'Project was analyzed successfully. Runtime verification was limited, so the score is based mostly on structure and source review.',
+            ? `Project structure is solid and the runtime check succeeded. ${coverageLine}`
+            : `Project was analyzed successfully. Runtime verification was limited, so the score is based mostly on structure and source review. ${coverageLine}`,
         strengths: [
             stats.hasIndexHtml ? 'Contains a clear frontend entry point.' : 'Project includes source files for frontend implementation.',
             stats.cssCount > 0 ? 'Uses dedicated styling files for presentation.' : 'JavaScript logic is present for interaction.',
             localBreakdown.responsiveness >= 60 ? 'Shows responsive design indicators.' : 'Folder structure is organized enough for review.',
+            coverage.score >= 70 ? 'Most requested features appear to be represented in the source.' : null,
         ].filter(Boolean),
         issues: [
             !runtimeResult.success ? 'Runtime verification could not be fully confirmed from the server environment.' : null,
             localBreakdown.responsiveness < 55 ? 'Responsive design evidence is limited.' : null,
             localBreakdown.codeQuality < 55 ? 'Code quality signals are inconsistent across files.' : null,
+            coverage.totalCount > 0 && coverage.score < 60 ? 'Several requested features seem missing or only partially implemented.' : null,
         ].filter(Boolean),
         recommendations: [
             'Add a concise README with setup and run instructions.',
             'Improve responsive handling for smaller screens and viewport states.',
             'Break large scripts into smaller reusable modules where possible.',
+            ...(coverage.missing || []).slice(0, 3).map(item => `Implement requirement clearly: ${typeof item === 'string' ? item : item.text}`),
         ],
     };
 }
 
-async function generateAiFrontendReport({ cerebrasChat, test, stats, fileTree, snippets, localBreakdown, runtimeResult }) {
+async function generateAiFrontendReport({ cerebrasChat, test, stats, fileTree, snippets, localBreakdown, runtimeResult, rubricWeights = {} }) {
     if (!cerebrasChat) return fallbackAiReport(localBreakdown, stats, runtimeResult);
 
     const prompt = `You are a strict frontend evaluator for student project submissions.
@@ -287,8 +462,11 @@ async function generateAiFrontendReport({ cerebrasChat, test, stats, fileTree, s
 Admin use case:
 Title: ${test.title}
 Description: ${test.description || 'N/A'}
-Requirements:
+Requirements (with rubric weights – must = high priority, nice = lower priority):
 ${test.requirements || 'No explicit requirements provided'}
+
+Rubric weights:
+${Object.keys(rubricWeights).length ? JSON.stringify(rubricWeights) : 'All requirements are must-have (no weights configured)'}
 
 Detected project stats:
 ${JSON.stringify({
@@ -379,9 +557,13 @@ async function analyzeSubmission({ extractedRoot, test, cerebrasChat }) {
     const snippets = await gatherSourceSnippets(extractedRoot, files);
     const snippetText = snippets.map(item => `${item.path}\n${item.content}`).join('\n\n');
     const stats = summarizeStats(files, packageJson);
-    const localBreakdown = computeLocalBreakdown(stats, snippetText, test.requirements);
+    const rubricWeights = safeJsonParse(test.rubric_json, {});
+    const localBreakdown = computeLocalBreakdown(stats, snippetText, test.requirements, rubricWeights);
+    const lintResults = runStaticLintChecks(snippets);
     const runtimeResult = await tryRuntimeEvaluation(detectedProjectRoot, packageJson, stats);
-    const aiReport = await generateAiFrontendReport({ cerebrasChat, test, stats, fileTree, snippets, localBreakdown, runtimeResult });
+    const aiUsed = Boolean(cerebrasChat);
+    const aiReport = await generateAiFrontendReport({ cerebrasChat, test, stats, fileTree, snippets, localBreakdown, runtimeResult, rubricWeights });
+    const confidenceScore = computeConfidenceScore({ aiUsed, runtimeResult, lintResults, stats, coverage: localBreakdown.coverage });
 
     return {
         overallScore: aiReport.overallScore,
@@ -391,6 +573,8 @@ async function analyzeSubmission({ extractedRoot, test, cerebrasChat }) {
         issues: aiReport.issues,
         recommendations: aiReport.recommendations,
         runtime: runtimeResult,
+        lintResults,
+        confidenceScore,
         stats,
         fileTree,
         snippets,
@@ -422,6 +606,13 @@ function createUploadMiddleware() {
 }
 
 module.exports = function frontendEvalRoutes(pool, authenticate, cerebrasChat) {
+    // Auto-migrate new columns (safe – errors ignored if column already exists)
+    Promise.all([
+        pool.query('ALTER TABLE frontend_eval_tests ADD COLUMN rubric_json TEXT DEFAULT NULL').catch(() => {}),
+        pool.query('ALTER TABLE frontend_eval_submissions ADD COLUMN lint_results TEXT DEFAULT NULL').catch(() => {}),
+        pool.query('ALTER TABLE frontend_eval_submissions ADD COLUMN confidence_score INT DEFAULT NULL').catch(() => {}),
+    ]).catch(() => {});
+
     const router = express.Router();
     const upload = createUploadMiddleware();
 
@@ -451,13 +642,14 @@ module.exports = function frontendEvalRoutes(pool, authenticate, cerebrasChat) {
                 description,
                 requirements,
                 attempt_limit,
+                rubric_json,
             } = req.body;
             if (!title) return res.status(400).json({ success: false, error: 'Title is required' });
             await pool.query(
                 `INSERT INTO frontend_eval_tests
-                 (id, title, description, requirements, status, attempt_limit, created_by)
-                 VALUES (?, ?, ?, ?, 'draft', ?, ?)`,
-                [id, title, description || '', requirements || '', attempt_limit != null ? Number(attempt_limit) : null, String(req.user.id)]
+                 (id, title, description, requirements, status, attempt_limit, created_by, rubric_json)
+                 VALUES (?, ?, ?, ?, 'draft', ?, ?, ?)`,
+                [id, title, description || '', requirements || '', attempt_limit != null ? Number(attempt_limit) : null, String(req.user.id), rubric_json != null ? JSON.stringify(rubric_json) : null]
             );
             res.json({ success: true, id });
         } catch (err) {
@@ -468,12 +660,12 @@ module.exports = function frontendEvalRoutes(pool, authenticate, cerebrasChat) {
     router.put('/admin/frontend-evals/tests/:id', authenticate, requireAdmin, async (req, res) => {
         try {
             const { id } = req.params;
-            const { title, description, requirements, attempt_limit } = req.body;
+            const { title, description, requirements, attempt_limit, rubric_json } = req.body;
             await pool.query(
                 `UPDATE frontend_eval_tests
-                 SET title = ?, description = ?, requirements = ?, attempt_limit = ?
+                 SET title = ?, description = ?, requirements = ?, attempt_limit = ?, rubric_json = ?
                  WHERE id = ?`,
-                [title, description || '', requirements || '', attempt_limit != null ? Number(attempt_limit) : null, id]
+                [title, description || '', requirements || '', attempt_limit != null ? Number(attempt_limit) : null, rubric_json != null ? JSON.stringify(rubric_json) : null, id]
             );
             res.json({ success: true });
         } catch (err) {
@@ -575,6 +767,7 @@ module.exports = function frontendEvalRoutes(pool, authenticate, cerebrasChat) {
             row.report_json = safeJsonParse(row.report_json, {});
             row.breakdown_json = safeJsonParse(row.breakdown_json, {});
             row.file_tree_json = safeJsonParse(row.file_tree_json, []);
+            row.lint_results = safeJsonParse(row.lint_results, null);
             res.json({ success: true, submission: row });
         } catch (err) {
             res.status(500).json({ success: false, error: err.message });
@@ -630,6 +823,7 @@ module.exports = function frontendEvalRoutes(pool, authenticate, cerebrasChat) {
             row.report_json = safeJsonParse(row.report_json, {});
             row.breakdown_json = safeJsonParse(row.breakdown_json, {});
             row.file_tree_json = safeJsonParse(row.file_tree_json, []);
+            row.lint_results = safeJsonParse(row.lint_results, null);
             res.json({ success: true, submission: row });
         } catch (err) {
             res.status(500).json({ success: false, error: err.message });
@@ -692,8 +886,8 @@ module.exports = function frontendEvalRoutes(pool, authenticate, cerebrasChat) {
             await pool.query(
                 `INSERT INTO frontend_eval_submissions
                  (id, test_id, student_id, submission_type, original_name, stored_path, extracted_path,
-                  score, runtime_status, runtime_summary, runtime_output, report_json, breakdown_json, file_tree_json)
-                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                  score, runtime_status, runtime_summary, runtime_output, report_json, breakdown_json, file_tree_json, lint_results, confidence_score)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
                 [
                     submissionId,
                     testId,
@@ -709,6 +903,8 @@ module.exports = function frontendEvalRoutes(pool, authenticate, cerebrasChat) {
                     JSON.stringify(report),
                     JSON.stringify(report.breakdown),
                     JSON.stringify(report.fileTree),
+                    JSON.stringify(report.lintResults || {}),
+                    report.confidenceScore || 0,
                 ]
             );
 
