@@ -564,6 +564,16 @@ async function analyzeSubmission({ extractedRoot, test, cerebrasChat }) {
     const aiUsed = Boolean(cerebrasChat);
     const aiReport = await generateAiFrontendReport({ cerebrasChat, test, stats, fileTree, snippets, localBreakdown, runtimeResult, rubricWeights });
     const confidenceScore = computeConfidenceScore({ aiUsed, runtimeResult, lintResults, stats, coverage: localBreakdown.coverage });
+    const smokeTests = Array.isArray(runtimeResult.smokeTests) ? runtimeResult.smokeTests : [];
+    const validationSignals = {
+        aiUsed,
+        lintScore: lintResults.lintScore,
+        lintIssues: lintResults.totalIssues,
+        smokePassed: smokeTests.filter(test => test.success).length,
+        smokeTotal: smokeTests.length,
+        runtimeAttempted: Boolean(runtimeResult.attempted),
+        runtimeSuccess: Boolean(runtimeResult.success),
+    };
 
     return {
         overallScore: aiReport.overallScore,
@@ -572,6 +582,9 @@ async function analyzeSubmission({ extractedRoot, test, cerebrasChat }) {
         strengths: aiReport.strengths,
         issues: aiReport.issues,
         recommendations: aiReport.recommendations,
+        coverage: localBreakdown.coverage,
+        rubricWeights,
+        validationSignals,
         runtime: runtimeResult,
         lintResults,
         confidenceScore,

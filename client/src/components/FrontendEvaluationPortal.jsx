@@ -28,6 +28,7 @@ function ReportModal({ submission, onClose }) {
     const report = submission.report_json || submission.report || {}
     const breakdown = report.breakdown || submission.breakdown_json || {}
     const [activeTab, setActiveTab] = useState('overview')
+    const [activeEvalSection, setActiveEvalSection] = useState('strengths')
     const [copied, setCopied] = useState(false)
     const metrics = [
         ['Structure', breakdown.structure, '#60a5fa'],
@@ -41,9 +42,24 @@ function ReportModal({ submission, onClose }) {
     const recommendations = report.recommendations || []
     const runtimeSummary = submission.runtime_summary || report.runtime?.summary || 'Runtime analysis not available.'
     const runtimeOutput = submission.runtime_output || report.runtime?.output || ''
-        const lintData = submission.lint_results || report.lintResults || null
-        const allLintIssues = lintData ? [...(lintData.htmlIssues || []), ...(lintData.cssWarnings || []), ...(lintData.jsWarnings || [])] : []
-        const confidenceScore = submission.confidence_score ?? report.confidenceScore ?? null
+    const lintData = submission.lint_results || report.lintResults || null
+    const allLintIssues = lintData ? [...(lintData.htmlIssues || []), ...(lintData.cssWarnings || []), ...(lintData.jsWarnings || [])] : []
+    const confidenceScore = submission.confidence_score ?? report.confidenceScore ?? null
+    const coverage = report.coverage || {}
+    const smokeTests = Array.isArray(report.runtime?.smokeTests) ? report.runtime.smokeTests : []
+    const validationSignals = report.validationSignals || {}
+    const evalSections = {
+        strengths: { label: 'Strengths', color: '#86efac', items: strengths },
+        issues: { label: 'Issues', color: '#fca5a5', items: issues },
+        recommendations: { label: 'Recommendations', color: '#93c5fd', items: recommendations },
+    }
+    const activeEval = evalSections[activeEvalSection] || evalSections.strengths
+    const hasCoverageData = Number(coverage.totalCount || 0) > 0
+    const derivedConfidence = confidenceScore ?? (validationSignals.runtimeAttempted ? (validationSignals.runtimeSuccess ? 68 : 45) : null)
+    const derivedLintScore = validationSignals.lintScore ?? lintData?.lintScore ?? (lintData ? Math.max(10, 100 - ((lintData.totalIssues || allLintIssues.length) * 10)) : null)
+    const smokePassed = validationSignals.smokePassed ?? smokeTests.filter(test => test.success).length
+    const smokeTotal = validationSignals.smokeTotal ?? smokeTests.length
+    const hasInsightsData = derivedConfidence != null || hasCoverageData || derivedLintScore != null || smokeTotal > 0
 
     const renderTree = (nodes = [], depth = 0) => nodes.map(node => (
         <div key={node.path} style={{ paddingLeft: depth * 14, color: node.type === 'dir' ? '#cbd5e1' : '#94a3b8', fontSize: 12, lineHeight: 1.7 }}>
@@ -84,10 +100,11 @@ function ReportModal({ submission, onClose }) {
                 </div>
 
                 <div style={{ padding: 20, borderBottom: '1px solid #1e293b', display: 'flex', justifyContent: 'center', background: '#0c162e' }}>
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(160px, 1fr))', gap: 8, background: '#16274a', border: '1px solid #223b66', borderRadius: 999, padding: 6, width: 'min(760px, 100%)' }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(150px, 1fr))', gap: 8, background: '#16274a', border: '1px solid #223b66', borderRadius: 999, padding: 6, width: 'min(860px, 100%)' }}>
                         {[
                             { id: 'overview', label: 'Overview' },
                             { id: 'evaluation', label: 'Evaluation Details' },
+                            { id: 'insights', label: 'Insights' },
                             { id: 'runtime', label: 'Runtime & Files' },
                         ].map(tab => {
                             const active = activeTab === tab.id
@@ -165,21 +182,102 @@ function ReportModal({ submission, onClose }) {
                             </div>
 
                             <div style={{ background: '#020617', borderRadius: 18, border: '1px solid #1e293b', padding: 18 }}>
-                                <div style={{ color: '#86efac', fontWeight: 800, marginBottom: 10 }}>Strengths</div>
-                                {strengths.length ? strengths.map((item, idx) => (
-                                    <div key={idx} style={{ color: '#94a3b8', marginBottom: 8, paddingLeft: 12, borderLeft: '2px solid #86efac', lineHeight: 1.6 }}>{item}</div>
-                                )) : <div style={{ color: '#64748b', fontSize: 13 }}>No strengths recorded.</div>}
-
-                                <div style={{ color: '#fca5a5', fontWeight: 800, margin: '16px 0 10px' }}>Issues</div>
-                                {issues.length ? issues.map((item, idx) => (
-                                    <div key={idx} style={{ color: '#94a3b8', marginBottom: 8, paddingLeft: 12, borderLeft: '2px solid #fca5a5', lineHeight: 1.6 }}>{item}</div>
-                                )) : <div style={{ color: '#64748b', fontSize: 13 }}>No issues recorded.</div>}
-
-                                <div style={{ color: '#93c5fd', fontWeight: 800, margin: '16px 0 10px' }}>Recommendations</div>
-                                {recommendations.length ? recommendations.map((item, idx) => (
-                                    <div key={idx} style={{ color: '#94a3b8', marginBottom: 8, paddingLeft: 12, borderLeft: '2px solid #93c5fd', lineHeight: 1.6 }}>{item}</div>
-                                )) : <div style={{ color: '#64748b', fontSize: 13 }}>No recommendations recorded.</div>}
+                                <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 14 }}>
+                                    <div style={{ background: '#1e293b', border: '1px solid #334155', borderRadius: 999, display: 'flex', padding: 4 }}>
+                                        {Object.entries(evalSections).map(([id, section]) => {
+                                            const isActive = activeEvalSection === id
+                                            return (
+                                                <button
+                                                    key={id}
+                                                    onClick={() => setActiveEvalSection(id)}
+                                                    style={{
+                                                        border: 'none',
+                                                        borderRadius: 999,
+                                                        padding: '8px 14px',
+                                                        cursor: 'pointer',
+                                                        fontWeight: 800,
+                                                        fontSize: 12,
+                                                        color: isActive ? '#ffffff' : '#9ca3af',
+                                                        background: isActive ? 'linear-gradient(135deg, #5b21b6, #7c3aed)' : 'transparent',
+                                                    }}
+                                                >
+                                                    {section.label}
+                                                </button>
+                                            )
+                                        })}
+                                    </div>
+                                </div>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+                                    <div style={{ color: activeEval.color, fontWeight: 800 }}>{activeEval.label}</div>
+                                    <div style={{ color: '#64748b', fontSize: 12 }}>{activeEval.items.length} item{activeEval.items.length !== 1 ? 's' : ''}</div>
+                                </div>
+                                {activeEval.items.length ? activeEval.items.map((item, idx) => (
+                                    <div key={idx} style={{ color: '#94a3b8', marginBottom: 8, paddingLeft: 12, borderLeft: `2px solid ${activeEval.color}`, lineHeight: 1.6 }}>{item}</div>
+                                )) : <div style={{ color: '#64748b', fontSize: 13 }}>No {activeEval.label.toLowerCase()} recorded.</div>}
                             </div>
+                        </div>
+                    ) : null}
+
+                    {activeTab === 'insights' ? (
+                        <div style={{ display: 'grid', gap: 14 }}>
+                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: 10 }}>
+                                <div style={{ background: '#0f172a', border: '1px solid #1e293b', borderRadius: 14, padding: 12 }}>
+                                    <div style={{ color: '#a5b4fc', fontSize: 11, fontWeight: 800, textTransform: 'uppercase' }}>Confidence</div>
+                                    <div style={{ color: '#f8fafc', fontSize: 24, fontWeight: 900, marginTop: 4 }}>{derivedConfidence ?? 'N/A'}{derivedConfidence != null ? '%' : ''}</div>
+                                </div>
+                                <div style={{ background: '#0f172a', border: '1px solid #1e293b', borderRadius: 14, padding: 12 }}>
+                                    <div style={{ color: '#38bdf8', fontSize: 11, fontWeight: 800, textTransform: 'uppercase' }}>Coverage</div>
+                                    <div style={{ color: '#f8fafc', fontSize: 24, fontWeight: 900, marginTop: 4 }}>{hasCoverageData ? `${coverage.score ?? 0}%` : 'N/A'}</div>
+                                </div>
+                                <div style={{ background: '#0f172a', border: '1px solid #1e293b', borderRadius: 14, padding: 12 }}>
+                                    <div style={{ color: '#fcd34d', fontSize: 11, fontWeight: 800, textTransform: 'uppercase' }}>Lint Score</div>
+                                    <div style={{ color: '#f8fafc', fontSize: 24, fontWeight: 900, marginTop: 4 }}>{derivedLintScore ?? 'N/A'}</div>
+                                </div>
+                                <div style={{ background: '#0f172a', border: '1px solid #1e293b', borderRadius: 14, padding: 12 }}>
+                                    <div style={{ color: '#34d399', fontSize: 11, fontWeight: 800, textTransform: 'uppercase' }}>Smoke Checks</div>
+                                    <div style={{ color: '#f8fafc', fontSize: 24, fontWeight: 900, marginTop: 4 }}>{smokeTotal > 0 ? `${smokePassed}/${smokeTotal}` : 'N/A'}</div>
+                                </div>
+                            </div>
+
+                            {!hasInsightsData ? (
+                                <div style={{ color: '#94a3b8', fontSize: 12, background: 'rgba(15,23,42,0.45)', border: '1px solid #1e293b', borderRadius: 10, padding: '8px 12px' }}>
+                                    This looks like a legacy submission. Detailed confidence and validation signals will appear for new submissions.
+                                </div>
+                            ) : null}
+
+                            <div style={{ background: '#020617', borderRadius: 18, border: '1px solid #1e293b', padding: 18 }}>
+                                <div style={{ color: '#cbd5e1', fontWeight: 800, marginBottom: 10 }}>Requirement Coverage</div>
+                                <div style={{ color: '#94a3b8', fontSize: 13, marginBottom: 10 }}>
+                                    {hasCoverageData ? `Matched ${coverage.matchedCount ?? 0} of ${coverage.totalCount ?? 0} requirements.` : 'No structured requirement checklist was available in this report.'}
+                                </div>
+                                {hasCoverageData && (coverage.missing || []).length ? (
+                                    <div style={{ display: 'grid', gap: 6 }}>
+                                        {(coverage.missing || []).slice(0, 6).map((item, idx) => (
+                                            <div key={idx} style={{ color: '#94a3b8', fontSize: 12, padding: '6px 10px', background: '#0a1020', borderRadius: 8, border: '1px solid #1e293b' }}>
+                                                Missing: {typeof item === 'string' ? item : item.text}
+                                            </div>
+                                        ))}
+                                    </div>
+                                ) : !hasCoverageData ? (
+                                    <div style={{ color: '#64748b', fontSize: 13 }}>Requirement coverage tracking starts from newer evaluations.</div>
+                                ) : (
+                                    <div style={{ color: '#34d399', fontSize: 13 }}>All listed requirements appear represented in source.</div>
+                                )}
+                            </div>
+
+                            {smokeTests.length ? (
+                                <div style={{ background: '#020617', borderRadius: 18, border: '1px solid #1e293b', padding: 18 }}>
+                                    <div style={{ color: '#cbd5e1', fontWeight: 800, marginBottom: 10 }}>Smoke-run Checks</div>
+                                    <div style={{ display: 'grid', gap: 8 }}>
+                                        {smokeTests.map((test, idx) => (
+                                            <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 10px', background: '#0a1020', border: '1px solid #1e293b', borderRadius: 8 }}>
+                                                <div style={{ color: '#cbd5e1', fontWeight: 700, fontSize: 12 }}>npm run {test.script}</div>
+                                                <div style={{ color: test.success ? '#34d399' : '#f87171', fontWeight: 800, fontSize: 12 }}>{test.success ? 'Passed' : 'Failed'} • {Math.round((test.duration || 0) / 1000)}s</div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            ) : null}
                         </div>
                     ) : null}
 

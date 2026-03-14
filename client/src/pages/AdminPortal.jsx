@@ -39,7 +39,8 @@ const COLORS = ['#3b82f6', '#8b5cf6', '#06b6d4', '#10b981', '#f59e0b']
 
 
 function AdminPortal() {
-    const { user } = useAuth()
+    const auth = useAuth()
+    const user = auth?.user || null
     const { t } = useI18n()
     const location = useLocation()
     const [title, setTitle] = useState('')
@@ -9622,7 +9623,8 @@ function AdminLoginActivity() {
 const ADMIN_API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:3000'
 
 function AdminCodeReviews() {
-    const { user } = useAuth()
+    const auth = useAuth()
+    const user = auth?.user || null
     const [submissions, setSubmissions] = useState([])
     const [selected, setSelected] = useState(null)
     const [loading, setLoading] = useState(true)
