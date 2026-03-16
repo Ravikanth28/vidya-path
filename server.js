@@ -365,7 +365,7 @@ async function cerebrasChat(messages, options = {}) {
         // If every key got 429 and we have retries left, wait and try again
         if (all429 && globalRetry < MAX_GLOBAL_RETRIES) {
             const delay = RETRY_DELAYS[globalRetry];
-            console.warn(`⚠️ All Cerebras keys returned 429. Waiting ${delay/1000}s before retry ${globalRetry + 1}/${MAX_GLOBAL_RETRIES}...`);
+            console.warn(`⚠️ All Cerebras keys returned 429. Waiting ${delay / 1000}s before retry ${globalRetry + 1}/${MAX_GLOBAL_RETRIES}...`);
             await new Promise(r => setTimeout(r, delay));
         } else if (!all429) {
             break; // non-429 errors won't be fixed by waiting
@@ -9534,16 +9534,16 @@ function generateCRTReportPDF(reportData) {
         const W = 595, M = 36, CW = W - 2 * M;
 
         // Colours
-        const PUR  = '#6d28d9', PURLT = '#ede9fe', DARK = '#1e1b4b';
-        const GRN  = '#059669', GRNLT = '#d1fae5';
-        const RED  = '#dc2626', REDLT = '#fee2e2';
-        const AMB  = '#d97706', AMBLT = '#fef3c7';
+        const PUR = '#6d28d9', PURLT = '#ede9fe', DARK = '#1e1b4b';
+        const GRN = '#059669', GRNLT = '#d1fae5';
+        const RED = '#dc2626', REDLT = '#fee2e2';
+        const AMB = '#d97706', AMBLT = '#fef3c7';
         const GREY = '#6b7280', GREYLT = '#f3f4f6';
 
         const scoreColor = passed ? GRN : RED;
-        const scoreBg    = passed ? GRNLT : REDLT;
+        const scoreBg = passed ? GRNLT : REDLT;
 
-        const sectionLabels = { aptitude:'Aptitude', verbal:'Verbal', logical:'Logical', reasoning:'Reasoning', technical_mcq:'Technical MCQ', coding:'Coding', sql:'SQL', pseudocode:'Pseudocode', gd:'Group Discussion' };
+        const sectionLabels = { aptitude: 'Aptitude', verbal: 'Verbal', logical: 'Logical', reasoning: 'Reasoning', technical_mcq: 'Technical MCQ', coding: 'Coding', sql: 'SQL', pseudocode: 'Pseudocode', gd: 'Group Discussion' };
         const fmtSecs = (v) => {
             const n = Number(v || 0);
             if (!Number.isFinite(n) || n <= 0) return '0m';
@@ -9605,19 +9605,19 @@ function generateCRTReportPDF(reportData) {
         doc.fillColor('white').font('Helvetica-Bold').fontSize(9).text('QUESTION BREAKDOWN', M + 8, y + 4);
         y += 18;
 
-        const totalQ     = sections.reduce((s, sec) => s + (sectionScores[sec]?.total || 0), 0) || answers.length;
+        const totalQ = sections.reduce((s, sec) => s + (sectionScores[sec]?.total || 0), 0) || answers.length;
         const attemptedQ = answers.filter(a => a.student_answer !== null && a.student_answer !== undefined && a.student_answer !== '').length;
-        const correctQ   = answers.filter(a => a.is_correct).length;
-        const wrongQ     = answers.filter(a => !a.is_correct && a.student_answer !== null && a.student_answer !== undefined && a.student_answer !== '').length;
-        const missedQ    = Math.max(0, totalQ - attemptedQ);
+        const correctQ = answers.filter(a => a.is_correct).length;
+        const wrongQ = answers.filter(a => !a.is_correct && a.student_answer !== null && a.student_answer !== undefined && a.student_answer !== '').length;
+        const missedQ = Math.max(0, totalQ - attemptedQ);
 
         const qc = CW / 5;
         [
-            { label: 'Total',     val: totalQ,     col: PUR,  bg: PURLT  },
-            { label: 'Attempted', val: attemptedQ, col: AMB,  bg: AMBLT  },
-            { label: 'Correct',   val: correctQ,   col: GRN,  bg: GRNLT  },
-            { label: 'Wrong',     val: wrongQ,     col: RED,  bg: REDLT  },
-            { label: 'Missed',    val: missedQ,    col: GREY, bg: GREYLT },
+            { label: 'Total', val: totalQ, col: PUR, bg: PURLT },
+            { label: 'Attempted', val: attemptedQ, col: AMB, bg: AMBLT },
+            { label: 'Correct', val: correctQ, col: GRN, bg: GRNLT },
+            { label: 'Wrong', val: wrongQ, col: RED, bg: REDLT },
+            { label: 'Missed', val: missedQ, col: GREY, bg: GREYLT },
         ].forEach((q, i) => {
             const qx = M + i * qc;
             doc.rect(qx, y, qc - 1, 52).fill(q.bg);
@@ -9827,7 +9827,7 @@ app.post('/api/admin/send-whatsapp-pdf', async (req, res) => {
     if (!attemptId || !phone) return res.status(400).json({ error: 'attemptId and phone are required' });
 
     const instanceId = process.env.ULTRAMSG_INSTANCE_ID;
-    const token      = process.env.ULTRAMSG_TOKEN;
+    const token = process.env.ULTRAMSG_TOKEN;
     if (!instanceId || !token) return res.status(503).json({ error: 'WhatsApp API not configured' });
 
     try {
@@ -9880,7 +9880,7 @@ app.post('/api/admin/send-whatsapp-pdf', async (req, res) => {
         // Generate PDF
         const pdfBuffer = await generateCRTReportPDF({ attempt, answers: parsedAnswers });
         const base64PDF = pdfBuffer.toString('base64');
-        const docData   = `data:application/pdf;base64,${base64PDF}`;
+        const docData = `data:application/pdf;base64,${base64PDF}`;
 
         // Normalise phone
         let cleanPhone = String(phone).replace(/\D/g, '');
@@ -10379,7 +10379,7 @@ io.on('connection', (socket) => {
 
     const killRunProc = () => {
         if (socket._runProc) {
-            try { socket._runProc.kill('SIGTERM'); } catch (e) {}
+            try { socket._runProc.kill('SIGTERM'); } catch (e) { }
             socket._runProc = null;
         }
         for (const f of socket._runCleanup) {
@@ -10389,7 +10389,7 @@ io.on('connection', (socket) => {
                     if (st.isDirectory()) fs.rmSync(f, { recursive: true, force: true });
                     else fs.unlinkSync(f);
                 }
-            } catch (e) {}
+            } catch (e) { }
         }
         socket._runCleanup = [];
     };
@@ -10420,7 +10420,7 @@ io.on('connection', (socket) => {
                     try {
                         const [probs] = await pool.query('SELECT sql_schema FROM problems WHERE id = ?', [problemId]);
                         if (probs.length > 0) schemaToUse = probs[0].sql_schema;
-                    } catch (e) {}
+                    } catch (e) { }
                 }
                 if (schemaToUse) codeToExecute = `${schemaToUse}\n\n${code}`;
                 const dbFile = path.join(os.tmpdir(), `run_${runId}.db`);
@@ -10521,7 +10521,7 @@ io.on('connection', (socket) => {
                         // (expected outputs are typically recorded in a TTY that echoes stdin)
                         allOutput += line + '\n';
                     }
-                } catch (e) {}
+                } catch (e) { }
             };
             socket.on('run-stdin', stdinHandler);
 
@@ -10533,7 +10533,7 @@ io.on('connection', (socket) => {
 
             const TIMEOUT_MS = 30000;
             const timeoutHandle = setTimeout(() => {
-                try { proc.kill('SIGTERM'); } catch (e) {}
+                try { proc.kill('SIGTERM'); } catch (e) { }
                 socket.emit('run-output', { text: '\n⏰ Timed out (30s limit)', type: 'stderr' });
                 socket.emit('run-exit', { code: -1, allOutput });
             }, TIMEOUT_MS);
@@ -10563,7 +10563,7 @@ io.on('connection', (socket) => {
                             if (st.isDirectory()) fs.rmSync(f, { recursive: true, force: true });
                             else fs.unlinkSync(f);
                         }
-                    } catch (e) {}
+                    } catch (e) { }
                 }
                 socket._runCleanup = [];
             });
@@ -14220,10 +14220,10 @@ app.get('/api/crt-submissions', authenticate, authorize('admin'), async (req, re
 async function ensureCommTestTables() {
     try {
         // Drop legacy comm_test_attempts table (old schema, holds FK fk_1 that conflicts with VARCHAR id)
-        try { await pool.query('DROP TABLE IF EXISTS comm_test_attempts'); } catch (_) {}
+        try { await pool.query('DROP TABLE IF EXISTS comm_test_attempts'); } catch (_) { }
         // Drop any other stale FK constraints named fk_1 from older schema versions
-        for (const t of ['comm_test_sessions','comm_test_assignments','comm_test_questions','comm_test_submissions']) {
-            try { await pool.query(`ALTER TABLE \`${t}\` DROP FOREIGN KEY fk_1`); } catch (_) {}
+        for (const t of ['comm_test_sessions', 'comm_test_assignments', 'comm_test_questions', 'comm_test_submissions']) {
+            try { await pool.query(`ALTER TABLE \`${t}\` DROP FOREIGN KEY fk_1`); } catch (_) { }
         }
         // Master test definitions (created by admin)
         await pool.query(`
@@ -14306,25 +14306,27 @@ async function ensureCommTestTables() {
             )
         `);
         // Safe column adds (in case old tables exist without test_id / attempt_limit)
-        try { await pool.query('ALTER TABLE comm_test_sessions ADD COLUMN test_id VARCHAR(50) NOT NULL DEFAULT \'\' AFTER id'); } catch (_) {}
-        try { await pool.query('ALTER TABLE comm_tests ADD COLUMN attempt_limit INT DEFAULT NULL AFTER passing_score'); } catch (_) {}
-        try { await pool.query('ALTER TABLE comm_tests ADD COLUMN section_questions JSON NULL AFTER questions_per_module'); } catch (_) {}
-        try { await pool.query("ALTER TABLE comm_tests ADD COLUMN proctoring_mode ENUM('off','basic','strict') DEFAULT 'off' AFTER section_questions"); } catch (_) {}
-        try { await pool.query('ALTER TABLE comm_tests ADD COLUMN section_times JSON NULL AFTER proctoring_mode'); } catch (_) {}
-        try { await pool.query('ALTER TABLE comm_tests ADD COLUMN gd_participants INT DEFAULT 3'); } catch (_) {}
+        try { await pool.query('ALTER TABLE comm_test_sessions ADD COLUMN test_id VARCHAR(50) NOT NULL DEFAULT \'\' AFTER id'); } catch (_) { }
+        try { await pool.query('ALTER TABLE comm_tests ADD COLUMN attempt_limit INT DEFAULT NULL AFTER passing_score'); } catch (_) { }
+        try { await pool.query('ALTER TABLE comm_tests ADD COLUMN section_questions JSON NULL AFTER questions_per_module'); } catch (_) { }
+        try { await pool.query("ALTER TABLE comm_tests ADD COLUMN proctoring_mode ENUM('off','basic','strict') DEFAULT 'off' AFTER section_questions"); } catch (_) { }
+        try { await pool.query('ALTER TABLE comm_tests ADD COLUMN section_times JSON NULL AFTER proctoring_mode'); } catch (_) { }
+        try { await pool.query('ALTER TABLE comm_tests ADD COLUMN gd_participants INT DEFAULT 3'); } catch (_) { }
         // Add hint column for new module types
-        try { await pool.query('ALTER TABLE comm_test_questions ADD COLUMN hint TEXT NULL AFTER category'); } catch (_) {}
+        try { await pool.query('ALTER TABLE comm_test_questions ADD COLUMN hint TEXT NULL AFTER category'); } catch (_) { }
         // Expand ENUMs to include all module types including gd-round
         const newEnum = "'read-speak','listen-repeat','topic-speak','grammar-quiz','vocabulary-test','situational-response','email-writing','interview-qa','gd-round'";
-        try { await pool.query(`ALTER TABLE comm_test_questions MODIFY COLUMN module_type ENUM(${newEnum}) NOT NULL`); } catch (_) {}
-        try { await pool.query(`ALTER TABLE comm_test_submissions MODIFY COLUMN module_type ENUM(${newEnum}) NOT NULL`); } catch (_) {}
+        try { await pool.query(`ALTER TABLE comm_test_questions MODIFY COLUMN module_type ENUM(${newEnum}) NOT NULL`); } catch (_) { }
+        try { await pool.query(`ALTER TABLE comm_test_submissions MODIFY COLUMN module_type ENUM(${newEnum}) NOT NULL`); } catch (_) { }
         // GD turns table
-        try { await pool.query(`CREATE TABLE IF NOT EXISTS comm_gd_turns (
+        try {
+            await pool.query(`CREATE TABLE IF NOT EXISTS comm_gd_turns (
             id VARCHAR(50) PRIMARY KEY, session_id VARCHAR(50) NOT NULL, speaker VARCHAR(50) NOT NULL,
             speaker_label VARCHAR(100), turn_index INT NOT NULL, transcript TEXT,
             duration_sec FLOAT DEFAULT 0, language_score FLOAT, pronunciation_score FLOAT, confidence_score FLOAT,
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP, INDEX idx_gd_session (session_id)
-        )`); } catch (_) {}
+        )`);
+        } catch (_) { }
         console.log('✅ comm_test tables ready');
     } catch (error) {
         console.error('⚠️ Error creating comm_test tables:', error.message);
@@ -14404,6 +14406,10 @@ async function ensureFrontendEvalTables() {
 
     const frontendEvalRouter = require('./routes/frontend_eval_routes');
     app.use('/api', frontendEvalRouter(pool, authenticate, cerebrasChat));
+
+    // Register Batch Management Routes
+    const batchRouter = require('./routes/batch_routes');
+    app.use('/api', batchRouter(pool, authenticate, authorize));
 
     httpServer.listen(PORT, '0.0.0.0', () => {
         console.log(`🚀 Server running on http://127.0.0.1:${PORT}`);
