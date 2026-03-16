@@ -22,6 +22,178 @@ function Toast({ item, onClose }) {
     )
 }
 
+function BatchAssignSection({ students, allStudentIds, selectedDomain, setSelectedDomain, emailDomains, batchStudentIds, loading, save }) {
+    const [savedBatches, setSavedBatches] = useState([])
+    const [selectedBatchIds, setSelectedBatchIds] = useState([])
+    const [batchMode, setBatchMode] = useState('domain') // 'domain' | 'saved'
+
+    useEffect(() => {
+        fetch(`${API}/batches`, { headers: authHeader() })
+            .then(r => r.json())
+            .then(data => setSavedBatches(data.batches || []))
+            .catch(() => { })
+    }, [])
+
+    const selectedBatches = useMemo(() =>
+        savedBatches.filter(b => selectedBatchIds.includes(b.id)),
+        [savedBatches, selectedBatchIds]
+    )
+
+    const savedBatchStudentIds = useMemo(() => {
+        if (selectedBatches.length === 0) return []
+        const uniqueIds = new Set()
+        const availableIds = new Set(allStudentIds)
+
+        selectedBatches.forEach(batch => {
+            (batch.student_ids || []).forEach(id => {
+                const sid = String(id)
+                if (availableIds.has(sid)) {
+                    uniqueIds.add(sid)
+                }
+            })
+        })
+        return Array.from(uniqueIds)
+    }, [selectedBatches, allStudentIds])
+
+    const activeStudentIds = batchMode === 'saved' ? savedBatchStudentIds : batchStudentIds
+
+    const toggleBatch = (id) => {
+        setSelectedBatchIds(prev =>
+            prev.includes(id) ? prev.filter(bid => bid !== id) : [...prev, id]
+        )
+    }
+
+    return (
+        <div style={{ display: 'grid', gap: 12 }}>
+            {/* Toggle between domain and saved batches */}
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6, background: '#12213c', borderRadius: 10, padding: 4, border: '1px solid #1e3457' }}>
+                <button
+                    onClick={() => setBatchMode('domain')}
+                    style={{
+                        border: 'none', borderRadius: 8, padding: '8px 10px', cursor: 'pointer',
+                        fontWeight: 700, fontSize: 12,
+                        background: batchMode === 'domain' ? 'linear-gradient(135deg, #3b82f6, #2563eb)' : 'transparent',
+                        color: batchMode === 'domain' ? '#fff' : '#8197bc',
+                    }}
+                >
+                    By Email Domain
+                </button>
+                <button
+                    onClick={() => setBatchMode('saved')}
+                    style={{
+                        border: 'none', borderRadius: 8, padding: '8px 10px', cursor: 'pointer',
+                        fontWeight: 700, fontSize: 12,
+                        background: batchMode === 'saved' ? 'linear-gradient(135deg, #8b5cf6, #6366f1)' : 'transparent',
+                        color: batchMode === 'saved' ? '#fff' : '#8197bc',
+                    }}
+                >
+                    Saved Batches {savedBatches.length > 0 ? `(${savedBatches.length})` : ''}
+                </button>
+            </div>
+
+            {batchMode === 'domain' ? (
+                <>
+                    <div style={{ color: '#a9bcdd', fontSize: 13 }}>Assign by email domain</div>
+                    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                        <button
+                            onClick={() => setSelectedDomain('all')}
+                            style={{ border: '1px solid #284570', background: selectedDomain === 'all' ? '#3b82f6' : '#14233f', color: '#fff', borderRadius: 999, padding: '8px 12px', cursor: 'pointer', fontWeight: 700 }}
+                        >
+                            All Domains
+                        </button>
+                        {emailDomains.map(domain => (
+                            <button
+                                key={domain}
+                                onClick={() => setSelectedDomain(domain)}
+                                style={{ border: '1px solid #284570', background: selectedDomain === domain ? '#3b82f6' : '#14233f', color: '#fff', borderRadius: 999, padding: '8px 12px', cursor: 'pointer', fontWeight: 700 }}
+                            >
+                                {domain}
+                            </button>
+                        ))}
+                    </div>
+                    <div style={{ background: '#202f4a', borderRadius: 14, border: '1px solid #2a4b77', padding: 14 }}>
+                        <div style={{ color: '#dfe9fb', fontWeight: 800, fontSize: 18 }}>{batchStudentIds.length} students selected</div>
+                        <div style={{ color: '#93a8cd', fontSize: 13, marginTop: 4 }}>
+                            {selectedDomain === 'all' ? 'All domains will be assigned.' : `Only ${selectedDomain} students will be assigned.`}
+                        </div>
+                    </div>
+                </>
+            ) : (
+                <>
+                    <div style={{ color: '#a9bcdd', fontSize: 13 }}>Select saved batches to assign (can select multiple)</div>
+                    {savedBatches.length === 0 ? (
+                        <div style={{ background: '#12213c', border: '1px solid #1e3457', borderRadius: 12, padding: '20px 16px', textAlign: 'center' }}>
+                            <div style={{ color: '#64748b', fontSize: 14 }}>No saved batches found</div>
+                            <div style={{ color: '#475569', fontSize: 12, marginTop: 4 }}>Go to System → Batch Add to create batches from CSV files</div>
+                        </div>
+                    ) : (
+                        <div style={{ maxHeight: 200, overflowY: 'auto', display: 'grid', gap: 8, paddingRight: 4 }}>
+                            {savedBatches.map(batch => {
+                                const isSelected = selectedBatchIds.includes(batch.id)
+                                return (
+                                    <div
+                                        key={batch.id}
+                                        onClick={() => toggleBatch(batch.id)}
+                                        style={{
+                                            display: 'flex', alignItems: 'center', gap: 14,
+                                            padding: '12px 16px', borderRadius: 12, cursor: 'pointer',
+                                            background: isSelected ? '#1b2d4f' : '#12213c',
+                                            border: `1px solid ${isSelected ? '#3b82f6' : '#1e3457'}`,
+                                            transition: 'all 0.2s ease',
+                                        }}
+                                    >
+                                        <div style={{
+                                            width: 40, height: 40, borderRadius: 10,
+                                            background: isSelected ? 'linear-gradient(135deg, #8b5cf6, #6366f1)' : '#1e3457',
+                                            display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                            color: isSelected ? '#fff' : '#64748b',
+                                            fontWeight: 900, fontSize: 16, flexShrink: 0,
+                                            transition: 'all 0.2s ease'
+                                        }}>
+                                            {batch.student_count}
+                                        </div>
+                                        <div style={{ flex: 1 }}>
+                                            <div style={{ color: '#e6eefb', fontWeight: 800, fontSize: 14 }}>{batch.batch_name}</div>
+                                            <div style={{ color: '#91a6cb', fontSize: 11 }}>
+                                                {batch.student_count} students • {batch.source_filename || 'Uploaded File'} {batch.sheet_name ? `(${batch.sheet_name})` : ''}
+                                            </div>
+                                        </div>
+                                        {isSelected && (
+                                            <div style={{ color: '#3b82f6', fontWeight: 800, fontSize: 12, flexShrink: 0 }}>✓ Selected</div>
+                                        )}
+                                    </div>
+                                )
+                            })}
+                        </div>
+                    )}
+                    {selectedBatches.length > 0 && (
+                        <div style={{ background: '#202f4a', borderRadius: 14, border: '1px solid #2a4b77', padding: 14 }}>
+                            <div style={{ color: '#dfe9fb', fontWeight: 800, fontSize: 18 }}>{savedBatchStudentIds.length} unique students will be assigned</div>
+                            <div style={{ color: '#93a8cd', fontSize: 13, marginTop: 4 }}>
+                                From {selectedBatches.length} selected batch{selectedBatches.length > 1 ? 'es' : ''} ({selectedBatches.map(b => b.batch_name).join(', ')})
+                            </div>
+                        </div>
+                    )}
+                </>
+            )}
+
+            <button
+                disabled={loading || !activeStudentIds.length}
+                onClick={() => save(activeStudentIds)}
+                style={{
+                    border: 'none', borderRadius: 12, padding: '12px 14px',
+                    fontWeight: 800, fontSize: 15,
+                    cursor: loading || !activeStudentIds.length ? 'not-allowed' : 'pointer',
+                    color: '#fff',
+                    background: loading || !activeStudentIds.length ? '#31435f' : 'linear-gradient(135deg, #2563eb, #0ea5e9)'
+                }}
+            >
+                {loading ? 'Assigning...' : `Assign ${activeStudentIds.length} Students`}
+            </button>
+        </div>
+    )
+}
+
 function AssignModal({ test, onClose, onSaved }) {
     const [students, setStudents] = useState([])
     const [selected, setSelected] = useState([])
@@ -221,48 +393,16 @@ function AssignModal({ test, onClose, onSaved }) {
                     ) : null}
 
                     {mode === 'batch' ? (
-                        <div style={{ display: 'grid', gap: 12 }}>
-                            <div style={{ color: '#a9bcdd', fontSize: 13 }}>Assign by email domain</div>
-                            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                                <button
-                                    onClick={() => setSelectedDomain('all')}
-                                    style={{ border: '1px solid #284570', background: selectedDomain === 'all' ? '#3b82f6' : '#14233f', color: '#fff', borderRadius: 999, padding: '8px 12px', cursor: 'pointer', fontWeight: 700 }}
-                                >
-                                    All Domains
-                                </button>
-                                {emailDomains.map(domain => (
-                                    <button
-                                        key={domain}
-                                        onClick={() => setSelectedDomain(domain)}
-                                        style={{ border: '1px solid #284570', background: selectedDomain === domain ? '#3b82f6' : '#14233f', color: '#fff', borderRadius: 999, padding: '8px 12px', cursor: 'pointer', fontWeight: 700 }}
-                                    >
-                                        {domain}
-                                    </button>
-                                ))}
-                            </div>
-                            <div style={{ background: '#202f4a', borderRadius: 14, border: '1px solid #2a4b77', padding: 14 }}>
-                                <div style={{ color: '#dfe9fb', fontWeight: 800, fontSize: 18 }}>{batchStudentIds.length} students selected</div>
-                                <div style={{ color: '#93a8cd', fontSize: 13, marginTop: 4 }}>
-                                    {selectedDomain === 'all' ? 'All domains will be assigned.' : `Only ${selectedDomain} students will be assigned.`}
-                                </div>
-                            </div>
-                            <button
-                                disabled={loading || !batchStudentIds.length}
-                                onClick={() => save(batchStudentIds)}
-                                style={{
-                                    border: 'none',
-                                    borderRadius: 12,
-                                    padding: '12px 14px',
-                                    fontWeight: 800,
-                                    fontSize: 15,
-                                    cursor: loading || !batchStudentIds.length ? 'not-allowed' : 'pointer',
-                                    color: '#fff',
-                                    background: loading || !batchStudentIds.length ? '#31435f' : 'linear-gradient(135deg, #2563eb, #0ea5e9)'
-                                }}
-                            >
-                                {loading ? 'Assigning...' : `Assign ${batchStudentIds.length} Students`}
-                            </button>
-                        </div>
+                        <BatchAssignSection
+                            students={students}
+                            allStudentIds={allStudentIds}
+                            selectedDomain={selectedDomain}
+                            setSelectedDomain={setSelectedDomain}
+                            emailDomains={emailDomains}
+                            batchStudentIds={batchStudentIds}
+                            loading={loading}
+                            save={save}
+                        />
                     ) : null}
                 </div>
                 <div style={{ padding: 16, borderTop: '1px solid #193457', display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
@@ -411,12 +551,12 @@ function ReportModal({ submission, onClose }) {
                                         <div style={{ color: '#ddd6fe', fontSize: 12, marginTop: 8 }}>{submission.runtime_status || 'skipped'} runtime check</div>
                                     </div>
                                     <div style={{ background: 'rgba(15, 23, 42, 0.4)', border: '1px solid rgba(255,255,255,0.15)', borderRadius: 16, padding: 18 }}>
-                                            {confidenceScore != null ? (
-                                                <div style={{ marginTop: 10, display: 'inline-flex', alignItems: 'center', gap: 6, background: 'rgba(0,0,0,0.35)', borderRadius: 8, padding: '4px 10px' }}>
-                                                    <span style={{ fontSize: 10, color: '#a5b4fc', fontWeight: 700, textTransform: 'uppercase' }}>Confidence</span>
-                                                    <span style={{ fontSize: 14, fontWeight: 900, color: confidenceScore >= 70 ? '#34d399' : confidenceScore >= 40 ? '#fbbf24' : '#f87171' }}>{confidenceScore}%</span>
-                                                </div>
-                                            ) : null}
+                                        {confidenceScore != null ? (
+                                            <div style={{ marginTop: 10, display: 'inline-flex', alignItems: 'center', gap: 6, background: 'rgba(0,0,0,0.35)', borderRadius: 8, padding: '4px 10px' }}>
+                                                <span style={{ fontSize: 10, color: '#a5b4fc', fontWeight: 700, textTransform: 'uppercase' }}>Confidence</span>
+                                                <span style={{ fontSize: 14, fontWeight: 900, color: confidenceScore >= 70 ? '#34d399' : confidenceScore >= 40 ? '#fbbf24' : '#f87171' }}>{confidenceScore}%</span>
+                                            </div>
+                                        ) : null}
                                         <div style={{ color: '#ede9fe', fontWeight: 800, marginBottom: 8, fontSize: 13, textTransform: 'uppercase' }}>Summary</div>
                                         <div style={{ color: '#e2e8f0', lineHeight: 1.75, fontSize: 14 }}>{report.summary || 'No summary available.'}</div>
                                     </div>
@@ -552,58 +692,58 @@ function ReportModal({ submission, onClose }) {
                     ) : null}
 
                     {activeTab === 'runtime' ? (
-                            <>
-                        <div style={{ display: 'grid', gridTemplateColumns: '1.05fr 1fr', gap: 16 }}>
-                            <div style={{ background: '#020617', borderRadius: 18, border: '1px solid #1e293b', padding: 18 }}>
-                                <div style={{ color: '#cbd5e1', fontWeight: 800, marginBottom: 10 }}>Runtime Summary</div>
-                                <div style={{ color: '#38bdf8', fontWeight: 700, fontSize: 13, marginBottom: 12, background: 'rgba(56, 189, 248, 0.1)', padding: 12, borderRadius: 10, border: '1px solid rgba(56, 189, 248, 0.2)' }}>{runtimeSummary}</div>
-                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-                                    <div style={{ color: '#94a3b8', fontSize: 12, fontWeight: 700 }}>Runtime Output</div>
-                                    <button onClick={copyRuntimeOutput} disabled={!runtimeOutput} style={{ border: '1px solid #334155', background: '#0b1224', color: copied ? '#86efac' : '#cbd5e1', borderRadius: 8, padding: '6px 10px', fontSize: 12, cursor: runtimeOutput ? 'pointer' : 'not-allowed' }}>{copied ? 'Copied' : 'Copy Output'}</button>
+                        <>
+                            <div style={{ display: 'grid', gridTemplateColumns: '1.05fr 1fr', gap: 16 }}>
+                                <div style={{ background: '#020617', borderRadius: 18, border: '1px solid #1e293b', padding: 18 }}>
+                                    <div style={{ color: '#cbd5e1', fontWeight: 800, marginBottom: 10 }}>Runtime Summary</div>
+                                    <div style={{ color: '#38bdf8', fontWeight: 700, fontSize: 13, marginBottom: 12, background: 'rgba(56, 189, 248, 0.1)', padding: 12, borderRadius: 10, border: '1px solid rgba(56, 189, 248, 0.2)' }}>{runtimeSummary}</div>
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                                        <div style={{ color: '#94a3b8', fontSize: 12, fontWeight: 700 }}>Runtime Output</div>
+                                        <button onClick={copyRuntimeOutput} disabled={!runtimeOutput} style={{ border: '1px solid #334155', background: '#0b1224', color: copied ? '#86efac' : '#cbd5e1', borderRadius: 8, padding: '6px 10px', fontSize: 12, cursor: runtimeOutput ? 'pointer' : 'not-allowed' }}>{copied ? 'Copied' : 'Copy Output'}</button>
+                                    </div>
+                                    <pre style={{ background: '#000814', color: '#94a3b8', padding: 12, borderRadius: 10, fontSize: 11, overflow: 'auto', minHeight: 170, maxHeight: 260, border: '1px solid #1e293b' }}>{runtimeOutput || 'No runtime output captured.'}</pre>
                                 </div>
-                                <pre style={{ background: '#000814', color: '#94a3b8', padding: 12, borderRadius: 10, fontSize: 11, overflow: 'auto', minHeight: 170, maxHeight: 260, border: '1px solid #1e293b' }}>{runtimeOutput || 'No runtime output captured.'}</pre>
-                            </div>
 
-                            <div style={{ background: '#020617', borderRadius: 18, border: '1px solid #1e293b', padding: 18 }}>
-                                <div style={{ color: '#cbd5e1', fontWeight: 800, marginBottom: 10 }}>Project Files</div>
-                                <div style={{ background: '#000814', borderRadius: 10, padding: 12, maxHeight: 360, overflow: 'auto', border: '1px solid #1e293b' }}>
-                                    {renderTree(submission.file_tree_json || report.fileTree || [])}
+                                <div style={{ background: '#020617', borderRadius: 18, border: '1px solid #1e293b', padding: 18 }}>
+                                    <div style={{ color: '#cbd5e1', fontWeight: 800, marginBottom: 10 }}>Project Files</div>
+                                    <div style={{ background: '#000814', borderRadius: 10, padding: 12, maxHeight: 360, overflow: 'auto', border: '1px solid #1e293b' }}>
+                                        {renderTree(submission.file_tree_json || report.fileTree || [])}
+                                    </div>
                                 </div>
                             </div>
-                        </div>
-                        {lintData ? (
-                            <div style={{ background: '#020617', borderRadius: 18, border: '1px solid #1e293b', padding: 18 }}>
-                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-                                    <div style={{ color: '#cbd5e1', fontWeight: 800 }}>🔍 Static Lint Analysis</div>
-                                    <div style={{ fontSize: 12, fontWeight: 700, padding: '4px 10px', borderRadius: 8, background: allLintIssues.length === 0 ? 'rgba(52,211,153,0.1)' : 'rgba(251,191,36,0.1)', color: allLintIssues.length === 0 ? '#34d399' : '#fbbf24', border: `1px solid ${allLintIssues.length === 0 ? '#065f46' : '#78350f'}` }}>
-                                        {allLintIssues.length === 0 ? '✅ No issues found' : `${allLintIssues.length} issue${allLintIssues.length !== 1 ? 's' : ''} detected`}
+                            {lintData ? (
+                                <div style={{ background: '#020617', borderRadius: 18, border: '1px solid #1e293b', padding: 18 }}>
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+                                        <div style={{ color: '#cbd5e1', fontWeight: 800 }}>🔍 Static Lint Analysis</div>
+                                        <div style={{ fontSize: 12, fontWeight: 700, padding: '4px 10px', borderRadius: 8, background: allLintIssues.length === 0 ? 'rgba(52,211,153,0.1)' : 'rgba(251,191,36,0.1)', color: allLintIssues.length === 0 ? '#34d399' : '#fbbf24', border: `1px solid ${allLintIssues.length === 0 ? '#065f46' : '#78350f'}` }}>
+                                            {allLintIssues.length === 0 ? '✅ No issues found' : `${allLintIssues.length} issue${allLintIssues.length !== 1 ? 's' : ''} detected`}
+                                        </div>
                                     </div>
+                                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10, marginBottom: allLintIssues.length ? 12 : 0 }}>
+                                        <div style={{ background: '#0c162e', borderRadius: 10, border: '1px solid #1e3a5f', padding: '10px 12px' }}>
+                                            <div style={{ color: '#93c5fd', fontWeight: 700, fontSize: 11, textTransform: 'uppercase' }}>HTML</div>
+                                            <div style={{ color: '#f8fafc', fontWeight: 900, fontSize: 20, marginTop: 4 }}>{(lintData.htmlIssues || []).length}</div>
+                                        </div>
+                                        <div style={{ background: '#0c162e', borderRadius: 10, border: '1px solid #1e3a5f', padding: '10px 12px' }}>
+                                            <div style={{ color: '#fcd34d', fontWeight: 700, fontSize: 11, textTransform: 'uppercase' }}>CSS</div>
+                                            <div style={{ color: '#f8fafc', fontWeight: 900, fontSize: 20, marginTop: 4 }}>{(lintData.cssWarnings || []).length}</div>
+                                        </div>
+                                        <div style={{ background: '#0c162e', borderRadius: 10, border: '1px solid #1e3a5f', padding: '10px 12px' }}>
+                                            <div style={{ color: '#f9a8d4', fontWeight: 700, fontSize: 11, textTransform: 'uppercase' }}>JS</div>
+                                            <div style={{ color: '#f8fafc', fontWeight: 900, fontSize: 20, marginTop: 4 }}>{(lintData.jsWarnings || []).length}</div>
+                                        </div>
+                                    </div>
+                                    {allLintIssues.length > 0 ? (
+                                        <div style={{ display: 'grid', gap: 5, maxHeight: 160, overflowY: 'auto' }}>
+                                            {allLintIssues.map((issue, idx) => (
+                                                <div key={idx} style={{ color: '#94a3b8', fontSize: 12, padding: '6px 10px', background: '#0a1020', borderRadius: 8, border: '1px solid #1e293b' }}>⚠️ {issue}</div>
+                                            ))}
+                                        </div>
+                                    ) : (
+                                        <div style={{ color: '#34d399', fontSize: 13, textAlign: 'center', padding: '8px 0' }}>All analyzed files passed static checks.</div>
+                                    )}
                                 </div>
-                                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10, marginBottom: allLintIssues.length ? 12 : 0 }}>
-                                    <div style={{ background: '#0c162e', borderRadius: 10, border: '1px solid #1e3a5f', padding: '10px 12px' }}>
-                                        <div style={{ color: '#93c5fd', fontWeight: 700, fontSize: 11, textTransform: 'uppercase' }}>HTML</div>
-                                        <div style={{ color: '#f8fafc', fontWeight: 900, fontSize: 20, marginTop: 4 }}>{(lintData.htmlIssues || []).length}</div>
-                                    </div>
-                                    <div style={{ background: '#0c162e', borderRadius: 10, border: '1px solid #1e3a5f', padding: '10px 12px' }}>
-                                        <div style={{ color: '#fcd34d', fontWeight: 700, fontSize: 11, textTransform: 'uppercase' }}>CSS</div>
-                                        <div style={{ color: '#f8fafc', fontWeight: 900, fontSize: 20, marginTop: 4 }}>{(lintData.cssWarnings || []).length}</div>
-                                    </div>
-                                    <div style={{ background: '#0c162e', borderRadius: 10, border: '1px solid #1e3a5f', padding: '10px 12px' }}>
-                                        <div style={{ color: '#f9a8d4', fontWeight: 700, fontSize: 11, textTransform: 'uppercase' }}>JS</div>
-                                        <div style={{ color: '#f8fafc', fontWeight: 900, fontSize: 20, marginTop: 4 }}>{(lintData.jsWarnings || []).length}</div>
-                                    </div>
-                                </div>
-                                {allLintIssues.length > 0 ? (
-                                    <div style={{ display: 'grid', gap: 5, maxHeight: 160, overflowY: 'auto' }}>
-                                        {allLintIssues.map((issue, idx) => (
-                                            <div key={idx} style={{ color: '#94a3b8', fontSize: 12, padding: '6px 10px', background: '#0a1020', borderRadius: 8, border: '1px solid #1e293b' }}>⚠️ {issue}</div>
-                                        ))}
-                                    </div>
-                                ) : (
-                                    <div style={{ color: '#34d399', fontSize: 13, textAlign: 'center', padding: '8px 0' }}>All analyzed files passed static checks.</div>
-                                )}
-                            </div>
-                        ) : null}
+                            ) : null}
                         </>
                     ) : null}
                 </div>
@@ -782,7 +922,7 @@ export default function AdminFrontendEval({ initialTab = 'tests' }) {
                             </div>
                             {editing ? <button onClick={resetForm} style={{ background: 'transparent', border: '1px solid #334155', color: '#94a3b8', cursor: 'pointer', padding: '8px 14px', borderRadius: 10, fontSize: 13, fontWeight: 600 }}>Cancel Edit</button> : null}
                         </div>
-                        
+
                         <div style={{ display: 'grid', gap: 16 }}>
                             {/* Title Field */}
                             <div style={{ display: 'grid', gap: 8 }}>

@@ -27,6 +27,7 @@ import { CompanyTestManager } from '../components/CompanyFeatures'
 import CompanyRoundManager from '../components/CompanyRoundManager'
 import AdminCommTest from '../components/AdminCommTest'
 import AdminFrontendEval from '../components/AdminFrontendEval'
+import BatchManager from '../components/BatchManager'
 import { useAuth } from '../App'
 import { useI18n } from '../services/i18n.jsx'
 import axios from 'axios'
@@ -150,6 +151,10 @@ function AdminPortal() {
                 setTitle('Frontend Submissions')
                 setSubtitle('Review uploaded frontend projects and AI reports')
                 break
+            case 'batch-add':
+                setTitle('Batch Manager')
+                setSubtitle('Create and manage student batches from CSV uploads')
+                break
             default:
                 setTitle(t('dashboard'))
                 setSubtitle(t('system_administration'))
@@ -216,6 +221,7 @@ function AdminPortal() {
                 { path: '/admin/operations', label: t('admin_operations'), icon: <Settings size={20} /> },
                 { path: '/admin/user-management', label: 'User Management', icon: <Shield size={20} /> },
                 { path: '/admin/login-activity', label: 'Login Activity', icon: <ClipboardList size={20} /> },
+                { path: '/admin/batch-add', label: 'Batch Add', icon: <Database size={20} /> },
                 { path: '/admin/certificates', label: 'Issue Certificates', icon: <Award size={20} /> },
                 { path: '/admin/webhooks', label: 'Webhook Manager', icon: <Zap size={20} /> },
                 { path: '/admin/reports', label: 'Export Reports', icon: <Download size={20} /> }
@@ -257,6 +263,7 @@ function AdminPortal() {
                 <Route path="/comm-test" element={<AdminCommTest />} />
                 <Route path="/frontend-evals" element={<AdminFrontendEval initialTab="tests" />} />
                 <Route path="/frontend-submissions" element={<AdminFrontendEval initialTab="submissions" />} />
+                <Route path="/batch-add" element={<BatchManager />} />
             </Routes>
         </DashboardLayout>
     )
@@ -1676,7 +1683,7 @@ function AllSubmissions() {
             else if (sortField === 'studentName') { aVal = (a.studentName || '').toLowerCase(); bVal = (b.studentName || '').toLowerCase() }
             else if (sortField === 'status') { aVal = (a.status || ''); bVal = (b.status || '') }
             else { aVal = a[sortField]; bVal = b[sortField] }
-            
+
             // Special case for 'high_score' explicit sort dropdown filter mapping
             if (sortField === 'high_score') {
                 aVal = Number(a.score) || 0;
@@ -1804,7 +1811,7 @@ function AllSubmissions() {
                     }}>
                         <span style={{ fontSize: '1rem' }}>📲</span> Send Report
                     </button>
-                    
+
                     {/* Additional Reset Button explicitly for CRT/Round Tests ONLY */}
                     {activeTab === 'crt' && (
                         <button onClick={handleResetCRTSubmissions} disabled={resetting || filteredSubmissions.length === 0} style={{
@@ -1845,9 +1852,9 @@ function AllSubmissions() {
                         <option value="">All Attempts</option>
                         {uniqueAttempts.map(a => <option key={a} value={String(a)}>Attempt #{a}</option>)}
                     </select>
-                    
+
                     <div style={{ width: '1px', height: '24px', background: 'var(--border-color)', margin: '0 4px' }} />
-                    
+
                     <select value={sortField === 'score' && sortDir === 'desc' ? 'high_score' : sortField} onChange={e => {
                         if (e.target.value === 'high_score') {
                             setSortField('score');
@@ -2200,13 +2207,13 @@ function AllSubmissions() {
                     const results = []
                     list.forEach((item, i) => {
                         const { name, email, phone: rawPhone } = item
-                        if (!rawPhone) { results.push({ name: name || email || `#${i+1}`, email, phone: '', msg: '', status: 'Skipped – no phone' }); return }
+                        if (!rawPhone) { results.push({ name: name || email || `#${i + 1}`, email, phone: '', msg: '', status: 'Skipped – no phone' }); return }
                         const phone = String(rawPhone).replace(/\D/g, '')
                         const sub = findSub(email, waTestTitle)
                         const msgObj = sub ? { ...sub, studentName: name || sub.studentName } : null
                         const msg = msgObj ? buildMessage(msgObj) : `🎓 *AI Mentor Hub – Test Report*\n\n👤 *Student:* ${name || email}\n📋 *Test:* ${waTestTitle}\n\n⚠️ Report data not available. Please log into the portal.`
                         const attemptId = sub ? (sub.attemptId || sub.id) : null
-                        results.push({ name: name || email || `#${i+1}`, email, phone, msg, attemptId, status: 'Ready' })
+                        results.push({ name: name || email || `#${i + 1}`, email, phone, msg, attemptId, status: 'Ready' })
                     })
                     setWAResults(results)
                 }
@@ -2269,7 +2276,7 @@ function AllSubmissions() {
 
                             {/* Step indicator */}
                             <div style={{ display: 'flex', padding: '16px 24px 0', gap: '6px' }}>
-                                {[1,2,3,4].map(n => (
+                                {[1, 2, 3, 4].map(n => (
                                     <div key={n} style={{ flex: 1, height: '4px', borderRadius: '4px', background: waStep >= n ? '#25d366' : '#374151', transition: 'background 0.3s' }}></div>
                                 ))}
                             </div>
@@ -2495,7 +2502,7 @@ function AdminCRTReportModal({ submission, reportData, loading, onClose }) {
         answersBySection[a.section].push(a)
     })
 
-    const fmtDur = secs => { 
+    const fmtDur = secs => {
         if (secs === undefined || secs === null) return '—';
         if (secs <= 0) return '0s';
         const h = Math.floor(secs / 3600);
@@ -2514,7 +2521,7 @@ function AdminCRTReportModal({ submission, reportData, loading, onClose }) {
     return (
         <div className="modal-overlay" onClick={onClose} style={{ zIndex: 1000, display: 'flex', alignItems: 'flex-start', justifyContent: 'center', background: 'rgba(0,0,0,0.7)', padding: '20px 16px', overflowY: 'auto' }}>
             <div className="modal-content p-0" onClick={e => e.stopPropagation()} style={{ width: '100%', maxWidth: '920px', background: '#111827', borderRadius: '16px', boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.7)', display: 'flex', flexDirection: 'column', margin: 'auto' }}>
-                
+
                 {/* Header (Solid Orange) */}
                 <div style={{ background: '#1f2937', color: 'white', padding: '16px 24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0, borderBottom: '2px solid #7c3aed' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
@@ -2526,7 +2533,7 @@ function AdminCRTReportModal({ submission, reportData, loading, onClose }) {
                         <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                             {submission?.studentName || 'Student'} | {attempt?.company_name || 'Round Test'} | ID: {attempt?.student_id || submission?.studentId}
                         </span>
-                        <button onClick={onClose} style={{ background: 'transparent', border: 'none', color: 'white', cursor: 'pointer', marginLeft: '8px', padding: 0, opacity: 0.8, flexShrink: 0 }} onMouseOver={e=>e.currentTarget.style.opacity=1} onMouseOut={e=>e.currentTarget.style.opacity=0.8}>
+                        <button onClick={onClose} style={{ background: 'transparent', border: 'none', color: 'white', cursor: 'pointer', marginLeft: '8px', padding: 0, opacity: 0.8, flexShrink: 0 }} onMouseOver={e => e.currentTarget.style.opacity = 1} onMouseOut={e => e.currentTarget.style.opacity = 0.8}>
                             <X size={24} />
                         </button>
                     </div>
@@ -2684,81 +2691,81 @@ function AdminCRTReportModal({ submission, reportData, loading, onClose }) {
                                 const grade = pct >= 90 ? 'A+' : pct >= 80 ? 'A' : pct >= 70 ? 'B+' : pct >= 60 ? 'B' : 'C';
 
                                 return (
-                                <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: '20px', alignItems: 'start' }}>
-                                    {/* OVERALL PERFORMANCE */}
-                                    <div style={{ background: '#1e293b', borderRadius: '16px', border: '1px solid #374151', padding: '24px', boxShadow: '0 4px 12px rgba(0,0,0,0.15)' }}>
-                                        <h3 style={{ margin: '0 0 20px', fontSize: '1.05rem', fontWeight: 800, color: '#a855f7', textTransform: 'uppercase', display: 'flex', alignItems: 'center', gap: 10 }}><BarChart2 size={18} color="#a855f7" /> Overall Performance</h3>
-                                        <div style={{ display: 'flex', gap: '20px', alignItems: 'center', marginBottom: '24px' }}>
-                                            <div style={{ background: 'linear-gradient(135deg, #374151, #1f2937)', borderRadius: '16px', padding: '24px 20px', flex: 1, border: '1px solid #4b5563' }}>
-                                                <div style={{ fontSize: '3.6rem', fontWeight: 900, color: '#a855f7', lineHeight: 1 }}>{pct}%</div>
-                                                <div style={{ fontSize: '1.1rem', fontWeight: 800, color: '#a855f7', marginTop: '8px' }}>Grade: {grade}</div>
-                                                <div style={{ fontSize: '0.85rem', color: '#d1d5db', fontWeight: 600, marginTop: 4 }}>{totalCorrect} of {totalQs} correct</div>
-                                            </div>
-                                            <div style={{ width: '130px', height: '130px', position: 'relative', flexShrink: 0 }}>
-                                                <svg viewBox="0 0 36 36" style={{ width: '100%', height: '100%', transform: 'rotate(-90deg)' }}>
-                                                    <circle cx="18" cy="18" r="15.9" fill="none" stroke="#374151" strokeWidth="3.5" />
-                                                    <circle cx="18" cy="18" r="15.9" fill="none" stroke="#7c3aed" strokeWidth="3.5" strokeDasharray={`${pct}, 100`} strokeLinecap="round" style={{ transition: 'stroke-dasharray 1.2s ease' }} />
-                                                </svg>
-                                                <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column' }}>
-                                                    <div style={{ fontSize: '1.6rem', fontWeight: 900, color: '#7c3aed' }}>{totalCorrect}</div>
-                                                    <div style={{ fontSize: '0.6rem', fontWeight: 700, color: '#9ca3af', textTransform: 'uppercase' }}>Correct</div>
-                                                </div>
-                                            </div>
-                                        </div>
-
-                                        <h4 style={{ margin: '0 0 14px', fontSize: '0.95rem', fontWeight: 800, color: '#a855f7' }}>Performance Breakdown</h4>
-                                        <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                                            {[
-                                                { label: 'Proficient (≥80%)', color: '#10b981', count: sections.filter(s => (sectionScores[s]?.score||0) >= 80).length },
-                                                { label: 'Above Avg (60-79%)', color: '#a855f7', count: sections.filter(s => { const sc = sectionScores[s]?.score||0; return sc >= 60 && sc < 80 }).length },
-                                                { label: 'Needs Work (<60%)', color: '#ef4444', count: sections.filter(s => (sectionScores[s]?.score||0) < 60).length },
-                                            ].map((item, i) => (
-                                                <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px', borderRadius: 10, background: '#374151' }}>
-                                                    <div style={{ background: item.color, borderRadius: '50%', width: 12, height: 12, flexShrink: 0 }}></div>
-                                                    <span style={{ flex: 1, fontWeight: 700, fontSize: '0.85rem', color: '#e5e7eb' }}>{item.label}</span>
-                                                    <span style={{ fontWeight: 800, fontSize: '0.9rem', color: item.color }}>{item.count}/{sections.length}</span>
-                                                </div>
-                                            ))}
-                                        </div>
-                                    </div>
-
-                                    {/* RIGHT COL */}
-                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                                    <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: '20px', alignItems: 'start' }}>
+                                        {/* OVERALL PERFORMANCE */}
                                         <div style={{ background: '#1e293b', borderRadius: '16px', border: '1px solid #374151', padding: '24px', boxShadow: '0 4px 12px rgba(0,0,0,0.15)' }}>
-                                            <h3 style={{ margin: '0 0 20px', fontSize: '1.05rem', fontWeight: 800, color: '#a855f7', textTransform: 'uppercase', display: 'flex', alignItems: 'center', gap: 10 }}><Layers size={18} color="#a855f7" /> Section Scores</h3>
-                                            <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-                                                {sections.map(sec => {
-                                                    const def = SECTION_DEFS[sec]; const ss = sectionScores[sec] || {}; const secPct = Math.round(ss.score || 0);
-                                                    const barColor = secPct >= 80 ? '#10b981' : secPct >= 60 ? '#a855f7' : '#ef4444';
-                                                    return (
-                                                        <div key={sec} onClick={() => { setActiveReportTab('section'); setSelectedSection(sec); }} style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer', padding: '4px 0' }}>
-                                                            <span style={{ width: 26, fontSize: '1rem', textAlign: 'center', flexShrink: 0 }}>{def?.icon || '📊'}</span>
-                                                            <span style={{ width: 85, fontSize: '0.8rem', fontWeight: 700, color: '#d1d5db', flexShrink: 0 }}>{def?.label || sec}</span>
-                                                            <div style={{ flex: 1, height: 18, background: '#374151', borderRadius: 9, overflow: 'hidden' }}>
-                                                                <div style={{ height: '100%', width: `${secPct}%`, background: `linear-gradient(90deg, ${barColor}, ${barColor}bb)`, borderRadius: 9, transition: 'width 1s ease', display: 'flex', alignItems: 'center', justifyContent: 'flex-end', paddingRight: 8, minWidth: secPct > 12 ? 'auto' : 0 }}>
-                                                                    {secPct > 12 && <span style={{ fontSize: '0.62rem', fontWeight: 800, color: 'white' }}>{secPct}%</span>}
-                                                                </div>
-                                                            </div>
-                                                            {secPct <= 12 && <span style={{ fontSize: '0.75rem', fontWeight: 800, color: barColor }}>{secPct}%</span>}
-                                                            <span style={{ fontSize: '0.7rem', fontWeight: 600, color: '#9ca3af', flexShrink: 0, width: 40, textAlign: 'right' }}>{ss.correct||0}/{ss.total||0}</span>
-                                                        </div>
-                                                    )
-                                                })}
+                                            <h3 style={{ margin: '0 0 20px', fontSize: '1.05rem', fontWeight: 800, color: '#a855f7', textTransform: 'uppercase', display: 'flex', alignItems: 'center', gap: 10 }}><BarChart2 size={18} color="#a855f7" /> Overall Performance</h3>
+                                            <div style={{ display: 'flex', gap: '20px', alignItems: 'center', marginBottom: '24px' }}>
+                                                <div style={{ background: 'linear-gradient(135deg, #374151, #1f2937)', borderRadius: '16px', padding: '24px 20px', flex: 1, border: '1px solid #4b5563' }}>
+                                                    <div style={{ fontSize: '3.6rem', fontWeight: 900, color: '#a855f7', lineHeight: 1 }}>{pct}%</div>
+                                                    <div style={{ fontSize: '1.1rem', fontWeight: 800, color: '#a855f7', marginTop: '8px' }}>Grade: {grade}</div>
+                                                    <div style={{ fontSize: '0.85rem', color: '#d1d5db', fontWeight: 600, marginTop: 4 }}>{totalCorrect} of {totalQs} correct</div>
+                                                </div>
+                                                <div style={{ width: '130px', height: '130px', position: 'relative', flexShrink: 0 }}>
+                                                    <svg viewBox="0 0 36 36" style={{ width: '100%', height: '100%', transform: 'rotate(-90deg)' }}>
+                                                        <circle cx="18" cy="18" r="15.9" fill="none" stroke="#374151" strokeWidth="3.5" />
+                                                        <circle cx="18" cy="18" r="15.9" fill="none" stroke="#7c3aed" strokeWidth="3.5" strokeDasharray={`${pct}, 100`} strokeLinecap="round" style={{ transition: 'stroke-dasharray 1.2s ease' }} />
+                                                    </svg>
+                                                    <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column' }}>
+                                                        <div style={{ fontSize: '1.6rem', fontWeight: 900, color: '#7c3aed' }}>{totalCorrect}</div>
+                                                        <div style={{ fontSize: '0.6rem', fontWeight: 700, color: '#9ca3af', textTransform: 'uppercase' }}>Correct</div>
+                                                    </div>
+                                                </div>
+                                            </div>
+
+                                            <h4 style={{ margin: '0 0 14px', fontSize: '0.95rem', fontWeight: 800, color: '#a855f7' }}>Performance Breakdown</h4>
+                                            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                                                {[
+                                                    { label: 'Proficient (≥80%)', color: '#10b981', count: sections.filter(s => (sectionScores[s]?.score || 0) >= 80).length },
+                                                    { label: 'Above Avg (60-79%)', color: '#a855f7', count: sections.filter(s => { const sc = sectionScores[s]?.score || 0; return sc >= 60 && sc < 80 }).length },
+                                                    { label: 'Needs Work (<60%)', color: '#ef4444', count: sections.filter(s => (sectionScores[s]?.score || 0) < 60).length },
+                                                ].map((item, i) => (
+                                                    <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px', borderRadius: 10, background: '#374151' }}>
+                                                        <div style={{ background: item.color, borderRadius: '50%', width: 12, height: 12, flexShrink: 0 }}></div>
+                                                        <span style={{ flex: 1, fontWeight: 700, fontSize: '0.85rem', color: '#e5e7eb' }}>{item.label}</span>
+                                                        <span style={{ fontWeight: 800, fontSize: '0.9rem', color: item.color }}>{item.count}/{sections.length}</span>
+                                                    </div>
+                                                ))}
                                             </div>
                                         </div>
 
-                                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
-                                            <div style={{ background: '#1e293b', borderRadius: '14px', border: '1px solid #374151', padding: '18px', textAlign: 'center', color: 'white' }}>
-                                                <div style={{ fontSize: '2rem', fontWeight: 900, color: '#a855f7' }}>{sections.length}</div>
-                                                <div style={{ fontSize: '0.75rem', fontWeight: 700, color: '#9ca3af', textTransform: 'uppercase' }}>Sections</div>
+                                        {/* RIGHT COL */}
+                                        <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                                            <div style={{ background: '#1e293b', borderRadius: '16px', border: '1px solid #374151', padding: '24px', boxShadow: '0 4px 12px rgba(0,0,0,0.15)' }}>
+                                                <h3 style={{ margin: '0 0 20px', fontSize: '1.05rem', fontWeight: 800, color: '#a855f7', textTransform: 'uppercase', display: 'flex', alignItems: 'center', gap: 10 }}><Layers size={18} color="#a855f7" /> Section Scores</h3>
+                                                <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                                                    {sections.map(sec => {
+                                                        const def = SECTION_DEFS[sec]; const ss = sectionScores[sec] || {}; const secPct = Math.round(ss.score || 0);
+                                                        const barColor = secPct >= 80 ? '#10b981' : secPct >= 60 ? '#a855f7' : '#ef4444';
+                                                        return (
+                                                            <div key={sec} onClick={() => { setActiveReportTab('section'); setSelectedSection(sec); }} style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer', padding: '4px 0' }}>
+                                                                <span style={{ width: 26, fontSize: '1rem', textAlign: 'center', flexShrink: 0 }}>{def?.icon || '📊'}</span>
+                                                                <span style={{ width: 85, fontSize: '0.8rem', fontWeight: 700, color: '#d1d5db', flexShrink: 0 }}>{def?.label || sec}</span>
+                                                                <div style={{ flex: 1, height: 18, background: '#374151', borderRadius: 9, overflow: 'hidden' }}>
+                                                                    <div style={{ height: '100%', width: `${secPct}%`, background: `linear-gradient(90deg, ${barColor}, ${barColor}bb)`, borderRadius: 9, transition: 'width 1s ease', display: 'flex', alignItems: 'center', justifyContent: 'flex-end', paddingRight: 8, minWidth: secPct > 12 ? 'auto' : 0 }}>
+                                                                        {secPct > 12 && <span style={{ fontSize: '0.62rem', fontWeight: 800, color: 'white' }}>{secPct}%</span>}
+                                                                    </div>
+                                                                </div>
+                                                                {secPct <= 12 && <span style={{ fontSize: '0.75rem', fontWeight: 800, color: barColor }}>{secPct}%</span>}
+                                                                <span style={{ fontSize: '0.7rem', fontWeight: 600, color: '#9ca3af', flexShrink: 0, width: 40, textAlign: 'right' }}>{ss.correct || 0}/{ss.total || 0}</span>
+                                                            </div>
+                                                        )
+                                                    })}
+                                                </div>
                                             </div>
-                                            <div style={{ background: '#1e293b', borderRadius: '14px', border: '1px solid #374151', padding: '18px', textAlign: 'center', color: 'white' }}>
-                                                <div style={{ fontSize: '1.5rem', fontWeight: 900 }}>{passed ? '✓ PASS' : '✗ FAIL'}</div>
-                                                <div style={{ fontSize: '0.75rem', fontWeight: 700, color: '#9ca3af', textTransform: 'uppercase' }}>Cutoff: {passPercentage}%</div>
+
+                                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                                                <div style={{ background: '#1e293b', borderRadius: '14px', border: '1px solid #374151', padding: '18px', textAlign: 'center', color: 'white' }}>
+                                                    <div style={{ fontSize: '2rem', fontWeight: 900, color: '#a855f7' }}>{sections.length}</div>
+                                                    <div style={{ fontSize: '0.75rem', fontWeight: 700, color: '#9ca3af', textTransform: 'uppercase' }}>Sections</div>
+                                                </div>
+                                                <div style={{ background: '#1e293b', borderRadius: '14px', border: '1px solid #374151', padding: '18px', textAlign: 'center', color: 'white' }}>
+                                                    <div style={{ fontSize: '1.5rem', fontWeight: 900 }}>{passed ? '✓ PASS' : '✗ FAIL'}</div>
+                                                    <div style={{ fontSize: '0.75rem', fontWeight: 700, color: '#9ca3af', textTransform: 'uppercase' }}>Cutoff: {passPercentage}%</div>
+                                                </div>
                                             </div>
                                         </div>
                                     </div>
-                                </div>
                                 )
                             })()}
 
@@ -2768,7 +2775,7 @@ function AdminCRTReportModal({ submission, reportData, loading, onClose }) {
                                     <h3 style={{ margin: '0 0 20px', fontSize: '1.05rem', fontWeight: 800, color: '#a855f7', textTransform: 'uppercase', display: 'flex', alignItems: 'center', gap: '10px' }}>
                                         <Layers size={18} color="#a855f7" /> Choose a Section to Review
                                     </h3>
-                                    
+
                                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: '16px', marginBottom: '24px' }}>
                                         {sections.map(sec => {
                                             const def = SECTION_DEFS[sec]
@@ -2813,86 +2820,86 @@ function AdminCRTReportModal({ submission, reportData, loading, onClose }) {
                                                 </h4>
                                                 <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
                                                     {secAnswers.map((ans, idx) => {
-                                                        const isCode = ans.question_type === 'code' || ['coding','debug','pseudocode'].includes(ans.section);
-                                                        const isSql  = ans.question_type === 'sql'  || ans.section === 'sql';
+                                                        const isCode = ans.question_type === 'code' || ['coding', 'debug', 'pseudocode'].includes(ans.section);
+                                                        const isSql = ans.question_type === 'sql' || ans.section === 'sql';
                                                         const submittedCode = ans.student_answer || '';
                                                         const execResult = ans.execution_result;
                                                         const testCases = Array.isArray(ans.test_cases) ? ans.test_cases : [];
                                                         return (
-                                                        <div key={ans.id || idx} style={{ padding: '16px 20px', background: ans.is_correct ? 'rgba(16,185,129,0.05)' : 'rgba(239,68,68,0.05)', border: `1px solid ${ans.is_correct ? 'rgba(16,185,129,0.4)' : 'rgba(239,68,68,0.4)'}`, borderRadius: '12px', boxShadow: '0 1px 3px rgba(0,0,0,0.2)' }}>
-                                                            <div style={{ display: 'flex', alignItems: 'flex-start', gap: '12px', marginBottom: '8px' }}>
-                                                                <span style={{ fontSize: '1.1rem', flexShrink: 0, marginTop: '2px' }}>{ans.is_correct ? '✅' : '❌'}</span>
-                                                                <div style={{ flex: 1 }}>
-                                                                    <div style={{ fontSize: '0.95rem', fontWeight: 700, color: '#f3f4f6', lineHeight: 1.5 }}>Q{idx + 1}: {ans.question}</div>
+                                                            <div key={ans.id || idx} style={{ padding: '16px 20px', background: ans.is_correct ? 'rgba(16,185,129,0.05)' : 'rgba(239,68,68,0.05)', border: `1px solid ${ans.is_correct ? 'rgba(16,185,129,0.4)' : 'rgba(239,68,68,0.4)'}`, borderRadius: '12px', boxShadow: '0 1px 3px rgba(0,0,0,0.2)' }}>
+                                                                <div style={{ display: 'flex', alignItems: 'flex-start', gap: '12px', marginBottom: '8px' }}>
+                                                                    <span style={{ fontSize: '1.1rem', flexShrink: 0, marginTop: '2px' }}>{ans.is_correct ? '✅' : '❌'}</span>
+                                                                    <div style={{ flex: 1 }}>
+                                                                        <div style={{ fontSize: '0.95rem', fontWeight: 700, color: '#f3f4f6', lineHeight: 1.5 }}>Q{idx + 1}: {ans.question}</div>
+                                                                    </div>
+                                                                    <span style={{ fontSize: '0.85rem', padding: '4px 12px', borderRadius: '20px', fontWeight: 800, flexShrink: 0, background: ans.is_correct ? 'rgba(16,185,129,0.15)' : 'rgba(239,68,68,0.15)', color: ans.is_correct ? '#34d399' : '#f87171' }}>{Math.round(ans.score || 0)}% Score</span>
                                                                 </div>
-                                                                <span style={{ fontSize: '0.85rem', padding: '4px 12px', borderRadius: '20px', fontWeight: 800, flexShrink: 0, background: ans.is_correct ? 'rgba(16,185,129,0.15)' : 'rgba(239,68,68,0.15)', color: ans.is_correct ? '#34d399' : '#f87171' }}>{Math.round(ans.score || 0)}% Score</span>
+
+                                                                {/* MCQ answer display */}
+                                                                {ans.question_type === 'mcq' && (
+                                                                    <div style={{ marginLeft: '36px', fontSize: '0.9rem', display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '12px' }}>
+                                                                        <div style={{ color: ans.is_correct ? '#34d399' : '#f87171', background: ans.is_correct ? 'rgba(16,185,129,0.1)' : 'rgba(239,68,68,0.1)', padding: '10px 14px', borderRadius: '8px', fontWeight: 600 }}>
+                                                                            Student answer: <span style={{ fontWeight: 800, color: '#e5e7eb' }}>{typeof ans.student_answer === 'object' ? JSON.stringify(ans.student_answer) : (ans.student_answer || 'Not answered')}</span>
+                                                                        </div>
+                                                                        {!ans.is_correct && (
+                                                                            <div style={{ color: '#34d399', background: 'rgba(16,185,129,0.1)', padding: '10px 14px', borderRadius: '8px', fontWeight: 600 }}>
+                                                                                Correct answer: <span style={{ fontWeight: 800, color: '#e5e7eb' }}>{typeof ans.correct_answer === 'object' ? JSON.stringify(ans.correct_answer) : ans.correct_answer}</span>
+                                                                            </div>
+                                                                        )}
+                                                                    </div>
+                                                                )}
+
+                                                                {/* Code submission display */}
+                                                                {(isCode || isSql) && (
+                                                                    <div style={{ marginLeft: '36px', marginTop: '14px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                                                                        <div style={{ fontSize: '0.8rem', fontWeight: 700, color: isSql ? '#14b8a6' : '#6366f1', textTransform: 'uppercase', letterSpacing: '0.5px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                                                            {isSql ? '🗄️' : '⌨️'} Student Submission
+                                                                        </div>
+                                                                        <pre style={{ margin: 0, padding: '14px 16px', background: '#0d1117', border: `1px solid ${isSql ? 'rgba(20,184,166,0.3)' : 'rgba(99,102,241,0.3)'}`, borderRadius: '10px', fontSize: '0.78rem', color: '#e2e8f0', fontFamily: 'ui-monospace, "Cascadia Code", Consolas, monospace', lineHeight: 1.6, overflowX: 'auto', whiteSpace: 'pre-wrap', wordBreak: 'break-word', maxHeight: '260px', overflowY: 'auto' }}>
+                                                                            {submittedCode.trim() || <span style={{ color: '#6b7280', fontStyle: 'italic' }}>No code submitted</span>}
+                                                                        </pre>
+
+                                                                        {/* Execution / test results */}
+                                                                        {execResult && (
+                                                                            <div style={{ background: '#0f172a', border: '1px solid #334155', borderRadius: '10px', padding: '12px 14px' }}>
+                                                                                <div style={{ fontSize: '0.78rem', fontWeight: 700, color: '#94a3b8', marginBottom: '8px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Execution Result</div>
+                                                                                {typeof execResult === 'object' && execResult.test_results ? (
+                                                                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                                                                                        {execResult.test_results.slice(0, 6).map((tc, ti) => (
+                                                                                            <div key={ti} style={{ display: 'flex', alignItems: 'flex-start', gap: '8px', padding: '6px 10px', background: tc.passed ? 'rgba(16,185,129,0.07)' : 'rgba(239,68,68,0.07)', borderRadius: '8px', border: `1px solid ${tc.passed ? 'rgba(16,185,129,0.2)' : 'rgba(239,68,68,0.2)'}`, fontSize: '0.75rem' }}>
+                                                                                                <span style={{ flexShrink: 0 }}>{tc.passed ? '✅' : '❌'}</span>
+                                                                                                <span style={{ color: '#94a3b8' }}>Test {ti + 1}:</span>
+                                                                                                {tc.input !== undefined && <span style={{ color: '#64748b' }}>in: <code style={{ color: '#67e8f9' }}>{String(tc.input).slice(0, 40)}</code></span>}
+                                                                                                <span style={{ color: '#64748b' }}>exp: <code style={{ color: '#4ade80' }}>{String(tc.expected || tc.expected_output || '').slice(0, 40)}</code></span>
+                                                                                                {!tc.passed && <span style={{ color: '#64748b' }}>got: <code style={{ color: '#f87171' }}>{String(tc.actual || tc.output || '').slice(0, 40)}</code></span>}
+                                                                                            </div>
+                                                                                        ))}
+                                                                                        {execResult.test_results.length > 6 && <div style={{ fontSize: '0.72rem', color: '#6b7280', textAlign: 'center' }}>+{execResult.test_results.length - 6} more test cases</div>}
+                                                                                    </div>
+                                                                                ) : (
+                                                                                    <pre style={{ margin: 0, fontSize: '0.75rem', color: '#94a3b8', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{typeof execResult === 'string' ? execResult : JSON.stringify(execResult, null, 2)}</pre>
+                                                                                )}
+                                                                            </div>
+                                                                        )}
+
+                                                                        {/* Expected output for code */}
+                                                                        {isCode && ans.expected_output && !ans.is_correct && (
+                                                                            <div style={{ background: 'rgba(16,185,129,0.05)', border: '1px solid rgba(16,185,129,0.25)', borderRadius: '10px', padding: '10px 14px' }}>
+                                                                                <div style={{ fontSize: '0.75rem', fontWeight: 700, color: '#34d399', marginBottom: '6px' }}>Expected Output</div>
+                                                                                <pre style={{ margin: 0, fontSize: '0.78rem', color: '#a7f3d0', fontFamily: 'ui-monospace,monospace', whiteSpace: 'pre-wrap' }}>{ans.expected_output}</pre>
+                                                                            </div>
+                                                                        )}
+
+                                                                        {/* SQL schema hint */}
+                                                                        {isSql && ans.sql_schema && (
+                                                                            <details style={{ background: 'rgba(20,184,166,0.05)', border: '1px solid rgba(20,184,166,0.2)', borderRadius: '10px', padding: '10px 14px', cursor: 'pointer' }}>
+                                                                                <summary style={{ fontSize: '0.75rem', fontWeight: 700, color: '#5eead4', userSelect: 'none' }}>🗄️ SQL Schema (reference)</summary>
+                                                                                <pre style={{ margin: '8px 0 0', fontSize: '0.75rem', color: '#94a3b8', fontFamily: 'ui-monospace,monospace', whiteSpace: 'pre-wrap' }}>{ans.sql_schema}</pre>
+                                                                            </details>
+                                                                        )}
+                                                                    </div>
+                                                                )}
                                                             </div>
-
-                                                            {/* MCQ answer display */}
-                                                            {ans.question_type === 'mcq' && (
-                                                                <div style={{ marginLeft: '36px', fontSize: '0.9rem', display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '12px' }}>
-                                                                    <div style={{ color: ans.is_correct ? '#34d399' : '#f87171', background: ans.is_correct ? 'rgba(16,185,129,0.1)' : 'rgba(239,68,68,0.1)', padding: '10px 14px', borderRadius: '8px', fontWeight: 600 }}>
-                                                                        Student answer: <span style={{ fontWeight: 800, color: '#e5e7eb' }}>{typeof ans.student_answer === 'object' ? JSON.stringify(ans.student_answer) : (ans.student_answer || 'Not answered')}</span>
-                                                                    </div>
-                                                                    {!ans.is_correct && (
-                                                                        <div style={{ color: '#34d399', background: 'rgba(16,185,129,0.1)', padding: '10px 14px', borderRadius: '8px', fontWeight: 600 }}>
-                                                                            Correct answer: <span style={{ fontWeight: 800, color: '#e5e7eb' }}>{typeof ans.correct_answer === 'object' ? JSON.stringify(ans.correct_answer) : ans.correct_answer}</span>
-                                                                        </div>
-                                                                    )}
-                                                                </div>
-                                                            )}
-
-                                                            {/* Code submission display */}
-                                                            {(isCode || isSql) && (
-                                                                <div style={{ marginLeft: '36px', marginTop: '14px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                                                                    <div style={{ fontSize: '0.8rem', fontWeight: 700, color: isSql ? '#14b8a6' : '#6366f1', textTransform: 'uppercase', letterSpacing: '0.5px', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                                                        {isSql ? '🗄️' : '⌨️'} Student Submission
-                                                                    </div>
-                                                                    <pre style={{ margin: 0, padding: '14px 16px', background: '#0d1117', border: `1px solid ${isSql ? 'rgba(20,184,166,0.3)' : 'rgba(99,102,241,0.3)'}`, borderRadius: '10px', fontSize: '0.78rem', color: '#e2e8f0', fontFamily: 'ui-monospace, "Cascadia Code", Consolas, monospace', lineHeight: 1.6, overflowX: 'auto', whiteSpace: 'pre-wrap', wordBreak: 'break-word', maxHeight: '260px', overflowY: 'auto' }}>
-                                                                        {submittedCode.trim() || <span style={{ color: '#6b7280', fontStyle: 'italic' }}>No code submitted</span>}
-                                                                    </pre>
-
-                                                                    {/* Execution / test results */}
-                                                                    {execResult && (
-                                                                        <div style={{ background: '#0f172a', border: '1px solid #334155', borderRadius: '10px', padding: '12px 14px' }}>
-                                                                            <div style={{ fontSize: '0.78rem', fontWeight: 700, color: '#94a3b8', marginBottom: '8px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Execution Result</div>
-                                                                            {typeof execResult === 'object' && execResult.test_results ? (
-                                                                                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                                                                                    {execResult.test_results.slice(0, 6).map((tc, ti) => (
-                                                                                        <div key={ti} style={{ display: 'flex', alignItems: 'flex-start', gap: '8px', padding: '6px 10px', background: tc.passed ? 'rgba(16,185,129,0.07)' : 'rgba(239,68,68,0.07)', borderRadius: '8px', border: `1px solid ${tc.passed ? 'rgba(16,185,129,0.2)' : 'rgba(239,68,68,0.2)'}`, fontSize: '0.75rem' }}>
-                                                                                            <span style={{ flexShrink: 0 }}>{tc.passed ? '✅' : '❌'}</span>
-                                                                                            <span style={{ color: '#94a3b8' }}>Test {ti + 1}:</span>
-                                                                                            {tc.input !== undefined && <span style={{ color: '#64748b' }}>in: <code style={{ color: '#67e8f9' }}>{String(tc.input).slice(0, 40)}</code></span>}
-                                                                                            <span style={{ color: '#64748b' }}>exp: <code style={{ color: '#4ade80' }}>{String(tc.expected || tc.expected_output || '').slice(0, 40)}</code></span>
-                                                                                            {!tc.passed && <span style={{ color: '#64748b' }}>got: <code style={{ color: '#f87171' }}>{String(tc.actual || tc.output || '').slice(0, 40)}</code></span>}
-                                                                                        </div>
-                                                                                    ))}
-                                                                                    {execResult.test_results.length > 6 && <div style={{ fontSize: '0.72rem', color: '#6b7280', textAlign: 'center' }}>+{execResult.test_results.length - 6} more test cases</div>}
-                                                                                </div>
-                                                                            ) : (
-                                                                                <pre style={{ margin: 0, fontSize: '0.75rem', color: '#94a3b8', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{typeof execResult === 'string' ? execResult : JSON.stringify(execResult, null, 2)}</pre>
-                                                                            )}
-                                                                        </div>
-                                                                    )}
-
-                                                                    {/* Expected output for code */}
-                                                                    {isCode && ans.expected_output && !ans.is_correct && (
-                                                                        <div style={{ background: 'rgba(16,185,129,0.05)', border: '1px solid rgba(16,185,129,0.25)', borderRadius: '10px', padding: '10px 14px' }}>
-                                                                            <div style={{ fontSize: '0.75rem', fontWeight: 700, color: '#34d399', marginBottom: '6px' }}>Expected Output</div>
-                                                                            <pre style={{ margin: 0, fontSize: '0.78rem', color: '#a7f3d0', fontFamily: 'ui-monospace,monospace', whiteSpace: 'pre-wrap' }}>{ans.expected_output}</pre>
-                                                                        </div>
-                                                                    )}
-
-                                                                    {/* SQL schema hint */}
-                                                                    {isSql && ans.sql_schema && (
-                                                                        <details style={{ background: 'rgba(20,184,166,0.05)', border: '1px solid rgba(20,184,166,0.2)', borderRadius: '10px', padding: '10px 14px', cursor: 'pointer' }}>
-                                                                            <summary style={{ fontSize: '0.75rem', fontWeight: 700, color: '#5eead4', userSelect: 'none' }}>🗄️ SQL Schema (reference)</summary>
-                                                                            <pre style={{ margin: '8px 0 0', fontSize: '0.75rem', color: '#94a3b8', fontFamily: 'ui-monospace,monospace', whiteSpace: 'pre-wrap' }}>{ans.sql_schema}</pre>
-                                                                        </details>
-                                                                    )}
-                                                                </div>
-                                                            )}
-                                                        </div>
                                                         );
                                                     })}
                                                 </div>
@@ -2946,7 +2953,7 @@ function AdminCRTReportModal({ submission, reportData, loading, onClose }) {
                                                 const allocBarPct = allocatedSecs > 0 && maxTimeAdmin > 0 ? Math.round((allocatedSecs / maxTimeAdmin) * 100) : 0
                                                 const utilizationPct = allocatedSecs > 0 ? Math.min(100, Math.round((secSecs / allocatedSecs) * 100)) : null
                                                 const overTime = utilizationPct > 100
-                                                
+
                                                 return (
                                                     <div key={sec} style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                                                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -2964,7 +2971,7 @@ function AdminCRTReportModal({ submission, reportData, loading, onClose }) {
                                                                 {allocatedSecs > 0 && <span style={{ fontSize: '0.75rem', color: '#9ca3af' }}>/ {fmtDur(allocatedSecs)}</span>}
                                                             </div>
                                                         </div>
-                                                        
+
                                                         <div style={{ height: 14, background: '#374151', borderRadius: 7, position: 'relative', overflow: 'hidden' }}>
                                                             {allocBarPct > 0 && (
                                                                 <div style={{ position: 'absolute', left: 0, top: 0, height: '100%', width: `${allocBarPct}%`, background: 'rgba(168,85,247,0.1)', borderRight: '2px solid #7c3aed' }} />
