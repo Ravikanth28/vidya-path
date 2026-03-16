@@ -3,6 +3,17 @@ import axios from 'axios'
 import { Webhook, Plus, Trash2, Play, CheckCircle, XCircle, RefreshCw, Eye, EyeOff, AlertTriangle, Activity, Copy, ChevronDown, ChevronRight, Settings } from 'lucide-react'
 
 const API_BASE = (import.meta.env.VITE_API_URL || 'http://localhost:3000') + '/api'
+const authHeader = () => {
+    const token = localStorage.getItem('authToken')
+    return token ? { Authorization: `Bearer ${token}` } : {}
+}
+const withAuth = (config = {}) => ({
+    ...config,
+    headers: {
+        ...authHeader(),
+        ...(config.headers || {})
+    }
+})
 
 const ALL_EVENTS = [
     { id: 'submission_graded',          label: 'Submission Graded',          desc: 'When a mentor grades a submission' },
@@ -30,7 +41,7 @@ export default function WebhookManager() {
     async function fetchWebhooks() {
         setLoading(true)
         try {
-            const res = await axios.get(`${API_BASE}/webhooks`)
+            const res = await axios.get(`${API_BASE}/webhooks`, withAuth())
             setWebhooks(res.data.webhooks || [])
         } catch (e) { console.error(e) } finally { setLoading(false) }
     }
@@ -44,7 +55,7 @@ export default function WebhookManager() {
     async function fetchDeliveries(webhookId) {
         setLoadingDeliveries(p => ({ ...p, [webhookId]: true }))
         try {
-            const res = await axios.get(`${API_BASE}/webhooks/${webhookId}/deliveries`)
+            const res = await axios.get(`${API_BASE}/webhooks/${webhookId}/deliveries`, withAuth())
             setDeliveries(p => ({ ...p, [webhookId]: res.data.deliveries || [] }))
         } catch (e) { console.error(e) } finally {
             setLoadingDeliveries(p => ({ ...p, [webhookId]: false }))
@@ -54,7 +65,7 @@ export default function WebhookManager() {
     async function testWebhook(webhookId) {
         setTestingId(webhookId)
         try {
-            const res = await axios.post(`${API_BASE}/webhooks/${webhookId}/test`)
+            const res = await axios.post(`${API_BASE}/webhooks/${webhookId}/test`, {}, withAuth())
             alert(res.data.success ? `✅ Test delivery successful! HTTP ${res.data.status}` : `⚠️ Test delivered but got HTTP ${res.data.status}`)
             fetchDeliveries(webhookId)
         } catch (e) {
@@ -64,7 +75,7 @@ export default function WebhookManager() {
 
     async function toggleActive(webhook) {
         try {
-            await axios.put(`${API_BASE}/webhooks/${webhook.id}`, { is_active: !webhook.is_active })
+            await axios.put(`${API_BASE}/webhooks/${webhook.id}`, { is_active: !webhook.is_active }, withAuth())
             fetchWebhooks()
         } catch (e) { console.error(e) }
     }
@@ -73,7 +84,7 @@ export default function WebhookManager() {
         if (!confirm('Delete this webhook? This cannot be undone.')) return
         setDeletingId(webhookId)
         try {
-            await axios.delete(`${API_BASE}/webhooks/${webhookId}`)
+            await axios.delete(`${API_BASE}/webhooks/${webhookId}`, withAuth())
             setWebhooks(p => p.filter(w => w.id !== webhookId))
             if (expandedId === webhookId) setExpandedId(null)
         } catch (e) { console.error(e) } finally { setDeletingId(null) }
@@ -283,7 +294,7 @@ function CreateWebhookForm({ onCreated }) {
         if (!form.events.length) { setError('Select at least one event'); return }
         setSaving(true); setError(null)
         try {
-            await axios.post(`${API_BASE}/webhooks`, form)
+            await axios.post(`${API_BASE}/webhooks`, form, withAuth())
             onCreated()
         } catch (err) {
             setError(err.response?.data?.error || err.message)

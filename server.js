@@ -5991,25 +5991,36 @@ app.get('/api/mentor-leaderboard', async (req, res) => {
         }
 
         const [rows] = await pool.query(`
-           SELECT m.id as mentorId, m.name,
-           COUNT(DISTINCT s.id) as studentCount,
-           COUNT(sub.id) as totalSubmissions,
-           AVG(sub.score) as avgStudentScore
+           SELECT
+               m.id AS mentorId,
+               COALESCE(NULLIF(m.name, ''), m.email, m.id) AS name,
+               COUNT(DISTINCT s.id) AS studentCount,
+               COUNT(sub.id) AS totalSubmissions,
+               AVG(sub.score) AS avgStudentScore,
+               (
+                   SELECT COUNT(*)
+                   FROM tasks t
+                   WHERE t.mentor_id = m.id
+               ) + (
+                   SELECT COUNT(*)
+                   FROM problems p
+                   WHERE p.mentor_id = m.id
+               ) AS totalContent
            FROM users m
-           JOIN mentor_student_allocations ma ON m.id = ma.mentor_id
-           JOIN users s ON ma.student_id = s.id
+           LEFT JOIN mentor_student_allocations ma ON m.id = ma.mentor_id
+           LEFT JOIN users s ON ma.student_id = s.id
            LEFT JOIN submissions sub ON s.id = sub.student_id
            WHERE m.role = 'mentor'
-           GROUP BY m.id
-           ORDER BY avgStudentScore DESC
+           GROUP BY m.id, m.name, m.email
+           ORDER BY COALESCE(avgStudentScore, 0) DESC, studentCount DESC, name ASC
         `);
 
         const leaderboard = rows.map(r => ({
             mentorId: r.mentorId,
             name: r.name,
-            studentCount: r.studentCount,
-            totalContent: 0,
-            totalSubmissions: r.totalSubmissions,
+            studentCount: Number(r.studentCount) || 0,
+            totalContent: Number(r.totalContent) || 0,
+            totalSubmissions: Number(r.totalSubmissions) || 0,
             avgStudentScore: Math.round(r.avgStudentScore || 0)
         }));
 

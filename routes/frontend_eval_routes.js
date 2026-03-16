@@ -202,6 +202,28 @@ function requirementCoverageScore(sourceText, requirementsText, rubricWeights = 
     return { score, matchedCount, totalCount, mustScore, niceScore, missing };
 }
 
+function applyRequirementPenalty(score, coverage) {
+    if (!coverage || !coverage.totalCount) return Math.max(0, Math.round(score));
+
+    let nextScore = Number(score || 0);
+    const mustScore = coverage.mustScore ?? coverage.score ?? 0;
+    const totalScore = coverage.score ?? 0;
+    const mustMissing = Array.isArray(coverage.missing)
+        ? coverage.missing.filter(item => item.weight !== 'nice').length
+        : 0;
+
+    if (mustMissing >= 1) nextScore = Math.min(nextScore, 58);
+    if (mustMissing >= 2) nextScore = Math.min(nextScore, 48);
+    if (mustMissing >= 3) nextScore = Math.min(nextScore, 38);
+
+    if (mustScore < 70) nextScore -= 8;
+    if (mustScore < 50) nextScore -= 15;
+    if (mustScore < 30) nextScore -= 22;
+    if (totalScore < 50) nextScore -= 8;
+
+    return Math.max(0, Math.round(nextScore));
+}
+
 function runStaticLintChecks(snippets) {
     const htmlIssues = [];
     const cssWarnings = [];
@@ -294,32 +316,32 @@ function computeLocalBreakdown(stats, sourceText, requirementsText, rubricWeight
     const comments = (joined.match(/\/\*|\/\/|<!--/g) || []).length;
     const coverage = requirementCoverageScore(sourceText, requirementsText, rubricWeights);
 
-    const structure = Math.min(100, 32
+    const structure = Math.min(100, 24
         + (stats.hasIndexHtml ? 18 : 0)
-        + (stats.hasPackageJson ? 10 : 0)
-        + Math.min(stats.cssCount * 6, 18)
-        + Math.min(stats.jsCount * 6, 18)
-        + Math.round(coverage.score * 0.08));
+        + (stats.hasPackageJson ? 8 : 0)
+        + Math.min(stats.cssCount * 5, 14)
+        + Math.min(stats.jsCount * 5, 14)
+        + Math.round(coverage.score * 0.05));
 
-    const functionality = Math.min(100, 24
-        + (stats.hasIndexHtml || stats.hasPackageJson ? 14 : 0)
+    const functionality = Math.min(100, 12
+        + (stats.hasIndexHtml || stats.hasPackageJson ? 8 : 0)
         + Math.min(eventHandlers * 7, 22)
-        + Math.round(coverage.score * 0.4));
+        + Math.round(coverage.score * 0.6));
 
-    const uiUx = Math.min(100, 28
-        + Math.min(stats.cssCount * 10, 25)
+    const uiUx = Math.min(100, 18
+        + Math.min(stats.cssCount * 8, 18)
         + Math.min(semanticTags * 6, 18)
         + (joined.includes('aria-') ? 8 : 0)
-        + Math.round(coverage.score * 0.1));
+        + Math.round(coverage.score * 0.18));
 
     const responsiveness = Math.min(100, 20
         + Math.min(mediaQueries * 18, 45)
         + (joined.includes('viewport') ? 15 : 0)
         + (joined.includes('flex') || joined.includes('grid') ? 12 : 0));
 
-    const codeQuality = Math.min(100, 28
+    const codeQuality = Math.min(100, 20
         + Math.min(comments * 4, 12)
-        + Math.min(stats.jsCount * 8, 20)
+        + Math.min(stats.jsCount * 7, 18)
         + (joined.includes('const ') || joined.includes('let ') ? 12 : 0)
         + (joined.includes('async ') || joined.includes('await ') ? 8 : 0)
         + (stats.fileCount > 8 ? 6 : 0));
@@ -331,6 +353,17 @@ function computeLocalBreakdown(stats, sourceText, requirementsText, rubricWeight
             uiUx,
             responsiveness,
             codeQuality,
+            coverage,
+        };
+    }
+
+    if (coverage.totalCount >= 1 && (coverage.mustScore ?? coverage.score) < 70) {
+        return {
+            structure: Math.max(0, structure - 10),
+            functionality: Math.max(0, functionality - 18),
+            uiUx: Math.max(0, uiUx - 10),
+            responsiveness,
+            codeQuality: Math.max(0, codeQuality - 8),
             coverage,
         };
     }
@@ -409,14 +442,15 @@ async function tryRuntimeEvaluation(projectRoot, packageJson, stats) {
 }
 
 function fallbackAiReport(localBreakdown, stats, runtimeResult) {
-    const overallScore = Math.round(
+    const rawOverallScore = Math.round(
         (localBreakdown.structure * 0.18) +
-        (localBreakdown.functionality * 0.24) +
-        (localBreakdown.uiUx * 0.2) +
+        (localBreakdown.functionality * 0.3) +
+        (localBreakdown.uiUx * 0.18) +
         (localBreakdown.responsiveness * 0.16) +
-        (localBreakdown.codeQuality * 0.22)
+        (localBreakdown.codeQuality * 0.18)
     );
     const coverage = localBreakdown.coverage || { score: 0, matchedCount: 0, totalCount: 0, missing: [] };
+    const overallScore = applyRequirementPenalty(rawOverallScore, coverage);
     const coverageLine = coverage.totalCount
         ? `Requirement coverage: ${coverage.matchedCount}/${coverage.totalCount} (${coverage.score}%).`
         : 'Requirement coverage was not measurable from the prompt content.';
@@ -457,7 +491,7 @@ function fallbackAiReport(localBreakdown, stats, runtimeResult) {
 async function generateAiFrontendReport({ cerebrasChat, test, stats, fileTree, snippets, localBreakdown, runtimeResult, rubricWeights = {} }) {
     if (!cerebrasChat) return fallbackAiReport(localBreakdown, stats, runtimeResult);
 
-    const prompt = `You are a strict frontend evaluator for student project submissions.
+    const prompt = `You are a very strict frontend evaluator for student project submissions.
 
 Admin use case:
 Title: ${test.title}
@@ -492,6 +526,16 @@ ${JSON.stringify(fileTree, null, 2)}
 Important file snippets:
 ${JSON.stringify(snippets, null, 2)}
 
+Scoring rules you MUST follow:
+1. Requirements are the highest priority. Missing must-have requirements must sharply reduce the score.
+2. A project that misses multiple must-have requirements must NOT receive a passing-looking score just because the UI looks polished or files exist.
+3. If one must-have requirement is clearly missing, overallScore should usually stay below 60.
+4. If two or more must-have requirements are missing or only weakly evidenced, overallScore should usually stay below 50.
+5. If the submission is mostly boilerplate, incomplete, or generic without satisfying the requested use case, score it harshly.
+6. Do not reward folder structure, package.json, or superficial styling unless the requested features are actually implemented.
+7. The breakdown should reflect real implementation, not assumptions.
+8. Call out missing requirements explicitly in issues and recommendations.
+
 Return ONLY valid JSON with this exact shape:
 {
   "overallScore": 0-100,
@@ -517,7 +561,7 @@ Return ONLY valid JSON with this exact shape:
         const raw = (aiResp.choices?.[0]?.message?.content || '{}').replace(/```json\s*|\s*```/g, '').trim();
         const parsed = JSON.parse(raw);
         return {
-            overallScore: Math.max(0, Math.min(100, Math.round(parsed.overallScore || 0))),
+            overallScore: Math.max(0, Math.min(100, applyRequirementPenalty(Math.round(parsed.overallScore || 0), localBreakdown.coverage))),
             breakdown: {
                 structure: Math.max(0, Math.min(100, Math.round(parsed.breakdown?.structure || localBreakdown.structure))),
                 functionality: Math.max(0, Math.min(100, Math.round(parsed.breakdown?.functionality || localBreakdown.functionality))),

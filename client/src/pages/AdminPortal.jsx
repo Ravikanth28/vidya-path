@@ -1256,14 +1256,21 @@ function StudentLeaderboard() {
 function MentorLeaderboard() {
     const [leaders, setLeaders] = useState([])
     const [loading, setLoading] = useState(true)
+    const [error, setError] = useState('')
 
     useEffect(() => {
-        axios.get(`${API_BASE}/mentor-leaderboard`)
+        const token = localStorage.getItem('authToken')
+        axios.get(`${API_BASE}/mentor-leaderboard`, token ? { headers: { Authorization: `Bearer ${token}` } } : {})
             .then(res => {
-                setLeaders(res.data)
+                setLeaders(Array.isArray(res.data) ? res.data : [])
+                setError(Array.isArray(res.data) ? '' : 'Unexpected mentor leaderboard response.')
                 setLoading(false)
             })
-            .catch(err => setLoading(false))
+            .catch(err => {
+                setLeaders([])
+                setError(err.response?.data?.error || 'Failed to load mentor ranking.')
+                setLoading(false)
+            })
     }, [])
 
     if (loading) return <div className="loading-spinner"></div>
@@ -1290,6 +1297,12 @@ function MentorLeaderboard() {
                         <p style={{ margin: 0, color: 'var(--text-muted)' }}>Ranking mentors by student success and platform engagement</p>
                     </div>
                 </div>
+
+                {error && (
+                    <div style={{ marginBottom: '1rem', padding: '0.9rem 1rem', borderRadius: '12px', border: '1px solid rgba(239,68,68,0.3)', background: 'rgba(239,68,68,0.08)', color: '#fca5a5', fontSize: '0.9rem' }}>
+                        {error}
+                    </div>
+                )}
 
                 {/* Mentor Stats Cards */}
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '0.75rem', marginBottom: '1rem' }}>
@@ -1350,7 +1363,13 @@ function MentorLeaderboard() {
                             </tr>
                         </thead>
                         <tbody>
-                            {leaders.map((mentor, idx) => (
+                            {leaders.length === 0 ? (
+                                <tr>
+                                    <td colSpan={6} style={{ padding: '1.25rem 1rem', textAlign: 'center', color: 'var(--text-muted)' }}>
+                                        No mentor ranking data available yet.
+                                    </td>
+                                </tr>
+                            ) : leaders.map((mentor, idx) => (
                                 <tr key={mentor.mentorId} style={{ borderBottom: '1px solid var(--border-color, #1e293b)', transition: 'background 0.15s' }}
                                     onMouseEnter={e => e.currentTarget.style.background = 'rgba(139,92,246,0.04)'}
                                     onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
@@ -1360,9 +1379,9 @@ function MentorLeaderboard() {
                                     <td style={{ padding: '0.6rem 1rem' }}>
                                         <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
                                             <div className="avatar-circle" style={{ background: 'linear-gradient(135deg, #8b5cf6, #3b82f6)', width: 32, height: 32, fontSize: '0.85rem' }}>
-                                                {mentor.name.charAt(0)}
+                                                {(mentor.name || '?').charAt(0)}
                                             </div>
-                                            <span style={{ fontWeight: 600, fontSize: '0.9rem' }}>{mentor.name}</span>
+                                            <span style={{ fontWeight: 600, fontSize: '0.9rem' }}>{mentor.name || 'Unknown Mentor'}</span>
                                         </div>
                                     </td>
                                     <td style={{ padding: '0.6rem 1rem', textAlign: 'center', fontWeight: 600 }}>{mentor.studentCount}</td>

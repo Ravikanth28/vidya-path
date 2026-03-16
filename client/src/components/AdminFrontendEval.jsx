@@ -22,7 +22,7 @@ function Toast({ item, onClose }) {
     )
 }
 
-function BatchAssignSection({ students, allStudentIds, selectedDomain, setSelectedDomain, emailDomains, batchStudentIds, loading, save }) {
+function BatchAssignSection({ students, allStudentIds, selectedDomain, setSelectedDomain, emailDomains, batchStudentIds, assignedStudentIds, loading, save }) {
     const [savedBatches, setSavedBatches] = useState([])
     const [selectedBatchIds, setSelectedBatchIds] = useState([])
     const [batchMode, setBatchMode] = useState('domain') // 'domain' | 'saved'
@@ -56,6 +56,27 @@ function BatchAssignSection({ students, allStudentIds, selectedDomain, setSelect
     }, [selectedBatches, allStudentIds])
 
     const activeStudentIds = batchMode === 'saved' ? savedBatchStudentIds : batchStudentIds
+
+    useEffect(() => {
+        if (!savedBatches.length) return
+
+        const assignedSet = new Set((assignedStudentIds || []).map(String))
+        const availableStudentIds = new Set(allStudentIds.map(String))
+        const matchedBatchIds = savedBatches
+            .filter(batch => {
+                const batchIds = (batch.student_ids || [])
+                    .map(id => String(id))
+                    .filter(id => availableStudentIds.has(id))
+
+                return batchIds.length > 0 && batchIds.every(id => assignedSet.has(id))
+            })
+            .map(batch => batch.id)
+
+        setSelectedBatchIds(matchedBatchIds)
+        if (matchedBatchIds.length > 0) {
+            setBatchMode('saved')
+        }
+    }, [savedBatches, assignedStudentIds, allStudentIds])
 
     const toggleBatch = (id) => {
         setSelectedBatchIds(prev =>
@@ -172,6 +193,11 @@ function BatchAssignSection({ students, allStudentIds, selectedDomain, setSelect
                             <div style={{ color: '#93a8cd', fontSize: 13, marginTop: 4 }}>
                                 From {selectedBatches.length} selected batch{selectedBatches.length > 1 ? 'es' : ''} ({selectedBatches.map(b => b.batch_name).join(', ')})
                             </div>
+                            {assignedStudentIds?.length > 0 ? (
+                                <div style={{ color: '#60a5fa', fontSize: 12, marginTop: 8 }}>
+                                    Existing saved-batch assignments are preselected.
+                                </div>
+                            ) : null}
                         </div>
                     )}
                 </>
@@ -400,6 +426,7 @@ function AssignModal({ test, onClose, onSaved }) {
                             setSelectedDomain={setSelectedDomain}
                             emailDomains={emailDomains}
                             batchStudentIds={batchStudentIds}
+                            assignedStudentIds={selected}
                             loading={loading}
                             save={save}
                         />
@@ -764,8 +791,10 @@ export default function AdminFrontendEval({ initialTab = 'tests' }) {
     const [form, setForm] = useState({ title: '', description: '', requirements: '', attempt_limit: 1, rubric_json: {} })
     const [formErrors, setFormErrors] = useState({})
     const [submissionQuery, setSubmissionQuery] = useState('')
+    const [batchFilter, setBatchFilter] = useState('all')
     const [runtimeFilter, setRuntimeFilter] = useState('all')
     const [sortBy, setSortBy] = useState('latest')
+    const [batches, setBatches] = useState([])
 
     const assignedMap = useMemo(() => Object.fromEntries(tests.map(test => [test.id, safeJson(test.assigned_students, [])])), [tests])
 
@@ -776,12 +805,14 @@ export default function AdminFrontendEval({ initialTab = 'tests' }) {
     async function loadData() {
         setLoading(true)
         try {
-            const [testsRes, subsRes] = await Promise.all([
+            const [testsRes, subsRes, batchesRes] = await Promise.all([
                 fetch(`${API}/admin/frontend-evals/tests`, { headers: authHeader() }).then(r => r.json()),
                 fetch(`${API}/admin/frontend-evals/submissions`, { headers: authHeader() }).then(r => r.json()),
+                fetch(`${API}/batches`, { headers: authHeader() }).then(r => r.json()).catch(() => ({ batches: [] })),
             ])
             setTests((testsRes.tests || []).map(test => ({ ...test, assigned_students: safeJson(test.assigned_students, []) })))
             setSubmissions(subsRes.submissions || [])
+            setBatches(batchesRes.batches || [])
         } finally {
             setLoading(false)
         }
@@ -789,6 +820,18 @@ export default function AdminFrontendEval({ initialTab = 'tests' }) {
 
     useEffect(() => { loadData() }, [])
     useEffect(() => { setTab(initialTab) }, [initialTab])
+
+    const batchStudentLookup = useMemo(() => {
+        const lookup = {}
+        batches.forEach(batch => {
+            ; (batch.student_ids || []).forEach(studentId => {
+                const key = String(studentId)
+                if (!lookup[key]) lookup[key] = []
+                lookup[key].push(batch.batch_name)
+            })
+        })
+        return lookup
+    }, [batches])
 
     const filteredSubmissions = useMemo(() => {
         const query = submissionQuery.trim().toLowerCase()
@@ -798,8 +841,15 @@ export default function AdminFrontendEval({ initialTab = 'tests' }) {
             list = list.filter(sub =>
                 String(sub.student_name || '').toLowerCase().includes(query) ||
                 String(sub.test_title || '').toLowerCase().includes(query) ||
-                String(sub.submission_type || '').toLowerCase().includes(query)
+                String(sub.submission_type || '').toLowerCase().includes(query) ||
+                (batchStudentLookup[String(sub.student_id)] || []).some(batchName => batchName.toLowerCase().includes(query))
             )
+        }
+
+        if (batchFilter !== 'all') {
+            const selectedBatch = batches.find(batch => batch.id === batchFilter)
+            const allowedStudents = new Set((selectedBatch?.student_ids || []).map(id => String(id)))
+            list = list.filter(sub => allowedStudents.has(String(sub.student_id)))
         }
 
         if (runtimeFilter !== 'all') {
@@ -812,7 +862,7 @@ export default function AdminFrontendEval({ initialTab = 'tests' }) {
         if (sortBy === 'score-asc') list.sort((a, b) => Number(a.score || 0) - Number(b.score || 0))
 
         return list
-    }, [submissions, submissionQuery, runtimeFilter, sortBy])
+    }, [submissions, submissionQuery, batchFilter, runtimeFilter, sortBy, batches, batchStudentLookup])
 
     const submissionStats = useMemo(() => {
         const total = filteredSubmissions.length
@@ -820,6 +870,27 @@ export default function AdminFrontendEval({ initialTab = 'tests' }) {
         const avgScore = total ? Math.round(filteredSubmissions.reduce((acc, sub) => acc + Number(sub.score || 0), 0) / total) : 0
         return { total, passed, avgScore }
     }, [filteredSubmissions])
+
+    const batchReport = useMemo(() => {
+        if (batchFilter === 'all') {
+            return { label: 'Batch Report', totalStudents: 0, attendedStudents: 0, active: false }
+        }
+
+        const selectedBatch = batches.find(batch => batch.id === batchFilter)
+        const batchStudentIds = new Set((selectedBatch?.student_ids || []).map(id => String(id)))
+        const attendedStudents = new Set(
+            submissions
+                .filter(sub => batchStudentIds.has(String(sub.student_id)))
+                .map(sub => String(sub.student_id))
+        )
+
+        return {
+            label: selectedBatch?.batch_name || 'Batch Report',
+            totalStudents: batchStudentIds.size,
+            attendedStudents: attendedStudents.size,
+            active: true,
+        }
+    }, [batchFilter, batches, submissions])
 
     const requirementLines = useMemo(() =>
         String(form.requirements || '').split('\n')
@@ -1066,7 +1137,7 @@ export default function AdminFrontendEval({ initialTab = 'tests' }) {
                 </>
             ) : (
                 <div style={{ display: 'grid', gap: 12 }}>
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 10 }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: 10 }}>
                         <div style={{ background: '#0f172a', border: '1px solid #1e293b', borderRadius: 12, padding: 12 }}>
                             <div style={{ color: '#64748b', fontSize: 11, fontWeight: 700, textTransform: 'uppercase' }}>Filtered Submissions</div>
                             <div style={{ color: '#f8fafc', fontSize: 26, fontWeight: 900, marginTop: 4 }}>{submissionStats.total}</div>
@@ -1078,16 +1149,38 @@ export default function AdminFrontendEval({ initialTab = 'tests' }) {
                         <div style={{ background: '#0f172a', border: '1px solid #1e293b', borderRadius: 12, padding: 12 }}>
                             <div style={{ color: '#64748b', fontSize: 11, fontWeight: 700, textTransform: 'uppercase' }}>Average Score</div>
                             <div style={{ color: '#38bdf8', fontSize: 26, fontWeight: 900, marginTop: 4 }}>{submissionStats.avgScore}</div>
+                            {batchReport.active ? (
+                                <div style={{ color: '#60a5fa', fontSize: 12, marginTop: 6 }}>
+                                    {batchReport.label}: {batchReport.attendedStudents}/{batchReport.totalStudents} attended
+                                </div>
+                            ) : (
+                                <div style={{ color: '#64748b', fontSize: 12, marginTop: 6 }}>Select a batch to see attendance</div>
+                            )}
+                        </div>
+                        <div style={{ background: '#0f172a', border: '1px solid #1e293b', borderRadius: 12, padding: 12 }}>
+                            <div style={{ color: '#64748b', fontSize: 11, fontWeight: 700, textTransform: 'uppercase' }}>Batch Attendance</div>
+                            <div style={{ color: batchReport.active ? '#a78bfa' : '#94a3b8', fontSize: 26, fontWeight: 900, marginTop: 4 }}>
+                                {batchReport.active ? `${batchReport.attendedStudents}/${batchReport.totalStudents}` : '—'}
+                            </div>
+                            <div style={{ color: '#64748b', fontSize: 12, marginTop: 6 }}>
+                                {batchReport.active ? `${batchReport.label} students attended` : 'Filter by batch to view report'}
+                            </div>
                         </div>
                     </div>
 
-                    <div style={{ background: '#0f172a', borderRadius: 14, border: '1px solid #1e293b', padding: 12, display: 'grid', gridTemplateColumns: '1.5fr 0.8fr 0.8fr auto', gap: 10 }}>
+                    <div style={{ background: '#0f172a', borderRadius: 14, border: '1px solid #1e293b', padding: 12, display: 'grid', gridTemplateColumns: '1.5fr 0.9fr 0.8fr 0.8fr auto', gap: 10 }}>
                         <input
                             value={submissionQuery}
                             onChange={e => setSubmissionQuery(e.target.value)}
                             placeholder="Search student, test, or type"
                             style={{ background: '#020617', border: '1px solid #334155', borderRadius: 10, color: '#e2e8f0', padding: '10px 12px', outline: 'none' }}
                         />
+                        <select value={batchFilter} onChange={e => setBatchFilter(e.target.value)} style={{ background: '#020617', border: '1px solid #334155', borderRadius: 10, color: '#e2e8f0', padding: '10px 12px', outline: 'none' }}>
+                            <option value="all">All Batches</option>
+                            {batches.map(batch => (
+                                <option key={batch.id} value={batch.id}>{batch.batch_name}</option>
+                            ))}
+                        </select>
                         <select value={runtimeFilter} onChange={e => setRuntimeFilter(e.target.value)} style={{ background: '#020617', border: '1px solid #334155', borderRadius: 10, color: '#e2e8f0', padding: '10px 12px', outline: 'none' }}>
                             <option value="all">All Runtime</option>
                             <option value="passed">Passed</option>
@@ -1119,6 +1212,9 @@ export default function AdminFrontendEval({ initialTab = 'tests' }) {
                                 <div>
                                     <div style={{ color: '#e2e8f0', fontWeight: 700, fontSize: 14 }}>{sub.student_name || 'Student'}</div>
                                     <div style={{ color: '#64748b', fontSize: 12, marginTop: 2 }}>📋 {sub.test_title}</div>
+                                    <div style={{ color: '#60a5fa', fontSize: 11, marginTop: 4 }}>
+                                        Batch: {(batchStudentLookup[String(sub.student_id)] || []).join(', ') || 'Unassigned'}
+                                    </div>
                                 </div>
                                 <div style={{ color: '#94a3b8', fontSize: 13, background: sub.submission_type === 'zip' ? 'rgba(59, 130, 246, 0.1)' : 'rgba(168, 85, 247, 0.1)', padding: '6px 10px', borderRadius: 8, fontWeight: 600 }}>{sub.submission_type === 'zip' ? '📦 ZIP' : '📁 Multi-file'}</div>
                                 <div style={{ color: '#38bdf8', fontWeight: 900, fontSize: 16 }}>{Math.round(sub.score || 0)}</div>
