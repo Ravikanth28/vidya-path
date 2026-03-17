@@ -295,6 +295,47 @@ async function readFileFromZipBuffer(zipBuffer, filePath) {
     }
 }
 
+async function readSubmissionFileContent(pool, submissionId, row, sanitizedPath) {
+    const basePath = row.extracted_path ? path.resolve(row.extracted_path) : null;
+
+    if (basePath) {
+        const fullPath = path.resolve(path.join(basePath, sanitizedPath));
+        if (!fullPath.startsWith(basePath)) {
+            const err = new Error('Access denied');
+            err.statusCode = 403;
+            throw err;
+        }
+        if (fs.existsSync(fullPath)) {
+            return await fsp.readFile(fullPath, 'utf8');
+        }
+    }
+
+    try {
+        const zipBuffer = await getZipFromDatabase(pool, submissionId);
+        if (zipBuffer && Buffer.isBuffer(zipBuffer)) {
+            return await readFileFromZipBuffer(zipBuffer, sanitizedPath);
+        }
+    } catch (dbErr) {
+        console.log(`Database file read fallback: ${dbErr.message}`);
+    }
+
+    if (row.stored_path && fs.existsSync(row.stored_path)) {
+        try {
+            const entries = await fsp.readdir(row.stored_path, { withFileTypes: true });
+            const zipEntry = entries.find(entry => entry.isFile() && /\.zip$/i.test(entry.name));
+            if (zipEntry) {
+                return await readFileFromZip(path.join(row.stored_path, zipEntry.name), sanitizedPath);
+            }
+        } catch (zipErr) {
+            console.log(`Stored ZIP read fallback: ${zipErr.message}`);
+        }
+    }
+
+    const err = new Error('File not found');
+    err.statusCode = 404;
+    throw err;
+}
+
 async function extractZipBuffer(zipBuffer, destinationPath) {
     const { Readable } = require('stream');
     await ensureDir(destinationPath);
@@ -1276,70 +1317,11 @@ module.exports = function frontendEvalRoutes(pool, authenticate, cerebrasChat) {
             if (!row) return res.status(404).json({ success: false, error: 'Submission not found' });
             
             const sanitizedPath = String(filePath).replace(/\.\./g, '').replace(/[<>:"|?*\x00-\x1F]/g, '');
-            let content;
-            
-            // For individual files/code-editor submission, read directly from extracted_path
-            if (row.submission_type === 'files' || row.submission_type === 'code-editor' || !row.submission_type) {
-                const fullPath = path.resolve(path.join(row.extracted_path, sanitizedPath));
-                const basePath = path.resolve(row.extracted_path);
-                
-                if (!fullPath.startsWith(basePath)) {
-                    return res.status(403).json({ success: false, error: 'Access denied' });
-                }
-                
-                if (!fs.existsSync(fullPath)) {
-                    return res.status(404).json({ success: false, error: 'File not found' });
-                }
-                
-                content = await fsp.readFile(fullPath, 'utf8');
-            } 
-            // For ZIP submission, try database first, then ZIP file, then extracted files
-            else if (row.submission_type === 'zip') {
-                let zipBuffer = null;
-                
-                // Try database first (handles hosted/cloud scenarios)
-                try {
-                    zipBuffer = await getZipFromDatabase(pool, id);
-                    if (zipBuffer && Buffer.isBuffer(zipBuffer)) {
-                        content = await readFileFromZipBuffer(zipBuffer, sanitizedPath);
-                    }
-                } catch (dbErr) {
-                    console.log(`Database read fallback: ${dbErr.message}`);
-                }
-                
-                // If database failed, try local ZIP file
-                if (!content) {
-                    const zipPath = path.join(row.stored_path, 'project.zip');
-                    try {
-                        if (fs.existsSync(zipPath)) {
-                            content = await readFileFromZip(zipPath, sanitizedPath);
-                        }
-                    } catch (zipErr) {
-                        // Fallback to extracted files
-                        console.log(`ZIP read fallback: ${zipErr.message}`);
-                    }
-                }
-                
-                // Final fallback: extracted files
-                if (!content) {
-                    const fullPath = path.resolve(path.join(row.extracted_path, sanitizedPath));
-                    const basePath = path.resolve(row.extracted_path);
-                    
-                    if (!fullPath.startsWith(basePath)) {
-                        return res.status(403).json({ success: false, error: 'Access denied' });
-                    }
-                    
-                    if (!fs.existsSync(fullPath)) {
-                        return res.status(404).json({ success: false, error: 'File not found' });
-                    }
-                    
-                    content = await fsp.readFile(fullPath, 'utf8');
-                }
-            }
+            const content = await readSubmissionFileContent(pool, id, row, sanitizedPath);
             
             res.json({ success: true, content });
         } catch (err) {
-            res.status(500).json({ success: false, error: err.message });
+            res.status(err.statusCode || 500).json({ success: false, error: err.message });
         }
     });
 
