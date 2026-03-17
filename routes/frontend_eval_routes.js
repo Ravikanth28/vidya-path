@@ -315,15 +315,27 @@ function applyRequirementPenalty(score, coverage) {
     const mustMissing = Array.isArray(coverage.missing)
         ? coverage.missing.filter(item => item.weight !== 'nice').length
         : 0;
+    const totalMissing = Array.isArray(coverage.missing) ? coverage.missing.length : 0;
+    const requirementCount = coverage.totalCount || 1;
 
-    if (mustMissing >= 1) nextScore = Math.min(nextScore, 58);
-    if (mustMissing >= 2) nextScore = Math.min(nextScore, 48);
-    if (mustMissing >= 3) nextScore = Math.min(nextScore, 38);
+    // Harsh penalties for missing requirements
+    if (mustMissing >= 1) nextScore = Math.min(nextScore, 45);
+    if (mustMissing >= 2) nextScore = Math.min(nextScore, 30);
+    if (mustMissing >= 3) nextScore = Math.min(nextScore, 15);
+    if (mustMissing >= 4 || mustMissing >= requirementCount * 0.5) nextScore = Math.min(nextScore, 5);
 
-    if (mustScore < 70) nextScore -= 8;
-    if (mustScore < 50) nextScore -= 15;
-    if (mustScore < 30) nextScore -= 22;
-    if (totalScore < 50) nextScore -= 8;
+    // Additional penalties based on coverage percentage
+    if (mustScore < 70) nextScore -= 12;
+    if (mustScore < 50) nextScore -= 20;
+    if (mustScore < 30) nextScore -= 30;
+    if (totalScore < 50) nextScore -= 15;
+    if (totalScore < 30) nextScore -= 25;
+
+    // Penalty for high missing ratio
+    const missingRatio = totalMissing / requirementCount;
+    if (missingRatio > 0.7) nextScore -= 35;
+    else if (missingRatio > 0.5) nextScore -= 25;
+    else if (missingRatio > 0.3) nextScore -= 15;
 
     return Math.max(0, Math.round(nextScore));
 }
@@ -392,24 +404,27 @@ function runStaticLintChecks(snippets) {
 
 function computeConfidenceScore({ aiUsed, runtimeResult, lintResults, stats, coverage }) {
     let score = 0;
-    if (stats.hasIndexHtml || stats.hasPackageJson) score += 10;
-    if (stats.fileCount >= 3) score += 8;
-    if (stats.fileCount >= 8) score += 5;
-    if (aiUsed) score += 22; else score += 8;
-    if (runtimeResult.attempted && runtimeResult.success) score += 20;
-    else if (runtimeResult.success) score += 12;
-    else if (runtimeResult.attempted) score += 5;
+    if (stats.hasIndexHtml || stats.hasPackageJson) score += 8;
+    if (stats.fileCount >= 3) score += 5;
+    if (stats.fileCount >= 8) score += 3;
+    if (aiUsed) score += 18; else score += 5;
+    if (runtimeResult.attempted && runtimeResult.success) score += 18;
+    else if (runtimeResult.success) score += 10;
+    else if (runtimeResult.attempted) score += 3;
     if (Array.isArray(runtimeResult.smokeTests) && runtimeResult.smokeTests.length) {
         const passed = runtimeResult.smokeTests.filter(t => t.success).length;
-        score += Math.min(15, passed * 8);
+        score += Math.min(12, passed * 6);
     }
     if (coverage && coverage.totalCount > 0) {
-        score += Math.round(coverage.score * 0.1);
+        // Lower confidence if coverage is poor
+        if (coverage.score < 50) score -= 15;
+        else if (coverage.score < 70) score -= 8;
+        score += Math.round(coverage.score * 0.08);
     }
     if (lintResults) {
-        score += Math.max(0, 10 - lintResults.totalIssues);
+        score = Math.max(0, score + (5 - lintResults.totalIssues));
     }
-    return Math.min(100, Math.round(score));
+    return Math.min(100, Math.max(0, Math.round(score)));
 }
 
 function computeLocalBreakdown(stats, sourceText, requirementsText, rubricWeights = {}) {
@@ -450,24 +465,26 @@ function computeLocalBreakdown(stats, sourceText, requirementsText, rubricWeight
         + (joined.includes('async ') || joined.includes('await ') ? 8 : 0)
         + (stats.fileCount > 8 ? 6 : 0));
 
+    // Severe penalty for very poor coverage
     if (coverage.totalCount >= 3 && (coverage.mustScore ?? coverage.score) < 40) {
         return {
-            structure: Math.max(0, structure - 8),
-            functionality: Math.max(0, functionality - 15),
-            uiUx,
-            responsiveness,
-            codeQuality,
+            structure: Math.max(5, structure - 30),
+            functionality: Math.max(5, functionality - 40),
+            uiUx: Math.max(5, uiUx - 25),
+            responsiveness: Math.max(5, responsiveness - 20),
+            codeQuality: Math.max(5, codeQuality - 25),
             coverage,
         };
     }
 
+    // Moderate penalty for poor coverage
     if (coverage.totalCount >= 1 && (coverage.mustScore ?? coverage.score) < 70) {
         return {
-            structure: Math.max(0, structure - 10),
-            functionality: Math.max(0, functionality - 18),
-            uiUx: Math.max(0, uiUx - 10),
-            responsiveness,
-            codeQuality: Math.max(0, codeQuality - 8),
+            structure: Math.max(10, structure - 20),
+            functionality: Math.max(10, functionality - 30),
+            uiUx: Math.max(10, uiUx - 15),
+            responsiveness: Math.max(10, responsiveness - 10),
+            codeQuality: Math.max(10, codeQuality - 15),
             coverage,
         };
     }
@@ -560,13 +577,13 @@ function fallbackAiReport(localBreakdown, stats, runtimeResult) {
         : 'Requirement coverage was not measurable from the prompt content.';
 
     return {
-        overallScore: Math.max(10, overallScore),
+        overallScore: Math.max(0, overallScore),
         breakdown: {
-            structure: Math.max(15, localBreakdown.structure),
-            functionality: Math.max(15, localBreakdown.functionality),
-            uiUx: Math.max(15, localBreakdown.uiUx),
-            responsiveness: Math.max(15, localBreakdown.responsiveness),
-            codeQuality: Math.max(15, localBreakdown.codeQuality),
+            structure: Math.max(0, Math.round(localBreakdown.structure)),
+            functionality: Math.max(0, Math.round(localBreakdown.functionality)),
+            uiUx: Math.max(0, Math.round(localBreakdown.uiUx)),
+            responsiveness: Math.max(0, Math.round(localBreakdown.responsiveness)),
+            codeQuality: Math.max(0, Math.round(localBreakdown.codeQuality)),
         },
         summary: runtimeResult.success
             ? `Project structure is solid and the runtime check succeeded. ${coverageLine}`
@@ -582,6 +599,7 @@ function fallbackAiReport(localBreakdown, stats, runtimeResult) {
             localBreakdown.responsiveness < 55 ? 'Responsive design evidence is limited.' : null,
             localBreakdown.codeQuality < 55 ? 'Code quality signals are inconsistent across files.' : null,
             coverage.totalCount > 0 && coverage.score < 60 ? 'Several requested features seem missing or only partially implemented.' : null,
+            overallScore < 40 ? 'Submission quality is below acceptable standards - many requirements not met.' : null,
         ].filter(Boolean),
         recommendations: [
             'Add a concise README with setup and run instructions.',
@@ -664,8 +682,9 @@ Return ONLY valid JSON with this exact shape:
         });
         const raw = (aiResp.choices?.[0]?.message?.content || '{}').replace(/```json\s*|\s*```/g, '').trim();
         const parsed = JSON.parse(raw);
+        const penalizedScore = applyRequirementPenalty(Math.round(parsed.overallScore || 0), localBreakdown.coverage);
         return {
-            overallScore: Math.max(0, Math.min(100, applyRequirementPenalty(Math.round(parsed.overallScore || 0), localBreakdown.coverage))),
+            overallScore: Math.max(0, Math.min(100, penalizedScore)),
             breakdown: {
                 structure: Math.max(0, Math.min(100, Math.round(parsed.breakdown?.structure || localBreakdown.structure))),
                 functionality: Math.max(0, Math.min(100, Math.round(parsed.breakdown?.functionality || localBreakdown.functionality))),
