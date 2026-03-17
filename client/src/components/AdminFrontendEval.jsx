@@ -831,6 +831,8 @@ export default function AdminFrontendEval({ initialTab = 'tests' }) {
     const [runtimeFilter, setRuntimeFilter] = useState('all')
     const [sortBy, setSortBy] = useState('latest')
     const [batches, setBatches] = useState([])
+    const [selectedSubmissionIds, setSelectedSubmissionIds] = useState(new Set())
+    const [bulkOperationInProgress, setBulkOperationInProgress] = useState(false)
 
     const assignedMap = useMemo(() => Object.fromEntries(tests.map(test => [test.id, safeJson(test.assigned_students, [])])), [tests])
 
@@ -842,13 +844,28 @@ export default function AdminFrontendEval({ initialTab = 'tests' }) {
         setLoading(true)
         try {
             const [testsRes, subsRes, batchesRes] = await Promise.all([
-                fetch(`${API}/admin/frontend-evals/tests`, { headers: authHeader() }).then(r => r.json()),
-                fetch(`${API}/admin/frontend-evals/submissions`, { headers: authHeader() }).then(r => r.json()),
-                fetch(`${API}/batches`, { headers: authHeader() }).then(r => r.json()).catch(() => ({ batches: [] })),
+                fetch(`${API}/admin/frontend-evals/tests`, { headers: authHeader() })
+                    .then(r => {
+                        if (!r.ok) throw new Error(`Server error: ${r.status}`)
+                        return r.json()
+                    })
+                    .catch(err => { console.error('Failed to load tests:', err); return { tests: [] } }),
+                fetch(`${API}/admin/frontend-evals/submissions`, { headers: authHeader() })
+                    .then(r => {
+                        if (!r.ok) throw new Error(`Server error: ${r.status}`)
+                        return r.json()
+                    })
+                    .catch(err => { console.error('Failed to load submissions:', err); return { submissions: [] } }),
+                fetch(`${API}/batches`, { headers: authHeader() })
+                    .then(r => {
+                        if (!r.ok) throw new Error(`Server error: ${r.status}`)
+                        return r.json()
+                    })
+                    .catch(() => ({ batches: [] })),
             ])
-            setTests((testsRes.tests || []).map(test => ({ ...test, assigned_students: safeJson(test.assigned_students, []) })))
-            setSubmissions(subsRes.submissions || [])
-            setBatches(batchesRes.batches || [])
+            setTests((testsRes?.tests || []).map(test => ({ ...test, assigned_students: safeJson(test.assigned_students, []) })))
+            setSubmissions(subsRes?.submissions || [])
+            setBatches(batchesRes?.batches || [])
         } finally {
             setLoading(false)
         }
@@ -992,26 +1009,143 @@ export default function AdminFrontendEval({ initialTab = 'tests' }) {
         loadData()
     }
 
-    async function openReport(id) {
-        const res = await fetch(`${API}/admin/frontend-evals/submissions/${id}`, { headers: authHeader() })
-        const data = await res.json()
-        if (!res.ok || !data.success) {
-            setToast({ type: 'error', message: data.error || 'Failed to load report' })
-            return
+    function toggleSubmissionSelect(id) {
+        setSelectedSubmissionIds(prev => {
+            const newSet = new Set(prev)
+            if (newSet.has(id)) {
+                newSet.delete(id)
+            } else {
+                newSet.add(id)
+            }
+            return newSet
+        })
+    }
+
+    function toggleSelectAllSubmissions(list) {
+        if (selectedSubmissionIds.size === list.length && list.length > 0) {
+            setSelectedSubmissionIds(new Set())
+        } else {
+            setSelectedSubmissionIds(new Set(list.map(sub => sub.id)))
         }
-        setReport(data.submission)
+    }
+
+    async function openReport(id) {
+        try {
+            const res = await fetch(`${API}/admin/frontend-evals/submissions/${id}`, { headers: authHeader() })
+            if (!res.ok) throw new Error(`Server error: ${res.status}`)
+            const data = await res.json()
+            if (!data.success) throw new Error(data.error || 'Failed to load report')
+            setReport(data.submission)
+        } catch (err) {
+            console.error('Failed to load report:', err)
+            setToast({ type: 'error', message: err.message })
+        }
     }
 
     async function deleteSubmission(id) {
         if (!window.confirm('Delete this submission permanently?')) return
         try {
             const res = await fetch(`${API}/admin/frontend-evals/submissions/${id}`, { method: 'DELETE', headers: authHeader() })
+            if (!res.ok) throw new Error(`Server error: ${res.status}`)
             const data = await res.json()
-            if (!res.ok || !data.success) throw new Error(data.error || 'Delete failed')
+            if (!data.success) throw new Error(data.error || 'Delete failed')
             setToast({ type: 'success', message: 'Submission deleted successfully' })
             loadData()
         } catch (err) {
+            console.error('Failed to delete submission:', err)
             setToast({ type: 'error', message: err.message })
+        }
+    }
+
+    async function reEvaluateSubmission(id) {
+        if (!window.confirm('Re-evaluate this submission with latest scoring rules?')) return
+        try {
+            const res = await fetch(`${API}/admin/frontend-evals/submissions/${id}/re-evaluate`, {
+                method: 'POST',
+                headers: authHeader()
+            })
+            if (!res.ok) throw new Error(`Server error: ${res.status}`)
+            const data = await res.json()
+            if (!data.success) throw new Error(data.error || 'Re-evaluation failed')
+            await loadData()
+            setToast({ type: 'success', message: 'Submission re-evaluated successfully' })
+        } catch (err) {
+            console.error('Failed to re-evaluate submission:', err)
+            setToast({ type: 'error', message: err.message })
+        }
+    }
+
+    async function adminBulkReEvaluate() {
+        if (selectedSubmissionIds.size === 0) {
+            setToast({ type: 'error', message: 'Please select at least one submission to re-evaluate' })
+            return
+        }
+        const count = selectedSubmissionIds.size
+        if (!window.confirm(`Re-evaluate ${count} submission(s) with latest scoring rules?`)) return
+        setBulkOperationInProgress(true)
+        try {
+            const res = await fetch(`${API}/admin/frontend-evals/submissions/bulk/re-evaluate`, {
+                method: 'POST',
+                headers: authHeader(),
+                body: JSON.stringify({ ids: Array.from(selectedSubmissionIds) })
+            })
+            if (!res.ok) throw new Error(`Server error: ${res.status}`)
+            const data = await res.json()
+            if (!data.success) throw new Error(data.error || 'Bulk re-evaluation failed')
+            await loadData()
+            setSelectedSubmissionIds(new Set())
+            setToast({ type: 'success', message: `Successfully re-evaluated ${data.updated || count} submission(s)` })
+        } catch (err) {
+            console.error('Bulk re-evaluation error:', err)
+            setToast({ type: 'error', message: err.message })
+        } finally {
+            setBulkOperationInProgress(false)
+        }
+    }
+
+    async function adminBulkDelete() {
+        if (selectedSubmissionIds.size === 0) {
+            setToast({ type: 'error', message: 'Please select at least one submission to delete' })
+            return
+        }
+        const count = selectedSubmissionIds.size
+        if (!window.confirm(`Delete ${count} submission(s)? This action cannot be undone.`)) return
+        setBulkOperationInProgress(true)
+        try {
+            const res = await fetch(`${API}/admin/frontend-evals/submissions/bulk/delete`, {
+                method: 'POST',
+                headers: authHeader(),
+                body: JSON.stringify({ ids: Array.from(selectedSubmissionIds) })
+            })
+            if (!res.ok) throw new Error(`Server error: ${res.status}`)
+            const data = await res.json()
+            if (!data.success) throw new Error(data.error || 'Bulk delete failed')
+            await loadData()
+            setSelectedSubmissionIds(new Set())
+            setToast({ type: 'success', message: `Successfully deleted ${data.deleted || count} submission(s)` })
+        } catch (err) {
+            console.error('Bulk delete error:', err)
+            setToast({ type: 'error', message: err.message })
+        } finally {
+            setBulkOperationInProgress(false)
+        }
+    }
+
+    function toggleSubmissionSelect(id) {
+        const newSelected = new Set(selectedSubmissionIds)
+        if (newSelected.has(id)) {
+            newSelected.delete(id)
+        } else {
+            newSelected.add(id)
+        }
+        setSelectedSubmissionIds(newSelected)
+    }
+
+    function toggleSelectAllSubmissions(filteredList) {
+        if (selectedSubmissionIds.size === filteredList.length) {
+            setSelectedSubmissionIds(new Set())
+        } else {
+            setSelectedSubmissionIds(new Set(filteredList.map(sub => sub.id)))
         }
     }
 
@@ -1301,18 +1435,58 @@ export default function AdminFrontendEval({ initialTab = 'tests' }) {
                         </div>
                     </div>
 
+                    {/* Bulk Actions Bar */}
+                    {selectedSubmissionIds.size > 0 && (
+                        <div style={{ background: 'linear-gradient(135deg, #1e1b4b, #0f172a)', borderRadius: 14, border: '1px solid #4338ca', padding: 14, display: 'flex', alignItems: 'center', gap: 12, justifyContent: 'space-between' }}>
+                            <div style={{ color: '#e2e8f0', fontWeight: 700 }}>📌 {selectedSubmissionIds.size} submission(s) selected</div>
+                            <div style={{ display: 'flex', gap: 8 }}>
+                                <button
+                                    onClick={() => adminBulkReEvaluate()}
+                                    disabled={bulkOperationInProgress}
+                                    style={{ padding: '10px 14px', borderRadius: 10, border: '1px solid #1d4ed8', background: bulkOperationInProgress ? '#1e3a8a' : 'rgba(37,99,235,0.15)', color: '#bfdbfe', cursor: bulkOperationInProgress ? 'wait' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, fontSize: 12, fontWeight: 700, transition: 'all 0.2s' }}
+                                >
+                                    🔄 {bulkOperationInProgress ? 'Processing...' : `Re-evaluate All (${selectedSubmissionIds.size})`}
+                                </button>
+                                <button
+                                    onClick={() => adminBulkDelete()}
+                                    disabled={bulkOperationInProgress}
+                                    style={{ padding: '10px 14px', borderRadius: 10, border: '1px solid #7c2d12', background: bulkOperationInProgress ? '#431407' : 'rgba(217,70,38,0.15)', color: '#fecaca', cursor: bulkOperationInProgress ? 'wait' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, fontSize: 12, fontWeight: 700, transition: 'all 0.2s' }}
+                                >
+                                    🗑️ Delete All
+                                </button>
+                            </div>
+                        </div>
+                    )}
+
                     <div style={{ background: '#0f172a', borderRadius: 20, border: '1px solid #1e293b', overflow: 'hidden', boxShadow: '0 8px 24px rgba(0, 0, 0, 0.4)' }}>
-                        <div style={{ background: 'linear-gradient(135deg, rgba(15, 23, 42, 0.9), rgba(2, 6, 23, 0.7))', padding: '20px 24px', borderBottom: '2px solid rgba(30, 41, 59, 0.8)', display: 'grid', gridTemplateColumns: '1.4fr 1fr 110px 120px 190px 60px 60px', gap: 12, color: '#94a3b8', fontSize: 11, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '1px' }}>
+                        <div style={{ background: 'linear-gradient(135deg, rgba(15, 23, 42, 0.9), rgba(2, 6, 23, 0.7))', padding: '20px 24px', borderBottom: '2px solid rgba(30, 41, 59, 0.8)', display: 'grid', gridTemplateColumns: '50px 1.4fr 1fr 110px 120px 190px 50px 50px 50px', gap: 12, color: '#94a3b8', fontSize: 11, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '1px' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                <input
+                                    type="checkbox"
+                                    onChange={() => toggleSelectAllSubmissions(filteredSubmissions)}
+                                    checked={selectedSubmissionIds.size === filteredSubmissions.length && filteredSubmissions.length > 0}
+                                    style={{ width: 18, height: 18, cursor: 'pointer', accentColor: '#0ea5e9' }}
+                                />
+                            </div>
                             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>👤 Student / Test</div>
                             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>📦 Type</div>
                             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>⭐ Score</div>
                             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>▶️ Runtime</div>
                             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>⏰ Submitted</div>
                             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4 }}>View</div>
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4 }}>Re-Eval</div>
                             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4 }}>Delete</div>
                         </div>
                         {filteredSubmissions.map((sub, idx) => (
-                            <div key={sub.id} style={{ display: 'grid', gridTemplateColumns: '1.4fr 1fr 110px 120px 190px 60px 60px', gap: 12, padding: '16px 24px', alignItems: 'center', borderBottom: idx === filteredSubmissions.length - 1 ? 'none' : '1px solid #111827', background: idx % 2 === 0 ? 'rgba(2,6,23,0.3)' : 'rgba(15,23,42,0.5)', transition: 'all 0.2s ease', cursor: 'pointer' }} onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(56, 189, 248, 0.05)'} onMouseLeave={(e) => e.currentTarget.style.background = idx % 2 === 0 ? 'rgba(2,6,23,0.3)' : 'rgba(15,23,42,0.5)'}>
+                            <div key={sub.id} style={{ display: 'grid', gridTemplateColumns: '50px 1.4fr 1fr 110px 120px 190px 50px 50px 50px', gap: 12, padding: '16px 24px', alignItems: 'center', borderBottom: idx === filteredSubmissions.length - 1 ? 'none' : '1px solid #111827', background: idx % 2 === 0 ? 'rgba(2,6,23,0.3)' : 'rgba(15,23,42,0.5)', transition: 'all 0.2s ease', cursor: 'pointer' }} onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(56, 189, 248, 0.05)'} onMouseLeave={(e) => e.currentTarget.style.background = idx % 2 === 0 ? 'rgba(2,6,23,0.3)' : 'rgba(15,23,42,0.5)'}>
+                                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                    <input
+                                        type="checkbox"
+                                        onChange={() => toggleSubmissionSelect(sub.id)}
+                                        checked={selectedSubmissionIds.has(sub.id)}
+                                        style={{ width: 18, height: 18, cursor: 'pointer', accentColor: '#0ea5e9' }}
+                                    />
+                                </div>
                                 <div>
                                     <div style={{ color: '#e2e8f0', fontWeight: 700, fontSize: 14 }}>{sub.student_name || 'Student'}</div>
                                     <div style={{ color: '#64748b', fontSize: 12, marginTop: 2 }}>📋 {sub.test_title}</div>
@@ -1327,6 +1501,7 @@ export default function AdminFrontendEval({ initialTab = 'tests' }) {
                                 </div>
                                 <div style={{ color: '#94a3b8', fontSize: 12 }}>{new Date(sub.submitted_at).toLocaleString()}</div>
                                 <button onClick={() => openReport(sub.id)} style={{ padding: '9px 11px', borderRadius: 8, border: '1px solid #334155', background: 'rgba(51, 65, 85, 0.3)', color: '#93c5fd', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4, fontSize: 11, fontWeight: 600, transition: 'all 0.2s', boxShadow: '0 2px 4px rgba(0,0,0,0.2)' }} onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(59, 130, 246, 0.2)'; e.currentTarget.style.border = '1px solid #3b82f6' }} onMouseLeave={(e) => { e.currentTarget.style.background = 'rgba(51, 65, 85, 0.3)'; e.currentTarget.style.border = '1px solid #334155' }}><Eye size={13} /></button>
+                                <button onClick={() => reEvaluateSubmission(sub.id)} disabled={bulkOperationInProgress} style={{ padding: '9px 11px', borderRadius: 8, border: '1px solid #7c2d12', background: 'rgba(127, 29, 29, 0.2)', color: '#fca5a5', cursor: bulkOperationInProgress ? 'wait' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4, fontSize: 11, fontWeight: 600, transition: 'all 0.2s', boxShadow: '0 2px 4px rgba(0,0,0,0.2)', opacity: bulkOperationInProgress ? 0.5 : 1 }} onMouseEnter={(e) => { if (!bulkOperationInProgress) { e.currentTarget.style.background = 'rgba(248, 113, 113, 0.2)'; e.currentTarget.style.border = '1px solid #f87171' } }} onMouseLeave={(e) => { e.currentTarget.style.background = 'rgba(127, 29, 29, 0.2)'; e.currentTarget.style.border = '1px solid #7c2d12' }}>Re-Eval</button>
                                 <button onClick={() => deleteSubmission(sub.id)} style={{ padding: '9px 11px', borderRadius: 8, border: '1px solid #7f1d1d', background: 'rgba(127, 29, 29, 0.2)', color: '#fca5a5', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4, fontSize: 11, fontWeight: 600, transition: 'all 0.2s', boxShadow: '0 2px 4px rgba(0,0,0,0.2)' }} onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(248, 113, 113, 0.2)'; e.currentTarget.style.border = '1px solid #f87171' }} onMouseLeave={(e) => { e.currentTarget.style.background = 'rgba(127, 29, 29, 0.2)'; e.currentTarget.style.border = '1px solid #7f1d1d' }}><Trash2 size={13} /></button>
                             </div>
                         ))}

@@ -8,6 +8,7 @@ const { v4: uuidv4 } = require('uuid');
 const { execFile } = require('child_process');
 const { promisify } = require('util');
 const unzipper = require('unzipper');
+const archiver = require('archiver');
 
 const execFileAsync = promisify(execFile);
 
@@ -80,6 +81,48 @@ async function deleteZipFromDatabase(pool, submissionId) {
     } catch (err) {
         console.error(`Failed to delete from storage table: ${err.message}`);
     }
+}
+
+async function createZipFromDirectory(dirPath) {
+    const filePairs = [];
+    async function walk(dir, prefix) {
+        const entries = await fsp.readdir(dir, { withFileTypes: true });
+        for (const e of entries) {
+            const full = path.join(dir, e.name);
+            const arc = prefix ? `${prefix}/${e.name}` : e.name;
+            if (e.isDirectory()) await walk(full, arc);
+            else filePairs.push({ full, arc });
+        }
+    }
+    await walk(dirPath, '');
+    return new Promise((resolve, reject) => {
+        const chunks = [];
+        const archive = archiver('zip', { zlib: { level: 9 } });
+        archive.on('data', chunk => chunks.push(chunk));
+        archive.on('error', reject);
+        archive.on('end', () => resolve(Buffer.concat(chunks)));
+        for (const { full, arc } of filePairs) archive.file(full, { name: arc });
+        archive.finalize();
+    });
+}
+
+async function createZipFromCodeEditorFiles(codeFiles) {
+    return new Promise((resolve, reject) => {
+        const chunks = [];
+        const archive = archiver('zip', { zlib: { level: 9 } });
+        
+        archive.on('data', chunk => chunks.push(chunk));
+        archive.on('error', err => reject(err));
+        archive.on('end', () => resolve(Buffer.concat(chunks)));
+        
+        // Add each code file to the archive
+        for (const codeFile of codeFiles) {
+            const fileName = sanitizeSegment(codeFile.name || 'file.txt');
+            archive.append(Buffer.from(codeFile.content || '', 'utf8'), { name: fileName });
+        }
+        
+        archive.finalize();
+    });
 }
 
 function sanitizeSegment(name) {
@@ -209,15 +252,29 @@ async function readFileFromZipBuffer(zipBuffer, filePath) {
     }
 }
 
+async function extractZipBuffer(zipBuffer, destinationPath) {
+    const { Readable } = require('stream');
+    await ensureDir(destinationPath);
+    await new Promise((resolve, reject) => {
+        Readable.from(zipBuffer)
+            .pipe(unzipper.Extract({ path: destinationPath }))
+            .on('close', resolve)
+            .on('error', reject);
+    });
+}
+
 async function gatherSourceSnippets(rootDir, files) {
     const interesting = files.filter(file => /\.(html?|css|js|jsx|ts|tsx|json|md)$/i.test(file.relPath)).slice(0, 14);
+    const totalInterestingSize = interesting.reduce((sum, file) => sum + Number(file.size || 0), 0);
+    const useExtendedSnippets = interesting.length <= 5 && totalInterestingSize <= 120 * 1024;
+    const snippetCharLimit = useExtendedSnippets ? 12000 : 1800;
     const snippets = [];
     for (const file of interesting) {
         try {
             const raw = await fsp.readFile(file.fullPath, 'utf8');
             snippets.push({
                 path: file.relPath,
-                content: trimContent(raw),
+                content: trimContent(raw, snippetCharLimit),
             });
         } catch {
             // ignore unreadable file
@@ -273,6 +330,94 @@ function extractRequirementLines(requirementsText) {
         .filter(line => line.length >= 6);
 }
 
+function inferRequirementProfile(requirementsText) {
+    const text = normalizeText(requirementsText);
+    return {
+        expectsResponsive: /responsive|mobile|media query|breakpoint|viewport/.test(text),
+        expectsJs: /javascript|\bjs\b|dom|event|interaction|dynamic|validation|fetch|api call|localstorage|sessionstorage/.test(text),
+        expectsCss: /css|style|ui|ux|layout|typography|color|animation|transition|hover|flex|grid/.test(text),
+        expectsFramework: /react|vue|angular|next\.?js|component/.test(text),
+        expectsApi: /api|fetch|axios|endpoint|json/.test(text),
+        expectsForms: /form|input|submit|validation/.test(text),
+    };
+}
+
+function countPattern(raw, pattern) {
+    return (raw.match(pattern) || []).length;
+}
+
+function requirementPatternMatch(requirementLine, sourceText, normalizedSource) {
+    const line = normalizeText(requirementLine);
+    const raw = String(sourceText || '');
+
+    if (/html document structure|proper html/.test(line)) {
+        return /<!doctype\s+html>/i.test(raw) && /<html\b/i.test(raw) && /<head\b/i.test(raw) && /<body\b/i.test(raw);
+    }
+    if (/at least\s*\d+\s*headings?|\bheadings?\b/.test(line)) {
+        const required = Number((line.match(/at least\s*(\d+)/) || [])[1] || 1);
+        const headingCount = (raw.match(/<h[1-6]\b/gi) || []).length;
+        return headingCount >= required;
+    }
+    if (/\bparagraphs?\b/.test(line)) {
+        const required = Number((line.match(/(?:at least|write)\s*(\d+)/) || [])[1] || 1);
+        const pCount = (raw.match(/<p\b/gi) || []).length;
+        return pCount >= required;
+    }
+    if (/bold|italic|underline/.test(line)) {
+        const hasBold = /<b\b|<strong\b/i.test(raw) || normalizedSource.includes('font-weight') || normalizedSource.includes('bold');
+        const hasItalic = /<i\b|<em\b/i.test(raw) || normalizedSource.includes('font-style') || normalizedSource.includes('italic');
+        const hasUnderline = /<u\b/i.test(raw) || normalizedSource.includes('text-decoration') || normalizedSource.includes('underline');
+        return hasBold && hasItalic && hasUnderline;
+    }
+    if (/horizontal rule|line breaks?|\bhr\b|\bbr\b/.test(line)) {
+        return /<hr\b/i.test(raw) && /<br\b/i.test(raw);
+    }
+
+    const countMatch = line.match(/(?:at least|minimum(?:\s+of)?|add|create|build|include|use)\s*(\d+)/i);
+    if (countMatch) {
+        const required = Number(countMatch[1] || 0);
+        const countMatchers = [
+            { key: /headings?|titles?/, pattern: /<h[1-6]\b/gi },
+            { key: /paragraphs?/, pattern: /<p\b/gi },
+            { key: /sections?/, pattern: /<section\b/gi },
+            { key: /buttons?/, pattern: /<button\b/gi },
+            { key: /inputs?|fields?|textbox|textarea|select/, pattern: /<(input|textarea|select)\b/gi },
+            { key: /images?|photos?/, pattern: /<img\b/gi },
+            { key: /links?|anchors?/, pattern: /<a\b/gi },
+            { key: /list items?|bullets?/, pattern: /<li\b/gi },
+            { key: /cards?/, pattern: /class\s*=\s*["'][^"']*card/gi },
+        ];
+        for (const matcher of countMatchers) {
+            if (matcher.key.test(line)) {
+                return countPattern(raw, matcher.pattern) >= required;
+            }
+        }
+    }
+
+    const featureMatchers = [
+        { key: /navigation|navbar|menu/, test: /<nav\b|class\s*=\s*["'][^"']*(nav|navbar|menu)/i },
+        { key: /footer/, test: /<footer\b/i },
+        { key: /header/, test: /<header\b/i },
+        { key: /form|validation/, test: /<form\b|required\b|pattern\s*=|checkvalidity\(/i },
+        { key: /table/, test: /<table\b/i },
+        { key: /flexbox|flex layout|display flex/, test: /display\s*:\s*flex|\bflex\b/i },
+        { key: /grid/, test: /display\s*:\s*grid|\bgrid-template\b/i },
+        { key: /animation/, test: /@keyframes|animation\s*:/i },
+        { key: /transition|hover effect|hover/, test: /transition\s*:|:hover/i },
+        { key: /media query|responsive/, test: /@media\b/i },
+        { key: /api|fetch|axios|endpoint/, test: /\bfetch\(|axios\.|xmlhttprequest|\/api\//i },
+        { key: /local storage|localstorage/, test: /localStorage/i },
+        { key: /event listener|onclick|onsubmit/, test: /addEventListener|\bonclick=|\bonsubmit=/i },
+    ];
+    for (const matcher of featureMatchers) {
+        if (matcher.key.test(line) && matcher.test.test(raw)) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
 function requirementCoverageScore(sourceText, requirementsText, rubricWeights = {}) {
     const normalizedSource = normalizeText(sourceText);
     const lines = extractRequirementLines(requirementsText);
@@ -285,10 +430,10 @@ function requirementCoverageScore(sourceText, requirementsText, rubricWeights = 
         const weight = rubricWeights[line] === 'nice' ? 'nice' : 'must';
         const normalizedLine = normalizeText(line);
         const tokens = normalizedLine.split(' ').filter(token => token.length >= 4);
-        let matched = false;
+        let matched = requirementPatternMatch(line, sourceText, normalizedSource);
         if (tokens.length) {
             const hits = tokens.filter(token => normalizedSource.includes(token)).length;
-            matched = hits / tokens.length >= 0.5 || normalizedSource.includes(normalizedLine.slice(0, Math.min(normalizedLine.length, 24)));
+            matched = matched || hits / tokens.length >= 0.5 || normalizedSource.includes(normalizedLine.slice(0, Math.min(normalizedLine.length, 24)));
         }
         if (matched) {
             if (weight === 'must') mustHit++; else niceHit++;
@@ -318,24 +463,24 @@ function applyRequirementPenalty(score, coverage) {
     const totalMissing = Array.isArray(coverage.missing) ? coverage.missing.length : 0;
     const requirementCount = coverage.totalCount || 1;
 
-    // Harsh penalties for missing requirements
-    if (mustMissing >= 1) nextScore = Math.min(nextScore, 45);
-    if (mustMissing >= 2) nextScore = Math.min(nextScore, 30);
-    if (mustMissing >= 3) nextScore = Math.min(nextScore, 15);
-    if (mustMissing >= 4 || mustMissing >= requirementCount * 0.5) nextScore = Math.min(nextScore, 5);
+    // Balanced penalties for missing requirements
+    if (mustMissing >= 1) nextScore = Math.min(nextScore, 75);
+    if (mustMissing >= 2) nextScore = Math.min(nextScore, 62);
+    if (mustMissing >= 3) nextScore = Math.min(nextScore, 45);
+    if (mustMissing >= 4 || mustMissing >= requirementCount * 0.8) nextScore = Math.min(nextScore, 30);
 
     // Additional penalties based on coverage percentage
-    if (mustScore < 70) nextScore -= 12;
-    if (mustScore < 50) nextScore -= 20;
-    if (mustScore < 30) nextScore -= 30;
-    if (totalScore < 50) nextScore -= 15;
-    if (totalScore < 30) nextScore -= 25;
+    if (mustScore < 70) nextScore -= 6;
+    if (mustScore < 50) nextScore -= 12;
+    if (mustScore < 30) nextScore -= 20;
+    if (totalScore < 50) nextScore -= 8;
+    if (totalScore < 30) nextScore -= 15;
 
     // Penalty for high missing ratio
     const missingRatio = totalMissing / requirementCount;
-    if (missingRatio > 0.7) nextScore -= 35;
-    else if (missingRatio > 0.5) nextScore -= 25;
-    else if (missingRatio > 0.3) nextScore -= 15;
+    if (missingRatio > 0.7) nextScore -= 18;
+    else if (missingRatio > 0.5) nextScore -= 12;
+    else if (missingRatio > 0.3) nextScore -= 6;
 
     return Math.max(0, Math.round(nextScore));
 }
@@ -429,41 +574,82 @@ function computeConfidenceScore({ aiUsed, runtimeResult, lintResults, stats, cov
 
 function computeLocalBreakdown(stats, sourceText, requirementsText, rubricWeights = {}) {
     const joined = sourceText.toLowerCase();
+    const profile = inferRequirementProfile(requirementsText);
     const mediaQueries = (joined.match(/@media/g) || []).length;
     const semanticTags = (joined.match(/<(header|main|section|nav|footer|article|aside)\b/g) || []).length;
     const eventHandlers = (joined.match(/addEventListener|\bonclick=|\bonsubmit=|\bfetch\(|axios\.|XMLHttpRequest/g) || []).length;
     const comments = (joined.match(/\/\*|\/\/|<!--/g) || []).length;
     const coverage = requirementCoverageScore(sourceText, requirementsText, rubricWeights);
 
-    const structure = Math.min(100, 24
+    const coverageBoost = Math.round(coverage.score * 0.7);
+    const jsEvidence = Math.min(30, stats.jsCount * 8 + eventHandlers * 5);
+    const cssEvidence = Math.min(28, stats.cssCount * 9 + (joined.includes('style') ? 6 : 0));
+    const responsiveEvidence = Math.min(34,
+        mediaQueries * 12 +
+        (joined.includes('viewport') ? 8 : 0) +
+        ((joined.includes('flex') || joined.includes('grid')) ? 8 : 0)
+    );
+
+    let structure = Math.min(100, 25
         + (stats.hasIndexHtml ? 18 : 0)
-        + (stats.hasPackageJson ? 8 : 0)
-        + Math.min(stats.cssCount * 5, 14)
-        + Math.min(stats.jsCount * 5, 14)
-        + Math.round(coverage.score * 0.05));
+        + (stats.hasPackageJson ? 6 : 0)
+        + Math.min(stats.fileCount * 3, 16)
+        + Math.round(coverage.score * 0.35));
 
-    const functionality = Math.min(100, 12
+    let functionality = Math.min(100, 18
         + (stats.hasIndexHtml || stats.hasPackageJson ? 8 : 0)
-        + Math.min(eventHandlers * 7, 22)
-        + Math.round(coverage.score * 0.6));
+        + jsEvidence
+        + Math.round(coverage.score * 0.45));
 
-    const uiUx = Math.min(100, 18
-        + Math.min(stats.cssCount * 8, 18)
+    let uiUx = Math.min(100, 20
+        + cssEvidence
         + Math.min(semanticTags * 6, 18)
         + (joined.includes('aria-') ? 8 : 0)
-        + Math.round(coverage.score * 0.18));
+        + Math.round(coverage.score * 0.3));
 
-    const responsiveness = Math.min(100, 20
-        + Math.min(mediaQueries * 18, 45)
-        + (joined.includes('viewport') ? 15 : 0)
-        + (joined.includes('flex') || joined.includes('grid') ? 12 : 0));
+    let responsiveness = Math.min(100, 20 + responsiveEvidence + Math.round(coverage.score * 0.25));
 
-    const codeQuality = Math.min(100, 20
+    let codeQuality = Math.min(100, 22
         + Math.min(comments * 4, 12)
         + Math.min(stats.jsCount * 7, 18)
         + (joined.includes('const ') || joined.includes('let ') ? 12 : 0)
         + (joined.includes('async ') || joined.includes('await ') ? 8 : 0)
-        + (stats.fileCount > 8 ? 6 : 0));
+        + (stats.fileCount > 8 ? 6 : 0)
+        + Math.round(coverage.score * 0.2));
+
+    // Dynamic expectations: only penalize dimensions that task actually demands.
+    if (!profile.expectsJs) {
+        functionality = Math.max(functionality, Math.min(100, 30 + coverageBoost));
+    } else if (stats.jsCount === 0 && eventHandlers === 0) {
+        functionality = Math.min(functionality, 45);
+    }
+
+    if (!profile.expectsCss) {
+        uiUx = Math.max(uiUx, Math.min(100, 28 + coverageBoost));
+    } else if (stats.cssCount === 0 && !joined.includes('style=')) {
+        uiUx = Math.min(uiUx, 50);
+    }
+
+    if (!profile.expectsResponsive) {
+        responsiveness = Math.max(responsiveness, Math.min(100, 25 + Math.round(coverage.score * 0.55)));
+    } else if (mediaQueries === 0 && !joined.includes('viewport')) {
+        responsiveness = Math.min(responsiveness, 48);
+    }
+
+    if (profile.expectsFramework && stats.framework === 'static-html' && !stats.hasPackageJson) {
+        functionality = Math.min(functionality, 45);
+        codeQuality = Math.min(codeQuality, 55);
+    }
+
+    // Global floor driven by requirement coverage to avoid unrealistic collapse.
+    if (coverage.totalCount > 0) {
+        const softFloor = Math.round(coverage.score * 0.45);
+        structure = Math.max(structure, softFloor);
+        functionality = Math.max(functionality, softFloor);
+        uiUx = Math.max(uiUx, softFloor);
+        responsiveness = Math.max(responsiveness, softFloor);
+        codeQuality = Math.max(codeQuality, softFloor);
+    }
 
     // Severe penalty for very poor coverage
     if (coverage.totalCount >= 3 && (coverage.mustScore ?? coverage.score) < 40) {
@@ -571,7 +757,10 @@ function fallbackAiReport(localBreakdown, stats, runtimeResult) {
         (localBreakdown.codeQuality * 0.18)
     );
     const coverage = localBreakdown.coverage || { score: 0, matchedCount: 0, totalCount: 0, missing: [] };
-    const overallScore = applyRequirementPenalty(rawOverallScore, coverage);
+    let overallScore = applyRequirementPenalty(rawOverallScore, coverage);
+    if (stats.framework === 'static-html' && coverage.totalCount > 0 && (coverage.mustScore ?? coverage.score) >= 80) {
+        overallScore = Math.max(overallScore, Math.round((coverage.score * 0.75) + 5));
+    }
     const coverageLine = coverage.totalCount
         ? `Requirement coverage: ${coverage.matchedCount}/${coverage.totalCount} (${coverage.score}%).`
         : 'Requirement coverage was not measurable from the prompt content.';
@@ -613,7 +802,7 @@ function fallbackAiReport(localBreakdown, stats, runtimeResult) {
 async function generateAiFrontendReport({ cerebrasChat, test, stats, fileTree, snippets, localBreakdown, runtimeResult, rubricWeights = {} }) {
     if (!cerebrasChat) return fallbackAiReport(localBreakdown, stats, runtimeResult);
 
-    const prompt = `You are a very strict frontend evaluator for student project submissions.
+    const prompt = `You are an adaptive frontend evaluator for student project submissions.
 
 Admin use case:
 Title: ${test.title}
@@ -649,14 +838,13 @@ Important file snippets:
 ${JSON.stringify(snippets, null, 2)}
 
 Scoring rules you MUST follow:
-1. Requirements are the highest priority. Missing must-have requirements must sharply reduce the score.
-2. A project that misses multiple must-have requirements must NOT receive a passing-looking score just because the UI looks polished or files exist.
-3. If one must-have requirement is clearly missing, overallScore should usually stay below 60.
-4. If two or more must-have requirements are missing or only weakly evidenced, overallScore should usually stay below 50.
-5. If the submission is mostly boilerplate, incomplete, or generic without satisfying the requested use case, score it harshly.
-6. Do not reward folder structure, package.json, or superficial styling unless the requested features are actually implemented.
-7. The breakdown should reflect real implementation, not assumptions.
-8. Call out missing requirements explicitly in issues and recommendations.
+1. Requirements are the highest priority. Evaluate only against what is explicitly asked in this task.
+2. Do NOT heavily penalize missing JavaScript, responsiveness, framework setup, or API integration unless those are explicitly required.
+3. Missing must-have requirements should reduce the score, but partial completion should still receive meaningful partial credit.
+4. Avoid extreme low scores for submissions that satisfy a majority of listed requirements.
+5. Do not reward folder structure, package.json, or superficial styling unless requested features are actually implemented.
+6. The breakdown should reflect real implementation evidence, not assumptions.
+7. Call out missing requirements explicitly in issues and recommendations.
 
 Return ONLY valid JSON with this exact shape:
 {
@@ -682,7 +870,21 @@ Return ONLY valid JSON with this exact shape:
         });
         const raw = (aiResp.choices?.[0]?.message?.content || '{}').replace(/```json\s*|\s*```/g, '').trim();
         const parsed = JSON.parse(raw);
-        const penalizedScore = applyRequirementPenalty(Math.round(parsed.overallScore || 0), localBreakdown.coverage);
+        const localWeightedScore = Math.round(
+            (localBreakdown.structure * 0.18) +
+            (localBreakdown.functionality * 0.3) +
+            (localBreakdown.uiUx * 0.18) +
+            (localBreakdown.responsiveness * 0.16) +
+            (localBreakdown.codeQuality * 0.18)
+        );
+        const aiBaseScore = Math.round(parsed.overallScore || localWeightedScore || 0);
+        const blendedScore = Math.round((aiBaseScore * 0.6) + (localWeightedScore * 0.4));
+        let penalizedScore = applyRequirementPenalty(blendedScore, localBreakdown.coverage);
+        const coverage = localBreakdown.coverage || { score: 0, totalCount: 0 };
+        if (stats.framework === 'static-html' && coverage.totalCount > 0 && coverage.score >= 60) {
+            // Keep simple HTML tasks from collapsing to unrealistic single-digit scores.
+            penalizedScore = Math.max(penalizedScore, Math.round(coverage.score * 0.55));
+        }
         return {
             overallScore: Math.max(0, Math.min(100, penalizedScore)),
             breakdown: {
@@ -990,8 +1192,8 @@ module.exports = function frontendEvalRoutes(pool, authenticate, cerebrasChat) {
             const sanitizedPath = String(filePath).replace(/\.\./g, '').replace(/[<>:"|?*\x00-\x1F]/g, '');
             let content;
             
-            // For individual files submission, read directly from extracted_path
-            if (row.submission_type === 'files' || !row.submission_type) {
+            // For individual files/code-editor submission, read directly from extracted_path
+            if (row.submission_type === 'files' || row.submission_type === 'code-editor' || !row.submission_type) {
                 const fullPath = path.resolve(path.join(row.extracted_path, sanitizedPath));
                 const basePath = path.resolve(row.extracted_path);
                 
@@ -1055,6 +1257,272 @@ module.exports = function frontendEvalRoutes(pool, authenticate, cerebrasChat) {
         }
     });
 
+    router.post('/admin/frontend-evals/submissions/:id/re-evaluate', authenticate, requireAdmin, async (req, res, next) => {
+        if (req.params.id === 'bulk') return next();
+        let tempRoot = null;
+        try {
+            const { id } = req.params;
+
+            const [[row]] = await pool.query(`
+                SELECT s.*, t.title, t.description, t.requirements, t.rubric_json
+                FROM frontend_eval_submissions s
+                INNER JOIN frontend_eval_tests t ON t.id = s.test_id
+                WHERE s.id = ?
+            `, [id]);
+
+            if (!row) {
+                return res.status(404).json({ success: false, error: 'Submission not found' });
+            }
+
+            let extractedRoot = null;
+            const existingExtracted = row.extracted_path ? path.resolve(row.extracted_path) : null;
+            if (existingExtracted && fs.existsSync(existingExtracted)) {
+                extractedRoot = existingExtracted;
+            }
+
+            if (!extractedRoot && row.stored_path) {
+                const projectFromStoredPath = path.resolve(path.join(row.stored_path, 'project'));
+                if (fs.existsSync(projectFromStoredPath)) {
+                    extractedRoot = projectFromStoredPath;
+                }
+            }
+
+            if (!extractedRoot) {
+                const localByIdPath = path.join(API_UPLOAD_ROOT, id, 'project');
+                if (fs.existsSync(localByIdPath)) extractedRoot = localByIdPath;
+            }
+
+            if (!extractedRoot) {
+                tempRoot = path.join(os.tmpdir(), 'frontend-evals-admin-reeval', `${id}-${Date.now()}`);
+                const tempProjectRoot = path.join(tempRoot, 'project');
+
+                let zipBuffer = await getZipFromDatabase(pool, id);
+
+                if (!zipBuffer && row.stored_path && fs.existsSync(row.stored_path)) {
+                    const entries = await fsp.readdir(row.stored_path, { withFileTypes: true });
+                    const zipEntry = entries.find(entry => entry.isFile() && /\.zip$/i.test(entry.name));
+                    if (zipEntry) {
+                        zipBuffer = await fsp.readFile(path.join(row.stored_path, zipEntry.name));
+                    }
+                }
+
+                if (zipBuffer && Buffer.isBuffer(zipBuffer)) {
+                    await extractZipBuffer(zipBuffer, tempProjectRoot);
+                    extractedRoot = tempProjectRoot;
+                }
+            }
+
+            if (!extractedRoot) {
+                return res.status(400).json({
+                    success: false,
+                    error: 'Unable to locate submission files for re-evaluation. Please submit again.',
+                });
+            }
+
+            const test = {
+                id: row.test_id,
+                title: row.title,
+                description: row.description,
+                requirements: row.requirements,
+                rubric_json: row.rubric_json,
+            };
+
+            const report = await analyzeSubmission({ extractedRoot, test, cerebrasChat });
+            const runtimeStatus = report.runtime.success ? 'passed' : report.runtime.attempted ? 'failed' : 'skipped';
+
+            await pool.query(
+                `UPDATE frontend_eval_submissions
+                 SET score = ?, runtime_status = ?, runtime_summary = ?, runtime_output = ?,
+                     report_json = ?, breakdown_json = ?, file_tree_json = ?, lint_results = ?, confidence_score = ?
+                 WHERE id = ?`,
+                [
+                    report.overallScore,
+                    runtimeStatus,
+                    report.runtime.summary || '',
+                    report.runtime.output || '',
+                    JSON.stringify(report),
+                    JSON.stringify(report.breakdown),
+                    JSON.stringify(report.fileTree),
+                    JSON.stringify(report.lintResults || {}),
+                    report.confidenceScore || 0,
+                    id,
+                ]
+            );
+
+            const [[updated]] = await pool.query(`
+                SELECT s.*, t.title AS test_title, t.description AS test_description, t.requirements,
+                       u.name AS student_name, u.email AS student_email
+                FROM frontend_eval_submissions s
+                LEFT JOIN frontend_eval_tests t ON t.id = s.test_id
+                LEFT JOIN users u ON u.id = s.student_id
+                WHERE s.id = ?
+            `, [id]);
+
+            if (updated) {
+                updated.report_json = safeJsonParse(updated.report_json, {});
+                updated.breakdown_json = safeJsonParse(updated.breakdown_json, {});
+                updated.file_tree_json = safeJsonParse(updated.file_tree_json, []);
+                updated.lint_results = safeJsonParse(updated.lint_results, null);
+            }
+
+            res.json({ success: true, submission: updated || null });
+        } catch (err) {
+            console.error('[frontend-evals][admin] re-evaluate error:', err);
+            res.status(500).json({ success: false, error: err.message });
+        } finally {
+            if (tempRoot) {
+                try { await fsp.rm(tempRoot, { recursive: true, force: true }); } catch {}
+            }
+        }
+    });
+
+    router.post('/admin/frontend-evals/submissions/bulk/re-evaluate', authenticate, requireAdmin, async (req, res) => {
+        try {
+            const { ids } = req.body;
+
+            if (!Array.isArray(ids) || ids.length === 0) {
+                return res.status(400).json({ success: false, error: 'Invalid or empty submission IDs' });
+            }
+
+            let updated = 0;
+            for (const id of ids) {
+                let tempRoot = null;
+                try {
+                    const [[row]] = await pool.query(`
+                        SELECT s.*, t.title, t.description, t.requirements, t.rubric_json
+                        FROM frontend_eval_submissions s
+                        INNER JOIN frontend_eval_tests t ON t.id = s.test_id
+                        WHERE s.id = ?
+                    `, [id]);
+
+                    if (!row) continue;
+
+                    let extractedRoot = null;
+                    const existingExtracted = row.extracted_path ? path.resolve(row.extracted_path) : null;
+                    if (existingExtracted && fs.existsSync(existingExtracted)) {
+                        extractedRoot = existingExtracted;
+                    }
+
+                    if (!extractedRoot && row.stored_path) {
+                        const projectFromStoredPath = path.resolve(path.join(row.stored_path, 'project'));
+                        if (fs.existsSync(projectFromStoredPath)) {
+                            extractedRoot = projectFromStoredPath;
+                        }
+                    }
+
+                    if (!extractedRoot) {
+                        const localByIdPath = path.join(API_UPLOAD_ROOT, id, 'project');
+                        if (fs.existsSync(localByIdPath)) extractedRoot = localByIdPath;
+                    }
+
+                    if (!extractedRoot) {
+                        tempRoot = path.join(os.tmpdir(), 'frontend-evals-admin-bulk-reeval', `${id}-${Date.now()}`);
+                        const tempProjectRoot = path.join(tempRoot, 'project');
+
+                        let zipBuffer = await getZipFromDatabase(pool, id);
+
+                        if (!zipBuffer && row.stored_path && fs.existsSync(row.stored_path)) {
+                            const entries = await fsp.readdir(row.stored_path, { withFileTypes: true });
+                            const zipEntry = entries.find(entry => entry.isFile() && /\.zip$/i.test(entry.name));
+                            if (zipEntry) {
+                                zipBuffer = await fsp.readFile(path.join(row.stored_path, zipEntry.name));
+                            }
+                        }
+
+                        if (zipBuffer && Buffer.isBuffer(zipBuffer)) {
+                            await extractZipBuffer(zipBuffer, tempProjectRoot);
+                            extractedRoot = tempProjectRoot;
+                        }
+                    }
+
+                    if (!extractedRoot) continue;
+
+                    const test = {
+                        id: row.test_id,
+                        title: row.title,
+                        description: row.description,
+                        requirements: row.requirements,
+                        rubric_json: row.rubric_json,
+                    };
+
+                    const report = await analyzeSubmission({ extractedRoot, test, cerebrasChat });
+                    const runtimeStatus = report.runtime.success ? 'passed' : report.runtime.attempted ? 'failed' : 'skipped';
+
+                    await pool.query(
+                        `UPDATE frontend_eval_submissions
+                         SET score = ?, runtime_status = ?, runtime_summary = ?, runtime_output = ?,
+                             report_json = ?, breakdown_json = ?, file_tree_json = ?, lint_results = ?, confidence_score = ?
+                         WHERE id = ?`,
+                        [
+                            report.overallScore,
+                            runtimeStatus,
+                            report.runtime.summary || '',
+                            report.runtime.output || '',
+                            JSON.stringify(report),
+                            JSON.stringify(report.breakdown),
+                            JSON.stringify(report.fileTree),
+                            JSON.stringify(report.lintResults || {}),
+                            report.confidenceScore || 0,
+                            id,
+                        ]
+                    );
+
+                    updated++;
+                } catch (err) {
+                    console.error(`[frontend-evals][admin] bulk re-evaluate error for submission ${id}:`, err);
+                } finally {
+                    if (tempRoot) {
+                        try { await fsp.rm(tempRoot, { recursive: true, force: true }); } catch {}
+                    }
+                }
+            }
+
+            res.json({ success: true, updated, total: ids.length });
+        } catch (err) {
+            console.error('[frontend-evals][admin] bulk re-evaluate error:', err);
+            res.status(500).json({ success: false, error: err.message });
+        }
+    });
+
+    router.post('/admin/frontend-evals/submissions/bulk/delete', authenticate, requireAdmin, async (req, res) => {
+        try {
+            const { ids } = req.body;
+
+            if (!Array.isArray(ids) || ids.length === 0) {
+                return res.status(400).json({ success: false, error: 'Invalid or empty submission IDs' });
+            }
+
+            let deleted = 0;
+            for (const id of ids) {
+                try {
+                    const [[row]] = await pool.query(
+                        'SELECT stored_path FROM frontend_eval_submissions WHERE id = ?',
+                        [id]
+                    );
+
+                    if (!row) continue;
+
+                    await pool.query('DELETE FROM frontend_eval_submissions WHERE id = ?', [id]);
+
+                    await deleteZipFromDatabase(pool, id);
+
+                    if (row.stored_path) {
+                        try { await fsp.rm(row.stored_path, { recursive: true, force: true }); } catch {}
+                    }
+
+                    deleted++;
+                } catch (err) {
+                    console.error(`[frontend-evals][admin] bulk delete error for submission ${id}:`, err);
+                }
+            }
+
+            res.json({ success: true, deleted, total: ids.length });
+        } catch (err) {
+            console.error('[frontend-evals][admin] bulk delete error:', err);
+            res.status(500).json({ success: false, error: err.message });
+        }
+    });
+
     router.get('/frontend-evals/my-tests', authenticate, async (req, res) => {
         try {
             const studentId = String(req.user.id);
@@ -1111,7 +1579,138 @@ module.exports = function frontendEvalRoutes(pool, authenticate, cerebrasChat) {
         }
     });
 
-    router.post('/frontend-evals/tests/:id/submit', authenticate, upload.any(), async (req, res) => {
+    router.post('/frontend-evals/submissions/:id/re-evaluate', authenticate, async (req, res, next) => {
+        if (req.params.id === 'bulk') return next();
+        let tempRoot = null;
+        try {
+            const studentId = String(req.user.id);
+            const { id } = req.params;
+
+            const [[row]] = await pool.query(`
+                SELECT s.*, t.title, t.description, t.requirements, t.rubric_json
+                FROM frontend_eval_submissions s
+                INNER JOIN frontend_eval_tests t ON t.id = s.test_id
+                WHERE s.id = ? AND s.student_id = ?
+            `, [id, studentId]);
+
+            if (!row) {
+                return res.status(404).json({ success: false, error: 'Submission not found' });
+            }
+
+            let extractedRoot = null;
+            const existingExtracted = row.extracted_path ? path.resolve(row.extracted_path) : null;
+            if (existingExtracted && fs.existsSync(existingExtracted)) {
+                extractedRoot = existingExtracted;
+            }
+
+            if (!extractedRoot && row.stored_path) {
+                const projectFromStoredPath = path.resolve(path.join(row.stored_path, 'project'));
+                if (fs.existsSync(projectFromStoredPath)) {
+                    extractedRoot = projectFromStoredPath;
+                }
+            }
+
+            if (!extractedRoot) {
+                const localByIdPath = path.join(API_UPLOAD_ROOT, id, 'project');
+                if (fs.existsSync(localByIdPath)) extractedRoot = localByIdPath;
+            }
+
+            if (!extractedRoot) {
+                tempRoot = path.join(os.tmpdir(), 'frontend-evals-reeval', `${id}-${Date.now()}`);
+                const tempProjectRoot = path.join(tempRoot, 'project');
+
+                let zipBuffer = await getZipFromDatabase(pool, id);
+
+                if (!zipBuffer && row.stored_path && fs.existsSync(row.stored_path)) {
+                    const entries = await fsp.readdir(row.stored_path, { withFileTypes: true });
+                    const zipEntry = entries.find(entry => entry.isFile() && /\.zip$/i.test(entry.name));
+                    if (zipEntry) {
+                        zipBuffer = await fsp.readFile(path.join(row.stored_path, zipEntry.name));
+                    }
+                }
+
+                if (zipBuffer && Buffer.isBuffer(zipBuffer)) {
+                    await extractZipBuffer(zipBuffer, tempProjectRoot);
+                    extractedRoot = tempProjectRoot;
+                }
+            }
+
+            if (!extractedRoot) {
+                return res.status(400).json({
+                    success: false,
+                    error: 'Unable to locate submission files for re-evaluation. Please submit again.',
+                });
+            }
+
+            const test = {
+                id: row.test_id,
+                title: row.title,
+                description: row.description,
+                requirements: row.requirements,
+                rubric_json: row.rubric_json,
+            };
+
+            const report = await analyzeSubmission({ extractedRoot, test, cerebrasChat });
+            const runtimeStatus = report.runtime.success ? 'passed' : report.runtime.attempted ? 'failed' : 'skipped';
+
+            await pool.query(
+                `UPDATE frontend_eval_submissions
+                 SET score = ?, runtime_status = ?, runtime_summary = ?, runtime_output = ?,
+                     report_json = ?, breakdown_json = ?, file_tree_json = ?, lint_results = ?, confidence_score = ?
+                 WHERE id = ? AND student_id = ?`,
+                [
+                    report.overallScore,
+                    runtimeStatus,
+                    report.runtime.summary || '',
+                    report.runtime.output || '',
+                    JSON.stringify(report),
+                    JSON.stringify(report.breakdown),
+                    JSON.stringify(report.fileTree),
+                    JSON.stringify(report.lintResults || {}),
+                    report.confidenceScore || 0,
+                    id,
+                    studentId,
+                ]
+            );
+
+            const [[updated]] = await pool.query(`
+                SELECT s.*, t.title AS test_title, t.description AS test_description, t.requirements
+                FROM frontend_eval_submissions s
+                LEFT JOIN frontend_eval_tests t ON t.id = s.test_id
+                WHERE s.id = ? AND s.student_id = ?
+            `, [id, studentId]);
+
+            if (updated) {
+                updated.report_json = safeJsonParse(updated.report_json, {});
+                updated.breakdown_json = safeJsonParse(updated.breakdown_json, {});
+                updated.file_tree_json = safeJsonParse(updated.file_tree_json, []);
+                updated.lint_results = safeJsonParse(updated.lint_results, null);
+            }
+
+            res.json({ success: true, submission: updated || null });
+        } catch (err) {
+            console.error('[frontend-evals] re-evaluate error:', err);
+            res.status(500).json({ success: false, error: err.message });
+        } finally {
+            if (tempRoot) {
+                try { await fsp.rm(tempRoot, { recursive: true, force: true }); } catch {}
+            }
+        }
+    });
+
+    // Custom middleware to handle both multipart (files) and JSON (code-editor) submissions
+    const handleSubmissionUpload = (req, res, next) => {
+        const contentType = req.get('content-type') || '';
+        if (contentType.includes('application/json')) {
+            // For JSON submissions (code editor), just let it pass through
+            next();
+        } else {
+            // For multipart submissions (file/zip upload), use multer
+            upload.any()(req, res, next);
+        }
+    };
+
+    router.post('/frontend-evals/tests/:id/submit', authenticate, handleSubmissionUpload, async (req, res) => {
         let submissionRoot = null;
         try {
             const studentId = String(req.user.id);
@@ -1137,11 +1736,22 @@ module.exports = function frontendEvalRoutes(pool, authenticate, cerebrasChat) {
 
             const files = req.files || [];
             const submissionType = String(req.body.submissionType || '').toLowerCase();
-            if (!files.length) {
-                return res.status(400).json({ success: false, error: 'No files uploaded' });
+            
+            // Validate submission type
+            if (!['zip', 'files', 'code-editor'].includes(submissionType)) {
+                return res.status(400).json({ success: false, error: 'submissionType must be zip, files, or code-editor' });
             }
-            if (!['zip', 'files'].includes(submissionType)) {
-                return res.status(400).json({ success: false, error: 'submissionType must be zip or files' });
+
+            // For code-editor submissions, validate that files array exists in body
+            if (submissionType === 'code-editor') {
+                if (!Array.isArray(req.body.files) || req.body.files.length === 0) {
+                    return res.status(400).json({ success: false, error: 'No code files provided' });
+                }
+            } else {
+                // For file/zip uploads, validate that files were uploaded
+                if (!files.length) {
+                    return res.status(400).json({ success: false, error: 'No files uploaded' });
+                }
             }
 
             const submissionId = uuidv4();
@@ -1162,39 +1772,97 @@ module.exports = function frontendEvalRoutes(pool, authenticate, cerebrasChat) {
                 
                 extractedRoot = path.join(submissionRoot, 'project');
                 await expandZip(zipPath, extractedRoot);
+            } else if (submissionType === 'code-editor') {
+                // Handle code editor submission
+                const codeFiles = req.body.files || [];
+                if (!Array.isArray(codeFiles) || codeFiles.length === 0) {
+                    return res.status(400).json({ success: false, error: 'No code files provided' });
+                }
+                
+                extractedRoot = path.join(submissionRoot, 'project');
+                await ensureDir(extractedRoot);
+                
+                // Write code files to disk
+                for (const codeFile of codeFiles) {
+                    const fileName = sanitizeSegment(codeFile.name || 'file.txt');
+                    const filePath = path.join(extractedRoot, fileName);
+                    await fsp.writeFile(filePath, codeFile.content || '', 'utf8');
+                }
+                
+                // Create ZIP and save to database
+                try {
+                    const zipBuffer = await createZipFromCodeEditorFiles(codeFiles);
+                    const savedToDb = await saveZipToDatabase(pool, submissionId, zipBuffer);
+                    if (savedToDb) {
+                        console.log(`✅ Code Editor ZIP saved to database for submission ${submissionId}`);
+                    } else {
+                        console.warn(`⚠️ Code Editor ZIP not saved to database (storage disabled), using local filesystem only`);
+                    }
+                } catch (err) {
+                    console.error(`Failed to save code editor ZIP: ${err.message}`);
+                    // Continue with submission even if database save fails - files are on disk
+                }
             } else {
                 let relativePaths = req.body.relativePaths || [];
                 if (!Array.isArray(relativePaths)) relativePaths = [relativePaths];
                 extractedRoot = await writeUploadedFiles(submissionRoot, files, relativePaths);
+                // Save ZIP to database so re-evaluation works from any server
+                try {
+                    const dirZip = await createZipFromDirectory(extractedRoot);
+                    const savedToDb = await saveZipToDatabase(pool, submissionId, dirZip);
+                    if (savedToDb) console.log(`✅ Files ZIP saved to database for submission ${submissionId}`);
+                } catch (zipErr) {
+                    console.error(`Failed to save files ZIP to database: ${zipErr.message}`);
+                }
             }
 
             const report = await analyzeSubmission({ extractedRoot, test, cerebrasChat });
             const runtimeStatus = report.runtime.success ? 'passed' : report.runtime.attempted ? 'failed' : 'skipped';
 
-            await pool.query(
-                `INSERT INTO frontend_eval_submissions
+            // Determine original name based on submission type
+            let originalName = 'project';
+            if (submissionType === 'code-editor') {
+                originalName = `Code Editor (${req.body.files?.length || 1} files)`;
+            } else if (files[0]?.originalname) {
+                originalName = files[0].originalname;
+            }
+
+            const insertSubmissionSql = `INSERT INTO frontend_eval_submissions
                  (id, test_id, student_id, submission_type, original_name, stored_path, extracted_path,
                   score, runtime_status, runtime_summary, runtime_output, report_json, breakdown_json, file_tree_json, lint_results, confidence_score)
-                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-                [
-                    submissionId,
-                    testId,
-                    studentId,
-                    submissionType,
-                    files[0]?.originalname || 'project',
-                    submissionRoot,
-                    extractedRoot,
-                    report.overallScore,
-                    runtimeStatus,
-                    report.runtime.summary || '',
-                    report.runtime.output || '',
-                    JSON.stringify(report),
-                    JSON.stringify(report.breakdown),
-                    JSON.stringify(report.fileTree),
-                    JSON.stringify(report.lintResults || {}),
-                    report.confidenceScore || 0,
-                ]
-            );
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`;
+
+            const insertParams = [
+                submissionId,
+                testId,
+                studentId,
+                submissionType,
+                originalName,
+                submissionRoot,
+                extractedRoot,
+                report.overallScore,
+                runtimeStatus,
+                report.runtime.summary || '',
+                report.runtime.output || '',
+                JSON.stringify(report),
+                JSON.stringify(report.breakdown),
+                JSON.stringify(report.fileTree),
+                JSON.stringify(report.lintResults || {}),
+                report.confidenceScore || 0,
+            ];
+
+            try {
+                await pool.query(insertSubmissionSql, insertParams);
+            } catch (dbErr) {
+                // Backward compatibility for old DB schemas where enum is only ('zip','files').
+                if (submissionType === 'code-editor' && /submission_type/i.test(String(dbErr?.message || ''))) {
+                    const fallbackParams = [...insertParams];
+                    fallbackParams[3] = 'files';
+                    await pool.query(insertSubmissionSql, fallbackParams);
+                } else {
+                    throw dbErr;
+                }
+            }
 
             res.json({
                 success: true,
@@ -1207,6 +1875,158 @@ module.exports = function frontendEvalRoutes(pool, authenticate, cerebrasChat) {
             if (submissionRoot) {
                 try { await fsp.rm(submissionRoot, { recursive: true, force: true }); } catch {}
             }
+            res.status(500).json({ success: false, error: err.message });
+        }
+    });
+
+    router.post('/frontend-evals/submissions/bulk/re-evaluate', authenticate, async (req, res) => {
+        try {
+            const studentId = String(req.user.id);
+            const { ids } = req.body;
+
+            if (!Array.isArray(ids) || ids.length === 0) {
+                return res.status(400).json({ success: false, error: 'Invalid or empty submission IDs' });
+            }
+
+            let updated = 0;
+            for (const id of ids) {
+                let tempRoot = null;
+                try {
+                    const [[row]] = await pool.query(`
+                        SELECT s.*, t.title, t.description, t.requirements, t.rubric_json
+                        FROM frontend_eval_submissions s
+                        INNER JOIN frontend_eval_tests t ON t.id = s.test_id
+                        WHERE s.id = ? AND s.student_id = ?
+                    `, [id, studentId]);
+
+                    if (!row) continue;
+
+                    let extractedRoot = null;
+                    const existingExtracted = row.extracted_path ? path.resolve(row.extracted_path) : null;
+                    if (existingExtracted && fs.existsSync(existingExtracted)) {
+                        extractedRoot = existingExtracted;
+                    }
+
+                    if (!extractedRoot && row.stored_path) {
+                        const projectFromStoredPath = path.resolve(path.join(row.stored_path, 'project'));
+                        if (fs.existsSync(projectFromStoredPath)) {
+                            extractedRoot = projectFromStoredPath;
+                        }
+                    }
+
+                    if (!extractedRoot) {
+                        const localByIdPath = path.join(API_UPLOAD_ROOT, id, 'project');
+                        if (fs.existsSync(localByIdPath)) extractedRoot = localByIdPath;
+                    }
+
+                    if (!extractedRoot) {
+                        tempRoot = path.join(os.tmpdir(), 'frontend-evals-bulk-reeval', `${id}-${Date.now()}`);
+                        const tempProjectRoot = path.join(tempRoot, 'project');
+
+                        let zipBuffer = await getZipFromDatabase(pool, id);
+
+                        if (!zipBuffer && row.stored_path && fs.existsSync(row.stored_path)) {
+                            const entries = await fsp.readdir(row.stored_path, { withFileTypes: true });
+                            const zipEntry = entries.find(entry => entry.isFile() && /\.zip$/i.test(entry.name));
+                            if (zipEntry) {
+                                zipBuffer = await fsp.readFile(path.join(row.stored_path, zipEntry.name));
+                            }
+                        }
+
+                        if (zipBuffer && Buffer.isBuffer(zipBuffer)) {
+                            await extractZipBuffer(zipBuffer, tempProjectRoot);
+                            extractedRoot = tempProjectRoot;
+                        }
+                    }
+
+                    if (!extractedRoot) continue;
+
+                    const test = {
+                        id: row.test_id,
+                        title: row.title,
+                        description: row.description,
+                        requirements: row.requirements,
+                        rubric_json: row.rubric_json,
+                    };
+
+                    const report = await analyzeSubmission({ extractedRoot, test, cerebrasChat });
+                    const runtimeStatus = report.runtime.success ? 'passed' : report.runtime.attempted ? 'failed' : 'skipped';
+
+                    await pool.query(
+                        `UPDATE frontend_eval_submissions
+                         SET score = ?, runtime_status = ?, runtime_summary = ?, runtime_output = ?,
+                             report_json = ?, breakdown_json = ?, file_tree_json = ?, lint_results = ?, confidence_score = ?
+                         WHERE id = ? AND student_id = ?`,
+                        [
+                            report.overallScore,
+                            runtimeStatus,
+                            report.runtime.summary || '',
+                            report.runtime.output || '',
+                            JSON.stringify(report),
+                            JSON.stringify(report.breakdown),
+                            JSON.stringify(report.fileTree),
+                            JSON.stringify(report.lintResults || {}),
+                            report.confidenceScore || 0,
+                            id,
+                            studentId,
+                        ]
+                    );
+
+                    updated++;
+                } catch (err) {
+                    console.error(`[frontend-evals] bulk re-evaluate error for submission ${id}:`, err);
+                } finally {
+                    if (tempRoot) {
+                        try { await fsp.rm(tempRoot, { recursive: true, force: true }); } catch {}
+                    }
+                }
+            }
+
+            res.json({ success: true, updated, total: ids.length });
+        } catch (err) {
+            console.error('[frontend-evals] bulk re-evaluate error:', err);
+            res.status(500).json({ success: false, error: err.message });
+        }
+    });
+
+    router.post('/frontend-evals/submissions/bulk/delete', authenticate, async (req, res) => {
+        try {
+            const studentId = String(req.user.id);
+            const { ids } = req.body;
+
+            if (!Array.isArray(ids) || ids.length === 0) {
+                return res.status(400).json({ success: false, error: 'Invalid or empty submission IDs' });
+            }
+
+            let deleted = 0;
+            for (const id of ids) {
+                try {
+                    const [[row]] = await pool.query(
+                        'SELECT stored_path FROM frontend_eval_submissions WHERE id = ? AND student_id = ?',
+                        [id, studentId]
+                    );
+
+                    if (!row) continue;
+
+                    await pool.query('DELETE FROM frontend_eval_submissions WHERE id = ? AND student_id = ?', [id, studentId]);
+
+                    // Delete from database storage if enabled
+                    await deleteZipFromDatabase(pool, id);
+
+                    // Delete local files
+                    if (row.stored_path) {
+                        try { await fsp.rm(row.stored_path, { recursive: true, force: true }); } catch {}
+                    }
+
+                    deleted++;
+                } catch (err) {
+                    console.error(`[frontend-evals] bulk delete error for submission ${id}:`, err);
+                }
+            }
+
+            res.json({ success: true, deleted, total: ids.length });
+        } catch (err) {
+            console.error('[frontend-evals] bulk delete error:', err);
             res.status(500).json({ success: false, error: err.message });
         }
     });

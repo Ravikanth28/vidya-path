@@ -57,6 +57,11 @@ function sanitizeObject(obj) {
  */
 function sanitizeMiddleware(req, res, next) {
     try {
+        const isFrontendEvalCodeSubmit = req.method === 'POST' && /^\/api\/frontend-evals\/tests\/[^/]+\/submit$/i.test(req.path);
+        if (isFrontendEvalCodeSubmit) {
+            return next();
+        }
+
         // Skip sanitization entirely for code execution endpoints
         // (source code contains <stdio.h>, <iostream>, <vector>, etc. that look like HTML tags)
         const skipPaths = ['/api/run', '/api/submit', '/api/run-with-tests', '/api/hints',
