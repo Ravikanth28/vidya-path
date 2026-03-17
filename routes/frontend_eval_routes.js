@@ -307,7 +307,13 @@ async function extractZipBuffer(zipBuffer, destinationPath) {
 }
 
 async function gatherSourceSnippets(rootDir, files) {
-    const interesting = files.filter(file => /\.(html?|css|js|jsx|ts|tsx|json|md)$/i.test(file.relPath)).slice(0, 14);
+    const interestingFiles = files.filter(file => /\.(html?|css|js|jsx|ts|tsx|json|md)$/i.test(file.relPath));
+    const htmlFiles = interestingFiles.filter(file => /\.html?$/i.test(file.relPath)).slice(0, 6);
+    const cssFiles = interestingFiles.filter(file => /\.css$/i.test(file.relPath)).slice(0, 5);
+    const jsFiles = interestingFiles.filter(file => /\.(js|jsx|ts|tsx)$/i.test(file.relPath)).slice(0, 5);
+    const selectedPaths = new Set([...htmlFiles, ...cssFiles, ...jsFiles].map(file => file.relPath));
+    const remainingFiles = interestingFiles.filter(file => !selectedPaths.has(file.relPath));
+    const interesting = [...htmlFiles, ...cssFiles, ...jsFiles, ...remainingFiles].slice(0, 16);
     const totalInterestingSize = interesting.reduce((sum, file) => sum + Number(file.size || 0), 0);
     const useExtendedSnippets = interesting.length <= 5 && totalInterestingSize <= 120 * 1024;
     const snippetCharLimit = useExtendedSnippets ? 12000 : 1800;
@@ -392,6 +398,24 @@ function countPattern(raw, pattern) {
 function requirementPatternMatch(requirementLine, sourceText, normalizedSource) {
     const line = normalizeText(requirementLine);
     const raw = String(sourceText || '');
+
+    const hasColorEvidence =
+        /\b(bgcolor|text|link|vlink|alink)\s*=/i.test(raw) ||
+        /\b(color|background-color)\s*:/i.test(raw) ||
+        /style\s*=\s*["'][^"']*\b(color|background-color)\s*:/i.test(raw);
+
+    if (/(?:apply|use|add|include|set)\s+(?:html\s+)?colou?rs?\b|\b(?:text|font|background)\s+colou?rs?\b/.test(line)) {
+        return hasColorEvidence;
+    }
+
+    if (/\bstyle|styling|css\b/.test(line)) {
+        const hasStylingEvidence =
+            /<style\b/i.test(raw) ||
+            /\bclass\s*=/i.test(raw) ||
+            /\.css\b/i.test(raw) ||
+            /\b(color|background|margin|padding|border|font|display|flex|grid)\s*:/i.test(raw);
+        if (hasStylingEvidence) return true;
+    }
 
     if (/html document structure|proper html/.test(line)) {
         return /<!doctype\s+html>/i.test(raw) && /<html\b/i.test(raw) && /<head\b/i.test(raw) && /<body\b/i.test(raw);
@@ -547,6 +571,10 @@ function runStaticLintChecks(snippets) {
             const inlineStyleCount = (content.match(/\bstyle\s*=/gi) || []).length;
             if (inlineStyleCount > 5) {
                 htmlIssues.push(`${snippet.path}: ${inlineStyleCount} inline style attributes (consider CSS classes)`);
+            }
+            const presentationalAttrCount = (content.match(/\b(bgcolor|align|border|text|link|vlink|alink)\s*=/gi) || []).length;
+            if (presentationalAttrCount > 0) {
+                htmlIssues.push(`${snippet.path}: ${presentationalAttrCount} deprecated presentational HTML attributes detected`);
             }
             if (content.match(/<(font|center|marquee|blink)\b/i)) {
                 htmlIssues.push(`${snippet.path}: Deprecated HTML tags detected`);
@@ -845,7 +873,7 @@ function fallbackAiReport(localBreakdown, stats, runtimeResult) {
 async function generateAiFrontendReport({ cerebrasChat, test, stats, fileTree, snippets, localBreakdown, runtimeResult, rubricWeights = {} }) {
     if (!cerebrasChat) return fallbackAiReport(localBreakdown, stats, runtimeResult);
 
-    const prompt = `You are an adaptive frontend evaluator for student project submissions.
+    const prompt = `You are a balanced frontend evaluator for student project submissions.
 
 Admin use case:
 Title: ${test.title}
@@ -882,12 +910,17 @@ ${JSON.stringify(snippets, null, 2)}
 
 Scoring rules you MUST follow:
 1. Requirements are the highest priority. Evaluate only against what is explicitly asked in this task.
-2. Do NOT heavily penalize missing JavaScript, responsiveness, framework setup, or API integration unless those are explicitly required.
-3. Missing must-have requirements should reduce the score, but partial completion should still receive meaningful partial credit.
-4. Avoid extreme low scores for submissions that satisfy a majority of listed requirements.
-5. Do not reward folder structure, package.json, or superficial styling unless requested features are actually implemented.
-6. The breakdown should reflect real implementation evidence, not assumptions.
-7. Call out missing requirements explicitly in issues and recommendations.
+2. You MUST inspect the submission holistically across HTML, CSS, and JavaScript. Do not judge from HTML alone.
+3. Check whether the HTML actually connects to the CSS and JS files, and whether those files contain real implementation. If CSS or JS files are missing, mostly empty, unused, or disconnected from the HTML, do not give credit for them.
+4. Trace concrete implementation evidence such as linked stylesheets, selectors, classes, ids, media queries, DOM queries, event listeners, validation logic, and interactive behavior before awarding marks.
+5. Be reasonably fair. If the student has implemented styling in CSS files and behavior in JavaScript files, count that evidence even when the HTML itself is simple.
+6. Deprecated presentational HTML should be treated as a quality issue. Examples include bgcolor, align, border, font, center, marquee, blink, and similar old HTML styling patterns.
+7. If CSS and JavaScript files clearly support the requested features, award meaningful credit for them. Do not require every feature to appear directly inside the HTML file.
+8. Do NOT heavily penalize missing JavaScript, responsiveness, framework setup, or API integration unless those are explicitly required by the task.
+9. Do not reward folder structure, package.json, or superficial styling unless requested features are actually implemented well.
+10. When a requirement can be satisfied through HTML, CSS, or JavaScript, consider the combined evidence from all three before marking it missing.
+11. The breakdown should reflect real implementation evidence, not assumptions.
+12. Call out missing requirements explicitly in issues and recommendations.
 
 Return ONLY valid JSON with this exact shape:
 {
