@@ -1234,75 +1234,75 @@ export default function AdminFrontendEval({ initialTab = 'tests' }) {
                     )}
                 </>
             ) : (
-                <div style={{ display: 'grid', gap: 12 }}>
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: 10 }}>
-                        <div style={{ background: '#0f172a', border: '1px solid #1e293b', borderRadius: 12, padding: 12 }}>
-                            <div style={{ color: '#64748b', fontSize: 11, fontWeight: 700, textTransform: 'uppercase' }}>Filtered Submissions</div>
-                            <div style={{ color: '#f8fafc', fontSize: 26, fontWeight: 900, marginTop: 4 }}>{submissionStats.total}</div>
+                <div style={{ display: 'grid', gap: 20 }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: 14 }}>
+                        <div style={{ background: 'linear-gradient(135deg, rgba(15, 23, 42, 0.8), rgba(2, 6, 23, 0.6))', border: '1px solid rgba(30, 41, 59, 0.5)', boxShadow: '0 4px 15px rgba(0, 0, 0, 0.3)', borderRadius: 14, padding: 18 }}>
+                            <div style={{ color: '#94a3b8', fontSize: 10, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.5px' }}>📊 Total Submissions</div>
+                            <div style={{ color: '#f0f9ff', fontSize: 32, fontWeight: 900, marginTop: 10 }}>{submissionStats.total}</div>
+                            <div style={{ color: '#64748b', fontSize: 11, marginTop: 10 }}>Filtered from all</div>
                         </div>
-                        <div style={{ background: '#0f172a', border: '1px solid #1e293b', borderRadius: 12, padding: 12 }}>
-                            <div style={{ color: '#64748b', fontSize: 11, fontWeight: 700, textTransform: 'uppercase' }}>Runtime Passed</div>
-                            <div style={{ color: '#34d399', fontSize: 26, fontWeight: 900, marginTop: 4 }}>{submissionStats.passed}</div>
+                        <div style={{ background: 'linear-gradient(135deg, rgba(15, 23, 42, 0.8), rgba(2, 6, 23, 0.6))', border: '1px solid rgba(52, 211, 153, 0.2)', boxShadow: '0 4px 15px rgba(52, 211, 153, 0.1)', borderRadius: 14, padding: 18 }}>
+                            <div style={{ color: '#86efac', fontSize: 10, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.5px' }}>✅ Runtime Passed</div>
+                            <div style={{ color: '#34d399', fontSize: 32, fontWeight: 900, marginTop: 10 }}>{submissionStats.passed}</div>
+                            <div style={{ color: '#64748b', fontSize: 11, marginTop: 10 }}>All tests passed</div>
                         </div>
-                        <div style={{ background: '#0f172a', border: '1px solid #1e293b', borderRadius: 12, padding: 12 }}>
-                            <div style={{ color: '#64748b', fontSize: 11, fontWeight: 700, textTransform: 'uppercase' }}>Average Score</div>
-                            <div style={{ color: '#38bdf8', fontSize: 26, fontWeight: 900, marginTop: 4 }}>{submissionStats.avgScore}</div>
-                            {batchReport.active ? (
-                                <div style={{ color: '#60a5fa', fontSize: 12, marginTop: 6 }}>
-                                    {batchReport.label}: {batchReport.attendedStudents}/{batchReport.totalStudents} attended
-                                </div>
-                            ) : (
-                                <div style={{ color: '#64748b', fontSize: 12, marginTop: 6 }}>Select a batch to see attendance</div>
-                            )}
+                        <div style={{ background: 'linear-gradient(135deg, rgba(15, 23, 42, 0.8), rgba(2, 6, 23, 0.6))', border: '1px solid rgba(56, 189, 248, 0.2)', boxShadow: '0 4px 15px rgba(56, 189, 248, 0.1)', borderRadius: 14, padding: 18 }}>
+                            <div style={{ color: '#7dd3fc', fontSize: 10, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.5px' }}>⭐ Average Score</div>
+                            <div style={{ color: '#38bdf8', fontSize: 32, fontWeight: 900, marginTop: 10 }}>{submissionStats.avgScore}</div>
+                            <div style={{ color: '#64748b', fontSize: 11, marginTop: 10 }}>Across filtered</div>
                         </div>
-                        <div style={{ background: '#0f172a', border: '1px solid #1e293b', borderRadius: 12, padding: 12 }}>
-                            <div style={{ color: '#64748b', fontSize: 11, fontWeight: 700, textTransform: 'uppercase' }}>Batch Attendance</div>
-                            <div style={{ color: batchReport.active ? '#a78bfa' : '#94a3b8', fontSize: 26, fontWeight: 900, marginTop: 4 }}>
+                        <div style={{ background: 'linear-gradient(135deg, rgba(15, 23, 42, 0.8), rgba(2, 6, 23, 0.6))', border: '1px solid rgba(168, 85, 246, 0.2)', boxShadow: '0 4px 15px rgba(168, 85, 246, 0.1)', borderRadius: 14, padding: 18 }}>
+                            <div style={{ color: '#d8b4fe', fontSize: 10, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.5px' }}>👥 Batch Attendance</div>
+                            <div style={{ color: batchReport.active ? '#c4b5fd' : '#94a3b8', fontSize: 32, fontWeight: 900, marginTop: 10 }}>
                                 {batchReport.active ? `${batchReport.attendedStudents}/${batchReport.totalStudents}` : '—'}
                             </div>
-                            <div style={{ color: '#64748b', fontSize: 12, marginTop: 6 }}>
-                                {batchReport.active ? `${batchReport.label} students attended` : 'Filter by batch to view report'}
+                            <div style={{ color: '#64748b', fontSize: 11, marginTop: 10 }}>
+                                {batchReport.active ? 'Attended' : 'Select batch'}
                             </div>
                         </div>
                     </div>
 
-<<<<<<< HEAD
-                    <div style={{ background: '#0f172a', borderRadius: 14, border: '1px solid #1e293b', padding: 12, display: 'grid', gridTemplateColumns: '1.5fr 0.8fr 0.8fr 0.7fr auto', gap: 10 }}>
-=======
-                    <div style={{ background: '#0f172a', borderRadius: 14, border: '1px solid #1e293b', padding: 12, display: 'grid', gridTemplateColumns: '1.5fr 0.9fr 0.8fr 0.8fr auto', gap: 10 }}>
->>>>>>> 60d35af593c142e91f2c697a232ad01d1c11703d
+                    <div style={{ background: '#0f172a', borderRadius: 16, border: '1px solid #1e293b', padding: 16, display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr 1fr auto', gap: 12, alignItems: 'center' }}>
                         <input
                             value={submissionQuery}
                             onChange={e => setSubmissionQuery(e.target.value)}
-                            placeholder="Search student, test, or type"
-                            style={{ background: '#020617', border: '1px solid #334155', borderRadius: 10, color: '#e2e8f0', padding: '10px 12px', outline: 'none' }}
+                            placeholder="🔍 Search student, test, or type..."
+                            style={{ background: 'rgba(2, 6, 23, 0.8)', border: '1px solid #334155', borderRadius: 10, color: '#e2e8f0', padding: '11px 14px', outline: 'none', fontSize: 13, fontWeight: 500, transition: 'all 0.2s', boxShadow: '0 2px 4px rgba(0,0,0,0.2)', '::placeholder': { color: '#64748b' } }}
+                            onFocus={(e) => { e.currentTarget.style.borderColor = '#3b82f6'; e.currentTarget.style.boxShadow = '0 0 12px rgba(59, 130, 246, 0.2)' }}
+                            onBlur={(e) => { e.currentTarget.style.borderColor = '#334155'; e.currentTarget.style.boxShadow = '0 2px 4px rgba(0,0,0,0.2)' }}
                         />
-                        <select value={batchFilter} onChange={e => setBatchFilter(e.target.value)} style={{ background: '#020617', border: '1px solid #334155', borderRadius: 10, color: '#e2e8f0', padding: '10px 12px', outline: 'none' }}>
+                        <select value={batchFilter} onChange={e => setBatchFilter(e.target.value)} style={{ background: 'rgba(2, 6, 23, 0.8)', border: '1px solid #334155', borderRadius: 10, color: '#e2e8f0', padding: '11px 12px', outline: 'none', fontWeight: 500, fontSize: 13, transition: 'all 0.2s', boxShadow: '0 2px 4px rgba(0,0,0,0.2)', cursor: 'pointer' }}
+                            onFocus={(e) => { e.currentTarget.style.borderColor = '#3b82f6'; e.currentTarget.style.boxShadow = '0 0 12px rgba(59, 130, 246, 0.2)' }}
+                            onBlur={(e) => { e.currentTarget.style.borderColor = '#334155'; e.currentTarget.style.boxShadow = '0 2px 4px rgba(0,0,0,0.2)' }}>
                             <option value="all">All Batches</option>
                             {batches.map(batch => (
                                 <option key={batch.id} value={batch.id}>{batch.batch_name}</option>
                             ))}
                         </select>
-                        <select value={runtimeFilter} onChange={e => setRuntimeFilter(e.target.value)} style={{ background: '#020617', border: '1px solid #334155', borderRadius: 10, color: '#e2e8f0', padding: '10px 12px', outline: 'none' }}>
+                        <select value={runtimeFilter} onChange={e => setRuntimeFilter(e.target.value)} style={{ background: 'rgba(2, 6, 23, 0.8)', border: '1px solid #334155', borderRadius: 10, color: '#e2e8f0', padding: '11px 12px', outline: 'none', fontWeight: 500, fontSize: 13, transition: 'all 0.2s', boxShadow: '0 2px 4px rgba(0,0,0,0.2)', cursor: 'pointer' }}
+                            onFocus={(e) => { e.currentTarget.style.borderColor = '#3b82f6'; e.currentTarget.style.boxShadow = '0 0 12px rgba(59, 130, 246, 0.2)' }}
+                            onBlur={(e) => { e.currentTarget.style.borderColor = '#334155'; e.currentTarget.style.boxShadow = '0 2px 4px rgba(0,0,0,0.2)' }}>
                             <option value="all">All Runtime</option>
                             <option value="passed">Passed</option>
                             <option value="failed">Failed</option>
                             <option value="skipped">Skipped</option>
                         </select>
-                        <select value={sortBy} onChange={e => setSortBy(e.target.value)} style={{ background: '#020617', border: '1px solid #334155', borderRadius: 10, color: '#e2e8f0', padding: '10px 12px', outline: 'none' }}>
+                        <select value={sortBy} onChange={e => setSortBy(e.target.value)} style={{ background: 'rgba(2, 6, 23, 0.8)', border: '1px solid #334155', borderRadius: 10, color: '#e2e8f0', padding: '11px 12px', outline: 'none', fontWeight: 500, fontSize: 13, transition: 'all 0.2s', boxShadow: '0 2px 4px rgba(0,0,0,0.2)', cursor: 'pointer' }}
+                            onFocus={(e) => { e.currentTarget.style.borderColor = '#3b82f6'; e.currentTarget.style.boxShadow = '0 0 12px rgba(59, 130, 246, 0.2)' }}
+                            onBlur={(e) => { e.currentTarget.style.borderColor = '#334155'; e.currentTarget.style.boxShadow = '0 2px 4px rgba(0,0,0,0.2)' }}>
                             <option value="latest">Latest First</option>
                             <option value="oldest">Oldest First</option>
                             <option value="score-desc">Score High to Low</option>
                             <option value="score-asc">Score Low to High</option>
                         </select>
-                        <button onClick={downloadCSV} disabled={!filteredSubmissions.length} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, padding: '10px 14px', borderRadius: 10, border: '1px solid #0ea5e9', background: filteredSubmissions.length ? 'rgba(14,165,233,0.1)' : '#1e3a5f', color: filteredSubmissions.length ? '#0ea5e9' : '#64748b', cursor: filteredSubmissions.length ? 'pointer' : 'not-allowed', fontWeight: 700, fontSize: 12 }}><Download size={14} />Export CSV</button>
-                        <div style={{ color: '#94a3b8', fontSize: 12, display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#020617', border: '1px solid #334155', borderRadius: 10, padding: '0 12px', fontWeight: 700 }}>
+                        <button onClick={downloadCSV} disabled={!filteredSubmissions.length} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, padding: '11px 16px', borderRadius: 10, border: '1px solid #0ea5e9', background: filteredSubmissions.length ? 'linear-gradient(135deg, rgba(14,165,233,0.15), rgba(14,165,233,0.05))' : '#1e3a5f', color: filteredSubmissions.length ? '#0ea5e9' : '#64748b', cursor: filteredSubmissions.length ? 'pointer' : 'not-allowed', fontWeight: 700, fontSize: 12, transition: 'all 0.2s', boxShadow: filteredSubmissions.length ? '0 2px 8px rgba(14,165,233,0.1)' : 'none' }}><Download size={14} />Export CSV</button>
+                        <div style={{ color: '#94a3b8', fontSize: 12, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(2,6,23,0.8)', border: '1px solid #334155', borderRadius: 10, padding: '0 14px', fontWeight: 700 }}>
                             {filteredSubmissions.length} results
                         </div>
                     </div>
 
-                    <div style={{ background: '#0f172a', borderRadius: 20, border: '1px solid #1e293b', overflow: 'hidden' }}>
-                        <div style={{ background: 'linear-gradient(135deg, #0f172a, #020617)', padding: '18px 24px', borderBottom: '1px solid #1e293b', display: 'grid', gridTemplateColumns: '1.4fr 1fr 110px 120px 190px 60px 60px', gap: 12, color: '#64748b', fontSize: 12, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                    <div style={{ background: '#0f172a', borderRadius: 20, border: '1px solid #1e293b', overflow: 'hidden', boxShadow: '0 8px 24px rgba(0, 0, 0, 0.4)' }}>
+                        <div style={{ background: 'linear-gradient(135deg, rgba(15, 23, 42, 0.9), rgba(2, 6, 23, 0.7))', padding: '20px 24px', borderBottom: '2px solid rgba(30, 41, 59, 0.8)', display: 'grid', gridTemplateColumns: '1.4fr 1fr 110px 120px 190px 60px 60px', gap: 12, color: '#94a3b8', fontSize: 11, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '1px' }}>
                             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>👤 Student / Test</div>
                             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>📦 Type</div>
                             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>⭐ Score</div>
@@ -1312,7 +1312,7 @@ export default function AdminFrontendEval({ initialTab = 'tests' }) {
                             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4 }}>Delete</div>
                         </div>
                         {filteredSubmissions.map((sub, idx) => (
-                            <div key={sub.id} style={{ display: 'grid', gridTemplateColumns: '1.4fr 1fr 110px 120px 190px 60px 60px', gap: 12, padding: '16px 24px', alignItems: 'center', borderBottom: idx === filteredSubmissions.length - 1 ? 'none' : '1px solid #111827', background: idx % 2 === 0 ? 'transparent' : 'rgba(255,255,255,0.01)', transition: 'all 0.2s' }}>
+                            <div key={sub.id} style={{ display: 'grid', gridTemplateColumns: '1.4fr 1fr 110px 120px 190px 60px 60px', gap: 12, padding: '16px 24px', alignItems: 'center', borderBottom: idx === filteredSubmissions.length - 1 ? 'none' : '1px solid #111827', background: idx % 2 === 0 ? 'rgba(2,6,23,0.3)' : 'rgba(15,23,42,0.5)', transition: 'all 0.2s ease', cursor: 'pointer' }} onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(56, 189, 248, 0.05)'} onMouseLeave={(e) => e.currentTarget.style.background = idx % 2 === 0 ? 'rgba(2,6,23,0.3)' : 'rgba(15,23,42,0.5)'}>
                                 <div>
                                     <div style={{ color: '#e2e8f0', fontWeight: 700, fontSize: 14 }}>{sub.student_name || 'Student'}</div>
                                     <div style={{ color: '#64748b', fontSize: 12, marginTop: 2 }}>📋 {sub.test_title}</div>
@@ -1320,19 +1320,20 @@ export default function AdminFrontendEval({ initialTab = 'tests' }) {
                                         Batch: {(batchStudentLookup[String(sub.student_id)] || []).join(', ') || 'Unassigned'}
                                     </div>
                                 </div>
-                                <div style={{ color: '#94a3b8', fontSize: 13, background: sub.submission_type === 'zip' ? 'rgba(59, 130, 246, 0.1)' : 'rgba(168, 85, 247, 0.1)', padding: '6px 10px', borderRadius: 8, fontWeight: 600 }}>{sub.submission_type === 'zip' ? '📦 ZIP' : '📁 Multi'}</div>
-                                <div style={{ color: '#38bdf8', fontWeight: 900, fontSize: 16 }}>{Math.round(sub.score || 0)}</div>
-                                <div style={{ color: sub.runtime_status === 'passed' ? '#34d399' : sub.runtime_status === 'failed' ? '#f87171' : '#fbbf24', fontWeight: 700, background: sub.runtime_status === 'passed' ? 'rgba(52, 211, 153, 0.1)' : sub.runtime_status === 'failed' ? 'rgba(248, 113, 113, 0.1)' : 'rgba(251, 191, 36, 0.1)', padding: '6px 10px', borderRadius: 8, fontSize: 12 }}>
-                                    {sub.runtime_status === 'passed' ? '✅' : sub.runtime_status === 'failed' ? '❌' : '⏸'}  {sub.runtime_status}
+                                <div style={{ color: '#94a3b8', fontSize: 13, background: sub.submission_type === 'zip' ? 'rgba(59, 130, 246, 0.15)' : 'rgba(168, 85, 247, 0.15)', padding: '8px 12px', borderRadius: 8, fontWeight: 600, border: sub.submission_type === 'zip' ? '1px solid rgba(59, 130, 246, 0.3)' : '1px solid rgba(168, 85, 247, 0.3)' }}>{sub.submission_type === 'zip' ? '📦 ZIP' : '📁 Multi'}</div>
+                                <div style={{ color: '#38bdf8', fontWeight: 900, fontSize: 18, background: 'rgba(56, 189, 248, 0.1)', padding: '8px 12px', borderRadius: 8, border: '1px solid rgba(56, 189, 248, 0.2)' }}>{Math.round(sub.score || 0)}</div>
+                                <div style={{ color: sub.runtime_status === 'passed' ? '#34d399' : sub.runtime_status === 'failed' ? '#f87171' : '#fbbf24', fontWeight: 700, background: sub.runtime_status === 'passed' ? 'rgba(52, 211, 153, 0.15)' : sub.runtime_status === 'failed' ? 'rgba(248, 113, 113, 0.15)' : 'rgba(251, 191, 36, 0.15)', padding: '8px 12px', borderRadius: 8, fontSize: 12, border: sub.runtime_status === 'passed' ? '1px solid rgba(52, 211, 153, 0.3)' : sub.runtime_status === 'failed' ? '1px solid rgba(248, 113, 113, 0.3)' : '1px solid rgba(251, 191, 36, 0.3)' }}>
+                                    {sub.runtime_status === 'passed' ? '✅' : sub.runtime_status === 'failed' ? '❌' : '⏸'} {sub.runtime_status}
                                 </div>
                                 <div style={{ color: '#94a3b8', fontSize: 12 }}>{new Date(sub.submitted_at).toLocaleString()}</div>
-                                <button onClick={() => openReport(sub.id)} style={{ padding: '8px 10px', borderRadius: 8, border: '1px solid #334155', background: '#111827', color: '#e2e8f0', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4, fontSize: 11, fontWeight: 600, transition: 'all 0.2s' }}><Eye size={13} /></button>
-                                <button onClick={() => deleteSubmission(sub.id)} style={{ padding: '8px 10px', borderRadius: 8, border: '1px solid #7f1d1d', background: '#2a0d0d', color: '#fca5a5', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4, fontSize: 11, fontWeight: 600, transition: 'all 0.2s' }}><Trash2 size={13} /></button>
+                                <button onClick={() => openReport(sub.id)} style={{ padding: '9px 11px', borderRadius: 8, border: '1px solid #334155', background: 'rgba(51, 65, 85, 0.3)', color: '#93c5fd', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4, fontSize: 11, fontWeight: 600, transition: 'all 0.2s', boxShadow: '0 2px 4px rgba(0,0,0,0.2)' }} onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(59, 130, 246, 0.2)'; e.currentTarget.style.border = '1px solid #3b82f6' }} onMouseLeave={(e) => { e.currentTarget.style.background = 'rgba(51, 65, 85, 0.3)'; e.currentTarget.style.border = '1px solid #334155' }}><Eye size={13} /></button>
+                                <button onClick={() => deleteSubmission(sub.id)} style={{ padding: '9px 11px', borderRadius: 8, border: '1px solid #7f1d1d', background: 'rgba(127, 29, 29, 0.2)', color: '#fca5a5', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4, fontSize: 11, fontWeight: 600, transition: 'all 0.2s', boxShadow: '0 2px 4px rgba(0,0,0,0.2)' }} onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(248, 113, 113, 0.2)'; e.currentTarget.style.border = '1px solid #f87171' }} onMouseLeave={(e) => { e.currentTarget.style.background = 'rgba(127, 29, 29, 0.2)'; e.currentTarget.style.border = '1px solid #7f1d1d' }}><Trash2 size={13} /></button>
                             </div>
                         ))}
-                        {!filteredSubmissions.length ? <div style={{ padding: 40, color: '#94a3b8', textAlign: 'center', background: 'rgba(0,0,0,0.2)' }}>
-                            <div style={{ fontSize: 40, marginBottom: 16 }}>📭</div>
-                            <div>No submissions match current filters.</div>
+                        {!filteredSubmissions.length ? <div style={{ padding: 60, color: '#94a3b8', textAlign: 'center', background: 'rgba(2, 6, 23, 0.5)' }}>
+                            <div style={{ fontSize: 48, marginBottom: 16, opacity: 0.7 }}>📭</div>
+                            <div style={{ fontSize: 15, fontWeight: 500 }}>No submissions match your filters</div>
+                            <div style={{ fontSize: 12, marginTop: 8, color: '#64748b' }}>Try adjusting your search or filter criteria</div>
                         </div> : null}
                     </div>
                 </div>
