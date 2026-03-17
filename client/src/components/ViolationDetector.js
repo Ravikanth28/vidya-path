@@ -5,7 +5,7 @@
  * Features:
  * - Tab switching detection
  * - Copy/Paste blocking & pattern detection
- * - URL filtering (block ChatGPT, Google, etc.)
+ * - URL filtering (block ChatGPT, Google, etc)
  * - Keystroke timing analysis
  * - Context menu blocking
  * - Fullscreen enforcement

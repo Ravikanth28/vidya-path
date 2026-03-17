@@ -33,7 +33,7 @@ async function callCerebras(messages, options = {}) {
                     'Content-Type': 'application/json'
                 },
                 body: JSON.stringify({
-                    model: options.model || 'gpt-oss-120b',
+                    model: options.model || 'llama3.1-8b',
                     messages,
                     temperature: options.temperature || 0.7,
                     max_tokens: options.max_tokens || 4096,

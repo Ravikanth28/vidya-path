@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Student Profile</title>
+
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      margin: 0;
+    }
+
+    .container {
+      width: 80%;
+      margin: auto;
+      background-color: white;
+      padding: 20px;
+      border-radius: 10px;
+    }
+
+    header {
+      text-align: center;
+      padding: 15px;
+      border-radius: 10px;
+    }
+
+    .profile {
+      text-align: center;
+      margin-top: 20px;
+    }
+
+    .profile img {
+      border-radius: 50%;
+      width: 150px;
+    }
+
+    ul {
+      padding: 15px;
+      border-radius: 8px;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 10px;
+    }
+
+    table, th, td {
+      border: 1px solid black;
+    }
+
+    th {
+      padding: 10px;
+    }
+
+    td {
+      padding: 10px;
+    }
+
+    a {
+      text-decoration: none;
+    }
+
+    button {
+      margin-top: 15px;
+      padding: 10px 15px;
+      background-color: red;
+      color: white;
+      border: none;
+      cursor: pointer;
+    }
+  </style>
+</head>
+
+<!-- HTML COLOR ATTRIBUTE USED -->
+<body bgcolor="lightblue">
+
+  <div class="container">
+
+    <!-- HEADER WITH HTML COLOR -->
+    <header bgcolor="green">
+      <h1 style="color: white;">Student Profile</h1>
+      <p style="color: white;">Personal Information Webpage</p>
+    </header>
+
+    <!-- PROFILE IMAGE -->
+    <section class="profile">
+      <img src="https://via.placeholder.com/150" alt="Profile Image">
+      <h2 style="color: blue;">Naveen Kumar</h2>
+      <p>I am a student interested in web development and programming.</p>
+    </section>
+
+    <!-- SKILLS LIST -->
+    <section>
+      <h2 style="color: red;">Skills</h2>
+      <ul bgcolor="yellow">
+        <li>HTML</li>
+        <li>CSS</li>
+        <li>JavaScript</li>
+        <li>Python</li>
+      </ul>
+    </section>
+
+    <!-- STUDENT TABLE -->
+    <section>
+      <h2 style="color: purple;">Student Information</h2>
+      <table bgcolor="lightgreen">
+        <tr>
+          <th>Name</th>
+          <td>Naveen Kumar</td>
+        </tr>
+        <tr>
+          <th>Age</th>
+          <td>20</td>
+        </tr>
+        <tr>
+          <th>Course</th>
+          <td>B.Tech</td>
+        </tr>
+        <tr>
+          <th>College</th>
+          <td>ABC College</td>
+        </tr>
+      </table>
+    </section>
+
+    <!-- TWO HYPERLINKS -->
+    <section>
+      <h2 style="color: orange;">Useful Links</h2>
+
+      <p>
+        <a href="https://www.google.com" target="_blank" style="color: blue;">
+          Visit Google
+        </a>
+      </p>
+
+      <p>
+        <a href="https://www.github.com" target="_blank" style="color: blue;">
+          Visit GitHub
+        </a>
+      </p>
+    </section>
+
+    <!-- BUTTON -->
+    <section>
+      <button onclick="showMessage()">Click Me</button>
+      <p id="message"></p>
+    </section>
+
+  </div>
+
+  <script>
+    function showMessage() {
+      document.getElementById("message").textContent =
+        "Welcome! You clicked the button.";
+    }
+  </script>
+
+</body>
+</html>

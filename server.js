@@ -333,7 +333,7 @@ async function cerebrasChat(messages, options = {}) {
                         'Content-Type': 'application/json'
                     },
                     body: JSON.stringify({
-                        model: options.model || 'gpt-oss-120b',
+                        model: options.model || 'llama3.1-8b',
                         messages,
                         temperature: options.temperature ?? 0.7,
                         max_tokens: options.max_tokens || 1024,
@@ -2293,7 +2293,7 @@ Only mark as detected if similarity > 80% and code structure is nearly identical
                         { role: 'system', content: 'You are a plagiarism detection system. Analyze code for copying.' },
                         { role: 'user', content: plagiarismPrompt }
                     ], {
-                        model: 'gpt-oss-120b',
+                        model: 'llama3.1-8b',
                         temperature: 0.1,
                         max_tokens: 300,
                         response_format: { type: 'json_object' }
@@ -2409,7 +2409,7 @@ Respond with JSON:
                                     { role: 'system', content: 'You are a technical SQL reviewer. Return JSON only.' },
                                     { role: 'user', content: sqlAiPrompt }
                                 ], {
-                                    model: 'gpt-oss-120b',
+                                    model: 'llama3.1-8b',
                                     temperature: 0.1,
                                     max_tokens: 800,
                                     response_format: { type: 'json_object' }
@@ -2488,7 +2488,7 @@ Scoring Guide:
                         { role: 'system', content: 'You are an expert code evaluator. Be fair but thorough.' },
                         { role: 'user', content: evaluationPrompt }
                     ], {
-                        model: 'gpt-oss-120b',
+                        model: 'llama3.1-8b',
                         temperature: 0.2,
                         max_tokens: 800,
                         response_format: { type: 'json_object' }
@@ -2877,7 +2877,7 @@ Provide a detailed evaluation JSON. Scale metrics 0-100 (numeric only).
                                 { role: 'system', content: 'You are an accurate SQL evaluator. Return JSON only.' },
                                 { role: 'user', content: sqlAiPrompt }
                             ], {
-                                model: 'gpt-oss-120b',
+                                model: 'llama3.1-8b',
                                 temperature: 0.1,
                                 max_tokens: 800,
                                 response_format: { type: 'json_object' }
@@ -2957,7 +2957,7 @@ Respond in this exact JSON format:
                 const aiResponse = await cerebrasChat([
                     { role: 'user', content: evaluationPrompt }
                 ], {
-                    model: 'gpt-oss-120b',
+                    model: 'llama3.1-8b',
                     temperature: 0.3,
                     max_tokens: 1000
                 });
@@ -3551,7 +3551,7 @@ app.post('/api/hints', async (req, res) => {
             { role: 'system', content: systemPrompt },
             { role: 'user', content: `${problemContext}\n\nCode (${language}):\n${code}` }
         ], {
-            model: 'gpt-oss-120b',
+            model: 'llama3.1-8b',
             temperature: 0.7,
             max_tokens: 800,
             response_format: { type: 'json_object' }
@@ -3584,7 +3584,7 @@ app.post('/api/ai/generate-problem', aiLimiter, async (req, res) => {
             { role: 'system', content: systemPrompt },
             { role: 'user', content: prompt }
         ], {
-            model: 'gpt-oss-120b',
+            model: 'llama3.1-8b',
             response_format: { type: 'json_object' }
         });
 
@@ -3612,7 +3612,7 @@ app.post('/api/ai/chat', aiLimiter, async (req, res) => {
             { role: 'system', content: systemPrompt },
             ...messages
         ], {
-            model: 'gpt-oss-120b'
+            model: 'llama3.1-8b'
         });
 
         const response = chatCompletion.choices[0]?.message?.content || 'Sorry, I could not generate a response.';
@@ -3679,7 +3679,7 @@ Rules:
             { role: 'system', content: systemPrompt },
             { role: 'user', content: userPrompt }
         ], {
-            model: 'gpt-oss-120b',
+            model: 'llama3.1-8b',
             max_tokens: 4000,
             response_format: { type: 'json_object' }
         });
@@ -3763,7 +3763,7 @@ Rules:
             { role: 'system', content: systemPrompt },
             { role: 'user', content: `Generate ${numQuestions} aptitude questions about: ${topic || 'logical reasoning, number series, verbal ability'}` }
         ], {
-            model: 'gpt-oss-120b',
+            model: 'llama3.1-8b',
             response_format: { type: 'json_object' }
         });
 
@@ -5124,7 +5124,7 @@ app.get('/api/global-test-submissions/:id/report', async (req, res) => {
                     { role: 'system', content: systemPrompt },
                     { role: 'user', content: `Analyze this detailed submission data and provide insights for EACH question:\n\n${questionsContext}` }
                 ], {
-                    model: 'gpt-oss-120b',
+                    model: 'llama3.1-8b',
                     temperature: 0.7,
                     max_tokens: 4000,
                     response_format: { type: 'json_object' }
@@ -6464,7 +6464,7 @@ Respond in JSON format:
             { role: 'system', content: systemPrompt },
             { role: 'user', content: `Schema:\n${schema}` }
         ], {
-            model: 'gpt-oss-120b',
+            model: 'llama3.1-8b',
             temperature: 0.1,
             max_tokens: 1500,
             response_format: { type: 'json_object' }
@@ -6509,7 +6509,7 @@ Respond in JSON format:
             { role: 'system', content: systemPrompt },
             { role: 'user', content: userPrompt }
         ], {
-            model: 'gpt-oss-120b',
+            model: 'llama3.1-8b',
             temperature: 0.2,
             max_tokens: 1500,
             response_format: { type: 'json_object' }
@@ -6704,7 +6704,7 @@ Provide a JSON response with:
             const aiResponse = await cerebrasChat([
                 { role: 'system', content: 'You are an educational performance analyst. Provide constructive, actionable insights.' },
                 { role: 'user', content: insightPrompt }
-            ], { model: 'gpt-oss-120b', temperature: 0.3, response_format: { type: 'json_object' } });
+            ], { model: 'llama3.1-8b', temperature: 0.3, response_format: { type: 'json_object' } });
 
             aiInsights = JSON.parse(aiResponse.choices[0]?.message?.content || '{}');
         } catch (e) {
@@ -6846,7 +6846,7 @@ Guidelines:
             { role: 'system', content: systemPrompt },
             { role: 'user', content: `Topic: ${topic}\nDifficulty: ${difficulty}\nLanguage: ${language}` }
         ], {
-            model: 'gpt-oss-120b',
+            model: 'llama3.1-8b',
             temperature: 0.7,
             max_tokens: 2000,
             response_format: { type: 'json_object' }
@@ -6900,7 +6900,7 @@ Guidelines:
             { role: 'system', content: systemPrompt },
             { role: 'user', content: `Topic: ${topic}\nDifficulty: ${difficulty}` }
         ], {
-            model: 'gpt-oss-120b',
+            model: 'llama3.1-8b',
             temperature: 0.7,
             max_tokens: 2000,
             response_format: { type: 'json_object' }
@@ -13813,7 +13813,7 @@ Rules:
 
         const completion = await cerebrasChat(
             [{ role: 'user', content: prompt }],
-            { model: 'gpt-oss-120b', temperature: 0.7, max_tokens: 3000 }
+            { model: 'llama3.1-8b', temperature: 0.7, max_tokens: 3000 }
         );
 
         const content = completion.choices[0]?.message?.content || '';
@@ -14072,7 +14072,7 @@ Be specific, constructive, and helpful.`;
 
             const completion = await cerebrasChat([
                 { role: 'user', content: prompt }
-            ], { model: 'gpt-oss-120b', temperature: 0.3 });
+            ], { model: 'llama3.1-8b', temperature: 0.3 });
 
             const content = completion.choices[0]?.message?.content || '';
             const jsonMatch = content.match(/\{[\s\S]*\}/);

@@ -736,6 +736,15 @@ export default function FrontendEvaluationPortal({ initialTab = 'tests' }) {
     const [selectedSubmissionIds, setSelectedSubmissionIds] = useState(new Set())
     const [bulkOperationInProgress, setBulkOperationInProgress] = useState(false)
 
+    async function readApiError(res) {
+        try {
+            const data = await res.json()
+            return data?.error || data?.message || `Server error: ${res.status}`
+        } catch {
+            return `Server error: ${res.status}`
+        }
+    }
+
     async function loadData() {
         setLoading(true)
         try {
@@ -807,7 +816,7 @@ export default function FrontendEvaluationPortal({ initialTab = 'tests' }) {
                 method: 'POST',
                 headers: authHeaders(),
             })
-            if (!res.ok) throw new Error(`Server error: ${res.status}`)
+            if (!res.ok) throw new Error(await readApiError(res))
             const data = await res.json()
             if (!data.success) throw new Error(data.error || 'Re-evaluation failed')
             await loadData()
@@ -837,7 +846,7 @@ export default function FrontendEvaluationPortal({ initialTab = 'tests' }) {
                 },
                 body: JSON.stringify({ ids: Array.from(selectedSubmissionIds) })
             })
-            if (!res.ok) throw new Error(`Server error: ${res.status}`)
+            if (!res.ok) throw new Error(await readApiError(res))
             const data = await res.json()
             if (!data.success) throw new Error(data.error || 'Bulk re-evaluation failed')
             await loadData()
@@ -1134,7 +1143,12 @@ export default function FrontendEvaluationPortal({ initialTab = 'tests' }) {
                             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>⏰ Submitted</div>
                             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>⚙️ Actions</div>
                         </div>
-                        {filteredSubmissions.map((sub, idx) => (
+                        {filteredSubmissions.map((sub, idx) => {
+                            const canReEvaluate = sub.re_evaluation_available !== false
+                            const reEvalTitle = canReEvaluate
+                                ? 'Re-evaluate submission'
+                                : 'Original submission files are no longer available for re-evaluation'
+                            return (
                             <div key={sub.id} style={{ display: 'grid', gridTemplateColumns: '50px 1.4fr 1fr 110px 120px 190px 200px', gap: 16, padding: '16px 24px', alignItems: 'center', borderBottom: idx === filteredSubmissions.length - 1 ? 'none' : '1px solid #111827', background: idx % 2 === 0 ? 'transparent' : 'rgba(255,255,255,0.01)', transition: 'all 0.2s' }}>
                                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                                     <input
@@ -1157,14 +1171,16 @@ export default function FrontendEvaluationPortal({ initialTab = 'tests' }) {
                                     <button onClick={() => openSubmission(sub.id)} style={{ padding: '9px 10px', borderRadius: 10, border: '1px solid #334155', background: '#111827', color: '#e2e8f0', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, fontSize: 12, fontWeight: 600, transition: 'all 0.2s' }}><Eye size={14} /></button>
                                     <button
                                         onClick={() => reEvaluateSubmission(sub.id)}
-                                        disabled={reevaluatingId === sub.id}
-                                        style={{ padding: '9px 10px', borderRadius: 10, border: '1px solid #1d4ed8', background: reevaluatingId === sub.id ? '#1e3a8a' : 'rgba(37,99,235,0.15)', color: '#bfdbfe', cursor: reevaluatingId === sub.id ? 'wait' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, fontSize: 12, fontWeight: 700, transition: 'all 0.2s' }}
+                                        disabled={reevaluatingId === sub.id || !canReEvaluate}
+                                        title={reEvalTitle}
+                                        style={{ padding: '9px 10px', borderRadius: 10, border: `1px solid ${canReEvaluate ? '#1d4ed8' : '#334155'}`, background: reevaluatingId === sub.id ? '#1e3a8a' : canReEvaluate ? 'rgba(37,99,235,0.15)' : 'rgba(51, 65, 85, 0.25)', color: canReEvaluate ? '#bfdbfe' : '#64748b', cursor: reevaluatingId === sub.id ? 'wait' : canReEvaluate ? 'pointer' : 'not-allowed', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, fontSize: 12, fontWeight: 700, transition: 'all 0.2s', opacity: canReEvaluate ? 1 : 0.65 }}
                                     >
                                         <RefreshCw size={14} />
                                     </button>
                                 </div>
                             </div>
-                        ))}
+                            )
+                        })}
                         {!filteredSubmissions.length ? <div style={{ padding: 40, color: '#94a3b8', textAlign: 'center', background: 'rgba(0,0,0,0.2)' }}>
                             <div style={{ fontSize: 40, marginBottom: 12 }}>📭</div>
                             <div>No submissions match current filters.</div>
