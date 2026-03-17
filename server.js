@@ -14376,7 +14376,7 @@ async function ensureFrontendEvalTables() {
                 id VARCHAR(50) PRIMARY KEY,
                 test_id VARCHAR(50) NOT NULL,
                 student_id VARCHAR(50) NOT NULL,
-                submission_type ENUM('zip','files') NOT NULL,
+                submission_type ENUM('zip','files','code-editor') NOT NULL,
                 original_name VARCHAR(255),
                 stored_path TEXT,
                 extracted_path TEXT,
@@ -14392,6 +14392,12 @@ async function ensureFrontendEvalTables() {
                 INDEX idx_fe_sub_student (student_id),
                 INDEX idx_fe_submitted (submitted_at)
             )
+        `);
+
+        // Keep existing databases in sync with new submission modes.
+        await pool.query(`
+            ALTER TABLE frontend_eval_submissions
+            MODIFY COLUMN submission_type ENUM('zip','files','code-editor') NOT NULL
         `);
         console.log('frontend evaluation tables ready');
     } catch (error) {

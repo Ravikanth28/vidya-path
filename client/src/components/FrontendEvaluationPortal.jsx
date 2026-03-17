@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
-import { AlertCircle, Eye, FileArchive, FolderOpen, Send, Upload, X } from 'lucide-react'
+import { AlertCircle, Eye, FileArchive, FolderOpen, Send, Upload, X, Code, Plus, Trash2, Info, RefreshCw } from 'lucide-react'
 
 const API = (import.meta.env.VITE_API_URL || 'http://localhost:3000') + '/api'
 const authHeaders = () => ({ Authorization: `Bearer ${localStorage.getItem('authToken')}` })
@@ -347,14 +347,60 @@ function SubmitModal({ test, onClose, onSubmitted }) {
     const [mode, setMode] = useState('files')
     const [folderFiles, setFolderFiles] = useState([])
     const [zipFile, setZipFile] = useState(null)
+    const [codeFiles, setCodeFiles] = useState([{ name: 'index.html', content: '' }])
+    const [editingFileIdx, setEditingFileIdx] = useState(0)
+    const [newFileName, setNewFileName] = useState('')
     const [submitting, setSubmitting] = useState(false)
     const [error, setError] = useState('')
+    const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false)
+    const [lastSavedTime, setLastSavedTime] = useState(null)
     const filesInputRef = useRef(null)
     const folderInputRef = useRef(null)
     const zipInputRef = useRef(null)
 
     const topFolderName = folderFiles[0]?.webkitRelativePath ? folderFiles[0].webkitRelativePath.split('/')[0] : ''
     const totalSizeMb = (folderFiles.reduce((sum, file) => sum + (file.size || 0), 0) / (1024 * 1024)).toFixed(2)
+
+    // Load code from localStorage on mount
+    useEffect(() => {
+        const storageKey = `codeEditor_${test.id}`;
+        const saved = localStorage.getItem(storageKey);
+        if (saved) {
+            try {
+                const parsed = JSON.parse(saved);
+                setCodeFiles(parsed);
+                setLastSavedTime(new Date());
+            } catch (err) {
+                console.error('Failed to load saved code:', err);
+            }
+        }
+    }, [test.id]);
+
+    // Auto-save code to localStorage whenever it changes
+    useEffect(() => {
+        if (mode === 'code' && codeFiles.length > 0) {
+            const storageKey = `codeEditor_${test.id}`;
+            try {
+                localStorage.setItem(storageKey, JSON.stringify(codeFiles));
+                setHasUnsavedChanges(false);
+                setLastSavedTime(new Date());
+            } catch (err) {
+                console.error('Failed to save code:', err);
+            }
+        }
+    }, [codeFiles, mode, test.id]);
+
+    // Warn user if closing with unsaved changes
+    useEffect(() => {
+        const handleBeforeUnload = (e) => {
+            if (mode === 'code' && hasUnsavedChanges) {
+                e.preventDefault();
+                e.returnValue = '';
+            }
+        };
+        window.addEventListener('beforeunload', handleBeforeUnload);
+        return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+    }, [hasUnsavedChanges, mode]);
 
     function pickFiles() {
         filesInputRef.current?.click()
@@ -382,6 +428,39 @@ function SubmitModal({ test, onClose, onSubmitted }) {
         setZipFile(event.target.files?.[0] || null)
     }
 
+    function addCodeFile() {
+        if (!newFileName.trim()) {
+            setError('Please enter a filename with extension (e.g., style.css)')
+            return
+        }
+        if (codeFiles.some(f => f.name === newFileName.trim())) {
+            setError('File already exists')
+            return
+        }
+        setCodeFiles([...codeFiles, { name: newFileName.trim(), content: '' }])
+        setNewFileName('')
+        setError('')
+    }
+
+    function removeCodeFile(idx) {
+        if (codeFiles.length === 1) {
+            setError('Must have at least one file')
+            return
+        }
+        const newFiles = codeFiles.filter((_, i) => i !== idx)
+        setCodeFiles(newFiles)
+        if (editingFileIdx >= newFiles.length) {
+            setEditingFileIdx(newFiles.length - 1)
+        }
+    }
+
+    function updateCodeFile(idx, content) {
+        const newFiles = [...codeFiles]
+        newFiles[idx].content = content
+        setCodeFiles(newFiles)
+        setHasUnsavedChanges(true)
+    }
+
     async function submit() {
         setError('')
         if (mode === 'zip' && !zipFile) {
@@ -392,27 +471,48 @@ function SubmitModal({ test, onClose, onSubmitted }) {
             setError('Please choose project files or a folder.')
             return
         }
+        if (mode === 'code' && codeFiles.some(f => !f.content.trim())) {
+            setError('Please fill in code for all files.')
+            return
+        }
 
-        const formData = new FormData()
-        formData.append('submissionType', mode)
-        if (mode === 'zip') {
-            formData.append('files', zipFile)
+        let submitData
+        const headers = authHeaders()
+
+        if (mode === 'code') {
+            // Code Editor submission - send as JSON
+            submitData = {
+                submissionType: 'code-editor',
+                files: codeFiles,
+            }
+            headers['Content-Type'] = 'application/json'
         } else {
-            folderFiles.forEach(file => {
-                formData.append('files', file)
-                formData.append('relativePaths', file.webkitRelativePath || file.name)
-            })
+            // File upload submission
+            submitData = new FormData()
+            submitData.append('submissionType', mode)
+            if (mode === 'zip') {
+                submitData.append('files', zipFile)
+            } else {
+                folderFiles.forEach(file => {
+                    submitData.append('files', file)
+                    submitData.append('relativePaths', file.webkitRelativePath || file.name)
+                })
+            }
         }
 
         setSubmitting(true)
         try {
             const res = await fetch(`${API}/frontend-evals/tests/${test.id}/submit`, {
                 method: 'POST',
-                headers: authHeaders(),
-                body: formData,
+                headers,
+                body: mode === 'code' ? JSON.stringify(submitData) : submitData,
             })
             const data = await res.json()
             if (!res.ok || !data.success) throw new Error(data.error || 'Submission failed')
+            // Clear saved code after successful submission
+            if (mode === 'code') {
+                localStorage.removeItem(`codeEditor_${test.id}`);
+            }
             onSubmitted(data)
         } catch (err) {
             setError(err.message)
@@ -421,67 +521,196 @@ function SubmitModal({ test, onClose, onSubmitted }) {
         }
     }
 
+    function handleClose() {
+        if (mode === 'code' && hasUnsavedChanges) {
+            if (window.confirm('You have unsaved code changes. Are you sure you want to close?')) {
+                onClose()
+            }
+        } else {
+            onClose()
+        }
+    }
+
     return (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.78)', zIndex: 9998, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-            <div style={{ width: 'min(760px, 92vw)', background: '#0f172a', borderRadius: 22, border: '1px solid #1e293b' }}>
-                <div style={{ padding: '20px 24px', borderBottom: '1px solid #1e293b', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <div style={{ width: 'min(900px, 92vw)', maxHeight: '85vh', overflow: 'auto', background: '#0f172a', borderRadius: 22, border: '1px solid #1e293b' }}>
+                <div style={{ padding: '20px 24px', borderBottom: '1px solid #1e293b', display: 'flex', justifyContent: 'space-between', alignItems: 'center', position: 'sticky', top: 0, background: '#0f172a' }}>
                     <div>
                         <div style={{ color: '#f8fafc', fontWeight: 800 }}>Submit Frontend Project</div>
                         <div style={{ color: '#64748b', fontSize: 12 }}>{test.title}</div>
                     </div>
-                    <button onClick={onClose} style={{ background: 'transparent', border: 'none', color: '#94a3b8', cursor: 'pointer' }}><X size={18} /></button>
+                    <button onClick={handleClose} style={{ background: 'transparent', border: 'none', color: '#94a3b8', cursor: 'pointer' }}><X size={18} /></button>
                 </div>
                 <div style={{ padding: 24, display: 'grid', gap: 16 }}>
                     <div style={{ display: 'flex', gap: 10 }}>
                         <button onClick={() => setMode('files')} style={{ flex: 1, padding: '12px 14px', borderRadius: 12, border: `1px solid ${mode === 'files' ? '#2563eb' : '#334155'}`, background: mode === 'files' ? 'rgba(37,99,235,0.12)' : '#020617', color: '#e2e8f0', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}><FolderOpen size={16} />Multi-file / Folder</button>
                         <button onClick={() => setMode('zip')} style={{ flex: 1, padding: '12px 14px', borderRadius: 12, border: `1px solid ${mode === 'zip' ? '#2563eb' : '#334155'}`, background: mode === 'zip' ? 'rgba(37,99,235,0.12)' : '#020617', color: '#e2e8f0', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}><FileArchive size={16} />ZIP Upload</button>
+                        <button onClick={() => setMode('code')} style={{ flex: 1, padding: '12px 14px', borderRadius: 12, border: `1px solid ${mode === 'code' ? '#2563eb' : '#334155'}`, background: mode === 'code' ? 'rgba(37,99,235,0.12)' : '#020617', color: '#e2e8f0', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}><Code size={16} />Code Editor</button>
                     </div>
 
-                    <div style={{ background: '#020617', border: '1px dashed #334155', borderRadius: 16, padding: 18 }}>
-                        {mode === 'files' ? (
-                            <>
-                                <div style={{ color: '#e2e8f0', fontWeight: 700, marginBottom: 8 }}>Choose your project folder or multiple files</div>
-                                <input ref={filesInputRef} type="file" multiple onChange={onMultiFilesChange} style={{ display: 'none' }} />
-                                <input ref={folderInputRef} type="file" multiple webkitdirectory="" directory="" onChange={onFolderChange} style={{ display: 'none' }} />
-                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-                                    <button type="button" onClick={pickFiles} style={{ padding: '11px 12px', borderRadius: 10, border: '1px solid #334155', background: '#0b1326', color: '#cbd5e1', cursor: 'pointer', fontWeight: 700 }}>Select Files</button>
-                                    <button type="button" onClick={pickFolder} style={{ padding: '11px 12px', borderRadius: 10, border: '1px solid #2563eb', background: 'rgba(37,99,235,0.12)', color: '#bfdbfe', cursor: 'pointer', fontWeight: 700 }}>Select Folder</button>
+                    {mode === 'code' ? (
+                        <>
+                            <div style={{ display: 'grid', gridTemplateColumns: '200px 1fr', gap: 16, minHeight: '400px', background: '#020617', borderRadius: 16, border: '1px solid #1e293b', overflow: 'hidden' }}>
+                                {/* File List Sidebar */}
+                                <div style={{ borderRight: '1px solid #1e293b', display: 'flex', flexDirection: 'column', overflowY: 'auto' }}>
+                                    <div style={{ padding: 12, borderBottom: '1px solid #1e293b' }}>
+                                        <div style={{ color: '#94a3b8', fontSize: 11, fontWeight: 700, marginBottom: 8, textTransform: 'uppercase' }}>Files</div>
+                                        {codeFiles.map((file, idx) => (
+                                            <div
+                                                key={idx}
+                                                onClick={() => setEditingFileIdx(idx)}
+                                                style={{
+                                                    padding: '8px 10px',
+                                                    borderRadius: 6,
+                                                    background: editingFileIdx === idx ? 'rgba(37,99,235,0.2)' : 'transparent',
+                                                    border: `1px solid ${editingFileIdx === idx ? '#2563eb' : 'transparent'}`,
+                                                    color: editingFileIdx === idx ? '#bfdbfe' : '#94a3b8',
+                                                    cursor: 'pointer',
+                                                    fontSize: 12,
+                                                    marginBottom: 4,
+                                                    display: 'flex',
+                                                    justifyContent: 'space-between',
+                                                    alignItems: 'center'
+                                                }}
+                                            >
+                                                <span>{file.name}</span>
+                                                <button
+                                                    onClick={(e) => { e.stopPropagation(); removeCodeFile(idx) }}
+                                                    style={{ background: 'transparent', border: 'none', color: '#f87171', cursor: 'pointer', padding: 0 }}
+                                                >
+                                                    <Trash2 size={12} />
+                                                </button>
+                                            </div>
+                                        ))}
+                                    </div>
+                                    <div style={{ padding: 12, marginTop: 'auto', borderTop: '1px solid #1e293b' }}>
+                                        <input
+                                            type="text"
+                                            placeholder="filename.ext"
+                                            value={newFileName}
+                                            onChange={(e) => setNewFileName(e.target.value)}
+                                            onKeyPress={(e) => e.key === 'Enter' && addCodeFile()}
+                                            style={{
+                                                width: '100%',
+                                                padding: '6px 8px',
+                                                borderRadius: 6,
+                                                border: '1px solid #334155',
+                                                background: '#0b1326',
+                                                color: '#cbd5e1',
+                                                fontSize: 11,
+                                                marginBottom: 6
+                                            }}
+                                        />
+                                        <button
+                                            onClick={addCodeFile}
+                                            style={{
+                                                width: '100%',
+                                                padding: '6px 8px',
+                                                borderRadius: 6,
+                                                border: '1px solid #2563eb',
+                                                background: 'rgba(37,99,235,0.12)',
+                                                color: '#bfdbfe',
+                                                cursor: 'pointer',
+                                                fontSize: 11,
+                                                fontWeight: 700,
+                                                display: 'flex',
+                                                alignItems: 'center',
+                                                justifyContent: 'center',
+                                                gap: 4
+                                            }}
+                                        >
+                                            <Plus size={12} /> Add File
+                                        </button>
+                                    </div>
                                 </div>
-                                {folderFiles.length ? (
-                                    <div style={{ marginTop: 10, background: '#0b1326', border: '1px solid #1e293b', borderRadius: 10, padding: '10px 12px', display: 'grid', gap: 4 }}>
-                                        <div style={{ color: '#e2e8f0', fontSize: 13, fontWeight: 700 }}>{topFolderName ? `Folder: ${topFolderName}` : 'Multiple files selected'}</div>
-                                        <div style={{ color: '#94a3b8', fontSize: 12 }}>{folderFiles.length} file(s) • {totalSizeMb} MB</div>
+
+                                {/* Code Editor */}
+                                <div style={{ display: 'flex', flexDirection: 'column', padding: 12 }}>
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                                        <div style={{ color: '#94a3b8', fontSize: 11, fontWeight: 700 }}>
+                                            {codeFiles[editingFileIdx]?.name || 'index.html'}
+                                        </div>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 10 }}>
+                                            {hasUnsavedChanges ? (
+                                                <div style={{ color: '#fbbf24', fontWeight: 700, display: 'flex', alignItems: 'center', gap: 4 }}>
+                                                    <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#fbbf24' }} />
+                                                    Unsaved
+                                                </div>
+                                            ) : lastSavedTime ? (
+                                                <div style={{ color: '#34d399', display: 'flex', alignItems: 'center', gap: 4 }}>
+                                                    <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#34d399' }} />
+                                                    Saved
+                                                </div>
+                                            ) : null}
+                                        </div>
                                     </div>
-                                ) : (
-                                    <div style={{ color: '#64748b', fontSize: 12, marginTop: 10 }}>No files selected yet.</div>
-                                )}
-                            </>
-                        ) : (
-                            <>
-                                <div style={{ color: '#e2e8f0', fontWeight: 700, marginBottom: 8 }}>Upload a zip file of your frontend project</div>
-                                <input ref={zipInputRef} type="file" accept=".zip" onChange={onZipChange} style={{ display: 'none' }} />
-                                <button type="button" onClick={pickZip} style={{ width: '100%', padding: '11px 12px', borderRadius: 10, border: '1px solid #2563eb', background: 'rgba(37,99,235,0.12)', color: '#bfdbfe', cursor: 'pointer', fontWeight: 700 }}>Choose ZIP File</button>
-                                {zipFile ? (
-                                    <div style={{ marginTop: 10, background: '#0b1326', border: '1px solid #1e293b', borderRadius: 10, padding: '10px 12px', display: 'grid', gap: 4 }}>
-                                        <div style={{ color: '#e2e8f0', fontSize: 13, fontWeight: 700, wordBreak: 'break-all' }}>{zipFile.name}</div>
-                                        <div style={{ color: '#94a3b8', fontSize: 12 }}>{(zipFile.size / (1024 * 1024)).toFixed(2)} MB</div>
+                                    <textarea
+                                        value={codeFiles[editingFileIdx]?.content || ''}
+                                        onChange={(e) => updateCodeFile(editingFileIdx, e.target.value)}
+                                        placeholder="Paste your code here..."
+                                        style={{
+                                            flex: 1,
+                                            padding: 12,
+                                            borderRadius: 8,
+                                            border: '1px solid #334155',
+                                            background: '#0b1326',
+                                            color: '#e2e8f0',
+                                            fontFamily: 'monospace',
+                                            fontSize: 12,
+                                            resize: 'none',
+                                            outline: 'none'
+                                        }}
+                                    />
+                                </div>
+                            </div>
+                        </>
+                    ) : (
+                        <div style={{ background: '#020617', border: '1px dashed #334155', borderRadius: 16, padding: 18 }}>
+                            {mode === 'files' ? (
+                                <>
+                                    <div style={{ color: '#e2e8f0', fontWeight: 700, marginBottom: 8 }}>Choose your project folder or multiple files</div>
+                                    <input ref={filesInputRef} type="file" multiple onChange={onMultiFilesChange} style={{ display: 'none' }} />
+                                    <input ref={folderInputRef} type="file" multiple webkitdirectory="" directory="" onChange={onFolderChange} style={{ display: 'none' }} />
+                                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                                        <button type="button" onClick={pickFiles} style={{ padding: '11px 12px', borderRadius: 10, border: '1px solid #334155', background: '#0b1326', color: '#cbd5e1', cursor: 'pointer', fontWeight: 700 }}>Select Files</button>
+                                        <button type="button" onClick={pickFolder} style={{ padding: '11px 12px', borderRadius: 10, border: '1px solid #2563eb', background: 'rgba(37,99,235,0.12)', color: '#bfdbfe', cursor: 'pointer', fontWeight: 700 }}>Select Folder</button>
                                     </div>
-                                ) : (
-                                    <div style={{ color: '#64748b', fontSize: 12, marginTop: 10 }}>No zip selected yet.</div>
-                                )}
-                            </>
-                        )}
-                    </div>
+                                    {folderFiles.length ? (
+                                        <div style={{ marginTop: 10, background: '#0b1326', border: '1px solid #1e293b', borderRadius: 10, padding: '10px 12px', display: 'grid', gap: 4 }}>
+                                            <div style={{ color: '#e2e8f0', fontSize: 13, fontWeight: 700 }}>{topFolderName ? `Folder: ${topFolderName}` : 'Multiple files selected'}</div>
+                                            <div style={{ color: '#94a3b8', fontSize: 12 }}>{folderFiles.length} file(s) • {totalSizeMb} MB</div>
+                                        </div>
+                                    ) : (
+                                        <div style={{ color: '#64748b', fontSize: 12, marginTop: 10 }}>No files selected yet.</div>
+                                    )}
+                                </>
+                            ) : (
+                                <>
+                                    <div style={{ color: '#e2e8f0', fontWeight: 700, marginBottom: 8 }}>Upload a zip file of your frontend project</div>
+                                    <input ref={zipInputRef} type="file" accept=".zip" onChange={onZipChange} style={{ display: 'none' }} />
+                                    <button type="button" onClick={pickZip} style={{ width: '100%', padding: '11px 12px', borderRadius: 10, border: '1px solid #2563eb', background: 'rgba(37,99,235,0.12)', color: '#bfdbfe', cursor: 'pointer', fontWeight: 700 }}>Choose ZIP File</button>
+                                    {zipFile ? (
+                                        <div style={{ marginTop: 10, background: '#0b1326', border: '1px solid #1e293b', borderRadius: 10, padding: '10px 12px', display: 'grid', gap: 4 }}>
+                                            <div style={{ color: '#e2e8f0', fontSize: 13, fontWeight: 700, wordBreak: 'break-all' }}>{zipFile.name}</div>
+                                            <div style={{ color: '#94a3b8', fontSize: 12 }}>{(zipFile.size / (1024 * 1024)).toFixed(2)} MB</div>
+                                        </div>
+                                    ) : (
+                                        <div style={{ color: '#64748b', fontSize: 12, marginTop: 10 }}>No zip selected yet.</div>
+                                    )}
+                                </>
+                            )}
+                        </div>
+                    )}
 
                     <div style={{ background: '#020617', borderRadius: 16, border: '1px solid #1e293b', padding: 16 }}>
                         <div style={{ color: '#e2e8f0', fontWeight: 700, marginBottom: 8 }}>Use Case Requirements</div>
-                        <div style={{ color: '#94a3b8', whiteSpace: 'pre-wrap', lineHeight: 1.7 }}>{test.requirements || 'No explicit requirements provided.'}</div>
+                        <div style={{ color: '#94a3b8', whiteSpace: 'pre-wrap', lineHeight: 1.7, fontSize: 13 }}>{test.requirements || 'No explicit requirements provided.'}</div>
                     </div>
 
                     {error ? <div style={{ color: '#fca5a5', fontSize: 13, display: 'flex', alignItems: 'center', gap: 8 }}><AlertCircle size={14} />{error}</div> : null}
 
                     <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
-                        <button onClick={onClose} style={{ padding: '10px 16px', borderRadius: 10, border: '1px solid #334155', background: 'transparent', color: '#e2e8f0', cursor: 'pointer' }}>Cancel</button>
+                        <button onClick={handleClose} style={{ padding: '10px 16px', borderRadius: 10, border: '1px solid #334155', background: 'transparent', color: '#e2e8f0', cursor: 'pointer' }}>Cancel</button>
                         <button onClick={submit} disabled={submitting} style={{ padding: '10px 16px', borderRadius: 10, border: 'none', background: 'linear-gradient(135deg, #2563eb, #0ea5e9)', color: '#fff', fontWeight: 800, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8 }}>
                             <Send size={14} /> {submitting ? 'Evaluating...' : 'Submit Project'}
                         </button>
@@ -502,16 +731,30 @@ export default function FrontendEvaluationPortal({ initialTab = 'tests' }) {
     const [submissionQuery, setSubmissionQuery] = useState('')
     const [runtimeFilter, setRuntimeFilter] = useState('all')
     const [sortBy, setSortBy] = useState('latest')
+    const [fullDetailsTest, setFullDetailsTest] = useState(null)  // NEW: Full requirements modal
+    const [reevaluatingId, setReevaluatingId] = useState(null)
+    const [selectedSubmissionIds, setSelectedSubmissionIds] = useState(new Set())
+    const [bulkOperationInProgress, setBulkOperationInProgress] = useState(false)
 
     async function loadData() {
         setLoading(true)
         try {
             const [testsRes, subsRes] = await Promise.all([
-                fetch(`${API}/frontend-evals/my-tests`, { headers: authHeaders() }).then(r => r.json()),
-                fetch(`${API}/frontend-evals/my-submissions`, { headers: authHeaders() }).then(r => r.json()),
+                fetch(`${API}/frontend-evals/my-tests`, { headers: authHeaders() })
+                    .then(r => {
+                        if (!r.ok) throw new Error(`Server error: ${r.status}`)
+                        return r.json()
+                    })
+                    .catch(err => { console.error('Failed to load tests:', err); return { tests: [] } }),
+                fetch(`${API}/frontend-evals/my-submissions`, { headers: authHeaders() })
+                    .then(r => {
+                        if (!r.ok) throw new Error(`Server error: ${r.status}`)
+                        return r.json()
+                    })
+                    .catch(err => { console.error('Failed to load submissions:', err); return { submissions: [] } }),
             ])
-            setTests(testsRes.tests || [])
-            setSubmissions(subsRes.submissions || [])
+            setTests(testsRes?.tests || [])
+            setSubmissions(subsRes?.submissions || [])
         } finally {
             setLoading(false)
         }
@@ -544,13 +787,182 @@ export default function FrontendEvaluationPortal({ initialTab = 'tests' }) {
     }, [submissions, submissionQuery, runtimeFilter, sortBy])
 
     async function openSubmission(id) {
-        const res = await fetch(`${API}/frontend-evals/submissions/${id}`, { headers: authHeaders() })
-        const data = await res.json()
-        if (res.ok && data.success) setReport(data.submission)
+        try {
+            const res = await fetch(`${API}/frontend-evals/submissions/${id}`, { headers: authHeaders() })
+            if (!res.ok) throw new Error(`Server error: ${res.status}`)
+            const data = await res.json()
+            if (data.success) setReport(data.submission)
+        } catch (err) {
+            console.error('Failed to open submission:', err)
+            window.alert('Error loading submission')
+        }
+    }
+
+    async function reEvaluateSubmission(id) {
+        const confirmText = 'Re-evaluate this submission with latest scoring rules?';
+        if (!window.confirm(confirmText)) return;
+        setReevaluatingId(id)
+        try {
+            const res = await fetch(`${API}/frontend-evals/submissions/${id}/re-evaluate`, {
+                method: 'POST',
+                headers: authHeaders(),
+            })
+            if (!res.ok) throw new Error(`Server error: ${res.status}`)
+            const data = await res.json()
+            if (!data.success) throw new Error(data.error || 'Re-evaluation failed')
+            await loadData()
+            if (data.submission) setReport(data.submission)
+        } catch (err) {
+            console.error('Re-evaluation error:', err)
+            window.alert(err.message)
+        } finally {
+            setReevaluatingId(null)
+        }
+    }
+
+    async function bulkReEvaluate() {
+        if (selectedSubmissionIds.size === 0) {
+            window.alert('Please select at least one submission to re-evaluate')
+            return
+        }
+        const count = selectedSubmissionIds.size
+        if (!window.confirm(`Re-evaluate ${count} submission(s) with latest scoring rules?`)) return
+        setBulkOperationInProgress(true)
+        try {
+            const res = await fetch(`${API}/frontend-evals/submissions/bulk/re-evaluate`, {
+                method: 'POST',
+                headers: {
+                    ...authHeaders(),
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ ids: Array.from(selectedSubmissionIds) })
+            })
+            if (!res.ok) throw new Error(`Server error: ${res.status}`)
+            const data = await res.json()
+            if (!data.success) throw new Error(data.error || 'Bulk re-evaluation failed')
+            await loadData()
+            setSelectedSubmissionIds(new Set())
+            window.alert(`Successfully re-evaluated ${data.updated || count} submission(s)`)
+        } catch (err) {
+            console.error('Bulk re-evaluation error:', err)
+            window.alert(err.message)
+        } finally {
+            setBulkOperationInProgress(false)
+        }
+    }
+
+    async function bulkDelete() {
+        if (selectedSubmissionIds.size === 0) {
+            window.alert('Please select at least one submission to delete')
+            return
+        }
+        const count = selectedSubmissionIds.size
+        if (!window.confirm(`Delete ${count} submission(s)? This action cannot be undone.`)) return
+        setBulkOperationInProgress(true)
+        try {
+            const res = await fetch(`${API}/frontend-evals/submissions/bulk/delete`, {
+                method: 'POST',
+                headers: {
+                    ...authHeaders(),
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ ids: Array.from(selectedSubmissionIds) })
+            })
+            if (!res.ok) throw new Error(`Server error: ${res.status}`)
+            const data = await res.json()
+            if (!data.success) throw new Error(data.error || 'Bulk delete failed')
+            await loadData()
+            setSelectedSubmissionIds(new Set())
+            window.alert(`Successfully deleted ${data.deleted || count} submission(s)`)
+        } catch (err) {
+            console.error('Bulk delete error:', err)
+            window.alert(err.message)
+        } finally {
+            setBulkOperationInProgress(false)
+        }
+    }
+
+    function toggleSubmissionSelect(id) {
+        const newSelected = new Set(selectedSubmissionIds)
+        if (newSelected.has(id)) {
+            newSelected.delete(id)
+        } else {
+            newSelected.add(id)
+        }
+        setSelectedSubmissionIds(newSelected)
+    }
+
+    function toggleSelectAll(filteredSubmissions) {
+        if (selectedSubmissionIds.size === filteredSubmissions.length) {
+            setSelectedSubmissionIds(new Set())
+        } else {
+            setSelectedSubmissionIds(new Set(filteredSubmissions.map(sub => sub.id)))
+        }
+    }
+
+    // Full Requirements Modal Component
+    const FullDetailsModal = ({ test, onClose }) => {
+        if (!test) return null
+        return (
+            <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.85)', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+                <div style={{ width: 'min(700px, 100%)', maxHeight: '85vh', overflow: 'auto', background: '#0f172a', borderRadius: 22, border: '1px solid #1e293b', boxShadow: '0 25px 50px rgba(0,0,0,0.5)' }}>
+                    <div style={{ padding: '24px', borderBottom: '1px solid #1e293b', display: 'flex', justifyContent: 'space-between', alignItems: 'center', position: 'sticky', top: 0, background: '#0f172a' }}>
+                        <div>
+                            <div style={{ color: '#f8fafc', fontWeight: 900, fontSize: 20 }}>✨ {test.title}</div>
+                            <div style={{ color: '#64748b', fontSize: 12, marginTop: 4 }}>Full Task Details</div>
+                        </div>
+                        <button onClick={onClose} style={{ background: 'transparent', border: 'none', color: '#94a3b8', cursor: 'pointer' }}><X size={20} /></button>
+                    </div>
+                    
+                    <div style={{ padding: '24px', display: 'grid', gap: 24 }}>
+                        {/* Description */}
+                        <div>
+                            <div style={{ color: '#cbd5e1', fontWeight: 800, fontSize: 14, marginBottom: 10, textTransform: 'uppercase', display: 'flex', alignItems: 'center', gap: 8 }}>
+                                <Info size={16} /> Description
+                            </div>
+                            <div style={{ color: '#e2e8f0', fontSize: 14, lineHeight: 1.8, background: 'rgba(30, 41, 59, 0.5)', padding: 16, borderRadius: 12, border: '1px solid #1e293b' }}>
+                                {test.description || 'No description provided.'}
+                            </div>
+                        </div>
+
+                        {/* Full Requirements */}
+                        <div>
+                            <div style={{ color: '#cbd5e1', fontWeight: 800, fontSize: 14, marginBottom: 10, textTransform: 'uppercase', display: 'flex', alignItems: 'center', gap: 8 }}>
+                                📋 Complete Requirements
+                            </div>
+                            <div style={{ color: '#cbd5e1', fontSize: 13, lineHeight: 1.9, background: 'rgba(30, 41, 59, 0.3)', padding: 18, borderRadius: 12, border: '1px solid #1e293b', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+                                {test.requirements || 'No requirements specified.'}
+                            </div>
+                        </div>
+
+                        {/* Submission Details */}
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 12 }}>
+                            <div style={{ background: '#020617', borderRadius: 12, border: '1px solid #1e293b', padding: 16 }}>
+                                <div style={{ color: '#94a3b8', fontSize: 11, fontWeight: 700, textTransform: 'uppercase', marginBottom: 8 }}>Attempts Available</div>
+                                <div style={{ color: '#38bdf8', fontSize: 24, fontWeight: 900 }}>{test.attempt_limit ?? '∞'}</div>
+                            </div>
+                            <div style={{ background: '#020617', borderRadius: 12, border: '1px solid #1e293b', padding: 16 }}>
+                                <div style={{ color: '#94a3b8', fontSize: 11, fontWeight: 700, textTransform: 'uppercase', marginBottom: 8 }}>You've Used</div>
+                                <div style={{ color: '#f97316', fontSize: 24, fontWeight: 900 }}>{Number(test.attempts_used || 0)}</div>
+                            </div>
+                        </div>
+
+                        {/* Action Buttons */}
+                        <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', paddingTop: 12, borderTop: '1px solid #1e293b' }}>
+                            <button onClick={onClose} style={{ padding: '12px 20px', borderRadius: 10, border: '1px solid #334155', background: 'transparent', color: '#e2e8f0', cursor: 'pointer', fontWeight: 700 }}>Back</button>
+                            <button onClick={() => { setFullDetailsTest(null); setSelectedTest(test); }} style={{ padding: '12px 20px', borderRadius: 10, border: 'none', background: 'linear-gradient(135deg, #2563eb, #0ea5e9)', color: '#fff', fontWeight: 800, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8 }}>
+                                <Upload size={16} /> Submit Project Now
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        )
     }
 
     return (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
+            {fullDetailsTest ? <FullDetailsModal test={fullDetailsTest} onClose={() => setFullDetailsTest(null)} /> : null}
             {selectedTest ? <SubmitModal test={selectedTest} onClose={() => setSelectedTest(null)} onSubmitted={async data => {
                 setSelectedTest(null)
                 await loadData()
@@ -609,9 +1021,12 @@ export default function FrontendEvaluationPortal({ initialTab = 'tests' }) {
                                 {/* Requirements Box */}
                                 <div style={{ background: 'rgba(59, 130, 246, 0.08)', border: '1px solid rgba(59, 130, 246, 0.2)', borderRadius: 14, padding: 14 }}>
                                     <div style={{ color: '#3b82f6', fontSize: 11, fontWeight: 700, marginBottom: 8, textTransform: 'uppercase', display: 'flex', alignItems: 'center', gap: 6 }}>📋 What to Build</div>
-                                    <div style={{ color: '#94a3b8', fontSize: 13, lineHeight: 1.6 }}>
+                                    <div style={{ color: '#94a3b8', fontSize: 13, lineHeight: 1.6, marginBottom: 10 }}>
                                         {test.requirements ? test.requirements.split('\n').slice(0, 2).join(' • ').slice(0, 100) + '...' : 'Click to view full requirements'}
                                     </div>
+                                    <button onClick={() => setFullDetailsTest(test)} style={{ width: '100%', padding: '8px 12px', borderRadius: 8, border: '1px solid #2563eb', background: 'rgba(37,99,235,0.1)', color: '#60a5fa', cursor: 'pointer', fontWeight: 700, fontSize: 12, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, transition: 'all 0.2s' }}>
+                                        <Eye size={14} /> View Full Details
+                                    </button>
                                 </div>
 
                                 {/* Attempts Info */}
@@ -679,25 +1094,75 @@ export default function FrontendEvaluationPortal({ initialTab = 'tests' }) {
                         </div>
                     </div>
 
+                    {/* Bulk Actions Bar */}
+                    {selectedSubmissionIds.size > 0 && (
+                        <div style={{ background: 'linear-gradient(135deg, #1e1b4b, #0f172a)', borderRadius: 14, border: '1px solid #4338ca', padding: 14, display: 'flex', alignItems: 'center', gap: 12, justifyContent: 'space-between' }}>
+                            <div style={{ color: '#e2e8f0', fontWeight: 700 }}>📌 {selectedSubmissionIds.size} submission(s) selected</div>
+                            <div style={{ display: 'flex', gap: 8 }}>
+                                <button
+                                    onClick={() => bulkReEvaluate()}
+                                    disabled={bulkOperationInProgress}
+                                    style={{ padding: '10px 14px', borderRadius: 10, border: '1px solid #1d4ed8', background: bulkOperationInProgress ? '#1e3a8a' : 'rgba(37,99,235,0.15)', color: '#bfdbfe', cursor: bulkOperationInProgress ? 'wait' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, fontSize: 12, fontWeight: 700, transition: 'all 0.2s' }}
+                                >
+                                    <RefreshCw size={14} /> {bulkOperationInProgress ? 'Processing...' : `Re-evaluate All (${selectedSubmissionIds.size})`}
+                                </button>
+                                <button
+                                    onClick={() => bulkDelete()}
+                                    disabled={bulkOperationInProgress}
+                                    style={{ padding: '10px 14px', borderRadius: 10, border: '1px solid #7c2d12', background: bulkOperationInProgress ? '#431407' : 'rgba(217,70,38,0.15)', color: '#fecaca', cursor: bulkOperationInProgress ? 'wait' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, fontSize: 12, fontWeight: 700, transition: 'all 0.2s' }}
+                                >
+                                    <Trash2 size={14} /> Delete All
+                                </button>
+                            </div>
+                        </div>
+                    )}
+
                     <div style={{ background: '#0f172a', borderRadius: 20, border: '1px solid #1e293b', overflow: 'hidden' }}>
-                        <div style={{ background: 'linear-gradient(135deg, #0f172a, #020617)', padding: '18px 24px', borderBottom: '1px solid #1e293b', display: 'grid', gridTemplateColumns: '1.4fr 1fr 110px 120px 190px 80px', gap: 16, color: '#64748b', fontSize: 12, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                        <div style={{ background: 'linear-gradient(135deg, #0f172a, #020617)', padding: '18px 24px', borderBottom: '1px solid #1e293b', display: 'grid', gridTemplateColumns: '50px 1.4fr 1fr 110px 120px 190px 200px', gap: 16, color: '#64748b', fontSize: 12, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                <input
+                                    type="checkbox"
+                                    onChange={() => toggleSelectAll(filteredSubmissions)}
+                                    checked={selectedSubmissionIds.size === filteredSubmissions.length && filteredSubmissions.length > 0}
+                                    style={{ width: 18, height: 18, cursor: 'pointer', accentColor: '#2563eb' }}
+                                />
+                            </div>
                             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>📋 Test Name</div>
                             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>📦 Type</div>
                             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>⭐ Score</div>
                             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>▶️ Runtime</div>
                             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>⏰ Submitted</div>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>👁️ View</div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>⚙️ Actions</div>
                         </div>
                         {filteredSubmissions.map((sub, idx) => (
-                            <div key={sub.id} style={{ display: 'grid', gridTemplateColumns: '1.4fr 1fr 110px 120px 190px 80px', gap: 16, padding: '16px 24px', alignItems: 'center', borderBottom: idx === filteredSubmissions.length - 1 ? 'none' : '1px solid #111827', background: idx % 2 === 0 ? 'transparent' : 'rgba(255,255,255,0.01)', transition: 'all 0.2s' }}>
+                            <div key={sub.id} style={{ display: 'grid', gridTemplateColumns: '50px 1.4fr 1fr 110px 120px 190px 200px', gap: 16, padding: '16px 24px', alignItems: 'center', borderBottom: idx === filteredSubmissions.length - 1 ? 'none' : '1px solid #111827', background: idx % 2 === 0 ? 'transparent' : 'rgba(255,255,255,0.01)', transition: 'all 0.2s' }}>
+                                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                    <input
+                                        type="checkbox"
+                                        onChange={() => toggleSubmissionSelect(sub.id)}
+                                        checked={selectedSubmissionIds.has(sub.id)}
+                                        style={{ width: 18, height: 18, cursor: 'pointer', accentColor: '#2563eb' }}
+                                    />
+                                </div>
                                 <div style={{ color: '#e2e8f0', fontWeight: 700, fontSize: 14 }}>{sub.test_title}</div>
-                                <div style={{ color: '#94a3b8', fontSize: 13, background: sub.submission_type === 'zip' ? 'rgba(59, 130, 246, 0.1)' : 'rgba(168, 85, 247, 0.1)', padding: '6px 10px', borderRadius: 8, fontWeight: 600 }}>{sub.submission_type === 'zip' ? '📦 ZIP' : '📁 Multi'}</div>
+                                <div style={{ color: '#94a3b8', fontSize: 13, background: sub.submission_type === 'zip' ? 'rgba(59, 130, 246, 0.1)' : sub.submission_type === 'code-editor' ? 'rgba(16, 185, 129, 0.1)' : 'rgba(168, 85, 247, 0.1)', padding: '6px 10px', borderRadius: 8, fontWeight: 600 }}>
+                                    {sub.submission_type === 'zip' ? '📦 ZIP' : sub.submission_type === 'code-editor' ? '💻 Code Editor' : '📁 Multi'}
+                                </div>
                                 <div style={{ color: '#38bdf8', fontWeight: 900, fontSize: 16 }}>{Math.round(sub.score || 0)}</div>
                                 <div style={{ color: sub.runtime_status === 'passed' ? '#34d399' : sub.runtime_status === 'failed' ? '#f87171' : '#fbbf24', fontWeight: 700, background: sub.runtime_status === 'passed' ? 'rgba(52, 211, 153, 0.1)' : sub.runtime_status === 'failed' ? 'rgba(248, 113, 113, 0.1)' : 'rgba(251, 191, 36, 0.1)', padding: '6px 10px', borderRadius: 8 }}>
                                     {sub.runtime_status === 'passed' ? '✅' : sub.runtime_status === 'failed' ? '❌' : '⏸'} {sub.runtime_status}
                                 </div>
                                 <div style={{ color: '#94a3b8', fontSize: 12 }}>{new Date(sub.submitted_at).toLocaleString()}</div>
-                                <button onClick={() => openSubmission(sub.id)} style={{ padding: '9px 12px', borderRadius: 10, border: '1px solid #334155', background: '#111827', color: '#e2e8f0', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, fontSize: 12, fontWeight: 600, transition: 'all 0.2s' }}><Eye size={14} />View</button>
+                                <div style={{ display: 'flex', gap: 8 }}>
+                                    <button onClick={() => openSubmission(sub.id)} style={{ padding: '9px 10px', borderRadius: 10, border: '1px solid #334155', background: '#111827', color: '#e2e8f0', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, fontSize: 12, fontWeight: 600, transition: 'all 0.2s' }}><Eye size={14} /></button>
+                                    <button
+                                        onClick={() => reEvaluateSubmission(sub.id)}
+                                        disabled={reevaluatingId === sub.id}
+                                        style={{ padding: '9px 10px', borderRadius: 10, border: '1px solid #1d4ed8', background: reevaluatingId === sub.id ? '#1e3a8a' : 'rgba(37,99,235,0.15)', color: '#bfdbfe', cursor: reevaluatingId === sub.id ? 'wait' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, fontSize: 12, fontWeight: 700, transition: 'all 0.2s' }}
+                                    >
+                                        <RefreshCw size={14} />
+                                    </button>
+                                </div>
                             </div>
                         ))}
                         {!filteredSubmissions.length ? <div style={{ padding: 40, color: '#94a3b8', textAlign: 'center', background: 'rgba(0,0,0,0.2)' }}>
