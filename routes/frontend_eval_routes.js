@@ -7,6 +7,7 @@ const multer = require('multer');
 const { v4: uuidv4 } = require('uuid');
 const { execFile } = require('child_process');
 const { promisify } = require('util');
+const unzipper = require('unzipper');
 
 const execFileAsync = promisify(execFile);
 
@@ -103,6 +104,28 @@ async function collectProjectFiles(rootDir) {
 function trimContent(content, maxChars = 1800) {
     const normalized = String(content || '').replace(/\u0000/g, '');
     return normalized.length > maxChars ? normalized.slice(0, maxChars) + '\n...[truncated]' : normalized;
+}
+
+async function readFileFromZip(zipPath, filePath) {
+    try {
+        return await new Promise((resolve, reject) => {
+            fs.createReadStream(zipPath)
+                .pipe(unzipper.Parse())
+                .on('entry', (entry) => {
+                    const entryPath = entry.path.replace(/\\/g, '/');
+                    if (entryPath === filePath || entryPath.endsWith('/' + filePath) || (entryPath.startsWith('project/') && entryPath.substring(8) === filePath)) {
+                        let data = '';
+                        entry.on('data', chunk => data += chunk.toString('utf8'));
+                        entry.on('end', () => resolve(data));
+                    } else {
+                        entry.autodrain();
+                    }
+                })
+                .on('error', reject);
+        });
+    } catch (err) {
+        throw new Error(`Failed to read from ZIP: ${err.message}`);
+    }
 }
 
 async function gatherSourceSnippets(rootDir, files) {
@@ -422,13 +445,13 @@ function fallbackAiReport(localBreakdown, stats, runtimeResult) {
         : 'Requirement coverage was not measurable from the prompt content.';
 
     return {
-        overallScore,
+        overallScore: Math.max(10, overallScore),
         breakdown: {
-            structure: localBreakdown.structure,
-            functionality: localBreakdown.functionality,
-            uiUx: localBreakdown.uiUx,
-            responsiveness: localBreakdown.responsiveness,
-            codeQuality: localBreakdown.codeQuality,
+            structure: Math.max(15, localBreakdown.structure),
+            functionality: Math.max(15, localBreakdown.functionality),
+            uiUx: Math.max(15, localBreakdown.uiUx),
+            responsiveness: Math.max(15, localBreakdown.responsiveness),
+            codeQuality: Math.max(15, localBreakdown.codeQuality),
         },
         summary: runtimeResult.success
             ? `Project structure is solid and the runtime check succeeded. ${coverageLine}`
@@ -782,6 +805,84 @@ module.exports = function frontendEvalRoutes(pool, authenticate, cerebrasChat) {
             row.file_tree_json = safeJsonParse(row.file_tree_json, []);
             row.lint_results = safeJsonParse(row.lint_results, null);
             res.json({ success: true, submission: row });
+        } catch (err) {
+            res.status(500).json({ success: false, error: err.message });
+        }
+    });
+
+    router.delete('/admin/frontend-evals/submissions/:id', authenticate, requireAdmin, async (req, res) => {
+        try {
+            const { id } = req.params;
+            const [[row]] = await pool.query('SELECT stored_path FROM frontend_eval_submissions WHERE id = ?', [id]);
+            if (!row) return res.status(404).json({ success: false, error: 'Submission not found' });
+            
+            await pool.query('DELETE FROM frontend_eval_submissions WHERE id = ?', [id]);
+            
+            if (row.stored_path) {
+                try { await fsp.rm(row.stored_path, { recursive: true, force: true }); } catch {}
+            }
+            
+            res.json({ success: true });
+        } catch (err) {
+            res.status(500).json({ success: false, error: err.message });
+        }
+    });
+
+    router.get('/admin/frontend-evals/submissions/:id/file', authenticate, requireAdmin, async (req, res) => {
+        try {
+            const { id } = req.params;
+            const { filePath } = req.query;
+            
+            if (!filePath) return res.status(400).json({ success: false, error: 'File path is required' });
+            
+            const [[row]] = await pool.query('SELECT stored_path, extracted_path, submission_type FROM frontend_eval_submissions WHERE id = ?', [id]);
+            if (!row) return res.status(404).json({ success: false, error: 'Submission not found' });
+            
+            const sanitizedPath = String(filePath).replace(/\.\./g, '').replace(/[<>:"|?*\x00-\x1F]/g, '');
+            let content;
+            
+            // For individual files submission, read directly from extracted_path
+            if (row.submission_type === 'files' || !row.submission_type) {
+                const fullPath = path.resolve(path.join(row.extracted_path, sanitizedPath));
+                const basePath = path.resolve(row.extracted_path);
+                
+                if (!fullPath.startsWith(basePath)) {
+                    return res.status(403).json({ success: false, error: 'Access denied' });
+                }
+                
+                if (!fs.existsSync(fullPath)) {
+                    return res.status(404).json({ success: false, error: 'File not found' });
+                }
+                
+                content = await fsp.readFile(fullPath, 'utf8');
+            } 
+            // For ZIP submission, try ZIP first, then fallback to extracted files
+            else if (row.submission_type === 'zip') {
+                const zipPath = path.join(row.stored_path, 'project.zip');
+                try {
+                    if (fs.existsSync(zipPath)) {
+                        content = await readFileFromZip(zipPath, sanitizedPath);
+                    } else {
+                        throw new Error('ZIP not found');
+                    }
+                } catch (zipErr) {
+                    // Fallback to extracted files
+                    const fullPath = path.resolve(path.join(row.extracted_path, sanitizedPath));
+                    const basePath = path.resolve(row.extracted_path);
+                    
+                    if (!fullPath.startsWith(basePath)) {
+                        return res.status(403).json({ success: false, error: 'Access denied' });
+                    }
+                    
+                    if (!fs.existsSync(fullPath)) {
+                        return res.status(404).json({ success: false, error: 'File not found' });
+                    }
+                    
+                    content = await fsp.readFile(fullPath, 'utf8');
+                }
+            }
+            
+            res.json({ success: true, content });
         } catch (err) {
             res.status(500).json({ success: false, error: err.message });
         }

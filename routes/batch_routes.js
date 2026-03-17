@@ -8,7 +8,7 @@
 
 const { v4: uuidv4 } = require('uuid');
 const multer = require('multer');
-const XLSX = require('xlsx');
+const ExcelJS = require('exceljs');
 
 // Multer setup — store file in memory for parsing
 const fileUpload = multer({
@@ -29,6 +29,26 @@ const fileUpload = multer({
         }
     }
 });
+
+/**
+ * Read Excel/CSV workbook from buffer using ExcelJS
+ */
+async function readExcelWorkbook(buffer) {
+    const workbook = new ExcelJS.Workbook();
+    await workbook.xlsx.load(buffer);
+    return workbook;
+}
+
+/**
+ * Convert ExcelJS worksheet to array of arrays (rows)
+ */
+function sheetToArray(worksheet) {
+    const rows = [];
+    worksheet.eachRow((row) => {
+        rows.push(row.values.slice(1)); // slice(1) removes the undefined first element ExcelJS adds
+    });
+    return rows;
+}
 
 /**
  * Build lookup maps from DB students for matching
@@ -169,15 +189,14 @@ module.exports = function (pool, authenticate, authorize) {
 
             if (isExcel) {
                 // ─── Excel: each sheet → separate batch ──────────────────
-                const workbook = XLSX.read(req.file.buffer, { type: 'buffer' });
+                const workbook = await readExcelWorkbook(req.file.buffer);
 
-                if (workbook.SheetNames.length === 0) {
+                if (workbook.worksheets.length === 0) {
                     return res.status(400).json({ error: 'Excel file has no sheets' });
                 }
 
-                for (const sheetName of workbook.SheetNames) {
-                    const sheet = workbook.Sheets[sheetName];
-                    const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' });
+                for (const worksheet of workbook.worksheets) {
+                    const rows = sheetToArray(worksheet);
 
                     if (rows.length < 2) continue; // skip empty sheets (header only or empty)
 
@@ -186,24 +205,24 @@ module.exports = function (pool, authenticate, authorize) {
                     const id = uuidv4();
                     await pool.query(
                         'INSERT INTO student_batches (id, batch_name, student_ids, student_count, source_filename, sheet_name, created_by) VALUES (?, ?, ?, ?, ?, ?, ?)',
-                        [id, sheetName, JSON.stringify(matched), matched.length, filename, sheetName, req.user.id]
+                        [id, worksheet.name, JSON.stringify(matched), matched.length, filename, worksheet.name, req.user.id]
                     );
 
                     createdBatches.push({
                         id,
-                        batch_name: sheetName,
+                        batch_name: worksheet.name,
                         student_count: matched.length,
                         unmatched,
-                        sheet_name: sheetName,
+                        sheet_name: worksheet.name,
                     });
                 }
 
             } else {
                 // ─── CSV: single batch ───────────────────────────────────
                 const batchName = (req.body.batch_name || '').trim() || filename.replace(/\.\w+$/, '');
-                const workbook = XLSX.read(req.file.buffer, { type: 'buffer' });
-                const sheet = workbook.Sheets[workbook.SheetNames[0]];
-                const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' });
+                const workbook = await readExcelWorkbook(req.file.buffer);
+                const worksheet = workbook.worksheets[0];
+                const rows = sheetToArray(worksheet);
 
                 const { matched, unmatched } = matchStudentsFromRows(rows, allStudents, emailToId, nameToId);
 
@@ -249,9 +268,9 @@ module.exports = function (pool, authenticate, authorize) {
                 const [allStudents] = await pool.query("SELECT id, name, email FROM users WHERE role = 'student'");
                 const { emailToId, nameToId } = buildStudentMaps(allStudents);
 
-                const workbook = XLSX.read(req.file.buffer, { type: 'buffer' });
-                const sheet = workbook.Sheets[workbook.SheetNames[0]];
-                const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' });
+                const workbook = await readExcelWorkbook(req.file.buffer);
+                const worksheet = workbook.worksheets[0];
+                const rows = sheetToArray(worksheet);
 
                 const { matched } = matchStudentsFromRows(rows, allStudents, emailToId, nameToId);
 

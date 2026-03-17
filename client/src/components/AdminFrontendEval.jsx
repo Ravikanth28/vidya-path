@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react'
-import { AlertCircle, CheckCircle2, Code2, Eye, Play, Square, Trash2, Users, X, Plus, FileCode2 } from 'lucide-react'
+import { AlertCircle, CheckCircle2, Code2, Eye, Play, Square, Trash2, Users, X, Plus, FileCode2, Download } from 'lucide-react'
 
 const API = (import.meta.env.VITE_API_URL || 'http://localhost:3000') + '/api'
 const authHeader = () => ({ Authorization: `Bearer ${localStorage.getItem('authToken')}`, 'Content-Type': 'application/json' })
@@ -438,6 +438,9 @@ function ReportModal({ submission, onClose }) {
     const breakdown = report.breakdown || submission.breakdown_json || {}
     const [activeTab, setActiveTab] = useState('overview')
     const [activeEvalSection, setActiveEvalSection] = useState('strengths')
+    const [selectedFile, setSelectedFile] = useState(null)
+    const [fileContent, setFileContent] = useState('')
+    const [loadingFile, setLoadingFile] = useState(false)
     const [copied, setCopied] = useState(false)
 
     const metrics = [
@@ -472,11 +475,29 @@ function ReportModal({ submission, onClose }) {
     const hasInsightsData = derivedConfidence != null || hasCoverageData || derivedLintScore != null || smokeTotal > 0
 
     const renderTree = (nodes = [], depth = 0) => nodes.map(node => (
-        <div key={node.path} style={{ paddingLeft: depth * 14, color: node.type === 'dir' ? '#cbd5e1' : '#94a3b8', fontSize: 12, lineHeight: 1.7 }}>
+        <div key={node.path} style={{ paddingLeft: depth * 14, color: node.type === 'dir' ? '#cbd5e1' : selectedFile === node.path ? '#3b82f6' : '#94a3b8', fontSize: 12, lineHeight: 1.7, cursor: node.type === 'file' ? 'pointer' : 'default', background: selectedFile === node.path ? 'rgba(59,130,246,0.15)' : 'transparent', padding: node.type === 'file' ? '4px 6px' : '0', borderRadius: node.type === 'file' ? '4px' : '0', transition: 'all 0.2s' }} onClick={() => node.type === 'file' && loadFile(node.path)}>
             {node.type === 'dir' ? '📁' : '📄'} {node.name}
             {node.children ? renderTree(node.children, depth + 1) : null}
         </div>
     ))
+
+    async function loadFile(filePath) {
+        setLoadingFile(true)
+        setSelectedFile(filePath)
+        try {
+            const res = await fetch(`${API}/admin/frontend-evals/submissions/${submission.id}/file?filePath=${encodeURIComponent(filePath)}`, { headers: authHeader() })
+            const data = await res.json()
+            if (res.ok && data.success) {
+                setFileContent(data.content)
+            } else {
+                setFileContent(`Error: ${data.error || 'Failed to load file'}`)
+            }
+        } catch (err) {
+            setFileContent(`Error: ${err.message}`)
+        } finally {
+            setLoadingFile(false)
+        }
+    }
 
     useEffect(() => {
         function onKeyDown(event) {
@@ -693,7 +714,7 @@ function ReportModal({ submission, onClose }) {
 
                     {activeTab === 'runtime' ? (
                         <>
-                            <div style={{ display: 'grid', gridTemplateColumns: '1.05fr 1fr', gap: 16 }}>
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 16 }}>
                                 <div style={{ background: '#020617', borderRadius: 18, border: '1px solid #1e293b', padding: 18 }}>
                                     <div style={{ color: '#cbd5e1', fontWeight: 800, marginBottom: 10 }}>Runtime Summary</div>
                                     <div style={{ color: '#38bdf8', fontWeight: 700, fontSize: 13, marginBottom: 12, background: 'rgba(56, 189, 248, 0.1)', padding: 12, borderRadius: 10, border: '1px solid rgba(56, 189, 248, 0.2)' }}>{runtimeSummary}</div>
@@ -703,13 +724,27 @@ function ReportModal({ submission, onClose }) {
                                     </div>
                                     <pre style={{ background: '#000814', color: '#94a3b8', padding: 12, borderRadius: 10, fontSize: 11, overflow: 'auto', minHeight: 170, maxHeight: 260, border: '1px solid #1e293b' }}>{runtimeOutput || 'No runtime output captured.'}</pre>
                                 </div>
+                            </div>
 
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1.2fr', gap: 16 }}>
                                 <div style={{ background: '#020617', borderRadius: 18, border: '1px solid #1e293b', padding: 18 }}>
-                                    <div style={{ color: '#cbd5e1', fontWeight: 800, marginBottom: 10 }}>Project Files</div>
+                                    <div style={{ color: '#cbd5e1', fontWeight: 800, marginBottom: 10 }}>Project Files (Click to view code)</div>
                                     <div style={{ background: '#000814', borderRadius: 10, padding: 12, maxHeight: 360, overflow: 'auto', border: '1px solid #1e293b' }}>
                                         {renderTree(submission.file_tree_json || report.fileTree || [])}
                                     </div>
                                 </div>
+
+                                {selectedFile && (
+                                    <div style={{ background: '#020617', borderRadius: 18, border: '1px solid #1e293b', padding: 18 }}>
+                                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+                                            <div style={{ color: '#cbd5e1', fontWeight: 800, fontSize: 13 }}>📄 {selectedFile.split('/').pop()}</div>
+                                            <button onClick={() => setSelectedFile(null)} style={{ border: 'none', background: 'transparent', color: '#94a3b8', cursor: 'pointer', fontSize: 18 }}>✕</button>
+                                        </div>
+                                        <pre style={{ background: '#000814', color: '#94a3b8', padding: 12, borderRadius: 10, fontSize: 11, overflow: 'auto', minHeight: 360, maxHeight: 360, border: '1px solid #1e293b', lineHeight: 1.5, fontFamily: 'Courier New, monospace' }}>
+                                            {loadingFile ? 'Loading...' : fileContent || '(empty file)'}
+                                        </pre>
+                                    </div>
+                                )}
                             </div>
                             {lintData ? (
                                 <div style={{ background: '#020617', borderRadius: 18, border: '1px solid #1e293b', padding: 18 }}>
@@ -761,6 +796,7 @@ export default function AdminFrontendEval({ initialTab = 'tests' }) {
     const [assigning, setAssigning] = useState(null)
     const [report, setReport] = useState(null)
     const [toast, setToast] = useState(null)
+    const [showFormPanel, setShowFormPanel] = useState(false)
     const [form, setForm] = useState({ title: '', description: '', requirements: '', attempt_limit: 1, rubric_json: {} })
     const [formErrors, setFormErrors] = useState({})
     const [submissionQuery, setSubmissionQuery] = useState('')
@@ -895,6 +931,46 @@ export default function AdminFrontendEval({ initialTab = 'tests' }) {
         setReport(data.submission)
     }
 
+    async function deleteSubmission(id) {
+        if (!window.confirm('Delete this submission permanently?')) return
+        try {
+            const res = await fetch(`${API}/admin/frontend-evals/submissions/${id}`, { method: 'DELETE', headers: authHeader() })
+            const data = await res.json()
+            if (!res.ok || !data.success) throw new Error(data.error || 'Delete failed')
+            setToast({ type: 'success', message: 'Submission deleted successfully' })
+            loadData()
+        } catch (err) {
+            setToast({ type: 'error', message: err.message })
+        }
+    }
+
+    function downloadCSV() {
+        if (!filteredSubmissions.length) {
+            setToast({ type: 'error', message: 'No submissions to export' })
+            return
+        }
+        const headers = ['Student Name', 'Test Title', 'Score', 'Runtime Status', 'Submission Type', 'Submitted Date']
+        const rows = filteredSubmissions.map(sub => [
+            sub.student_name || 'N/A',
+            sub.test_title || 'N/A',
+            Math.round(sub.score || 0),
+            sub.runtime_status || 'N/A',
+            sub.submission_type || 'N/A',
+            new Date(sub.submitted_at).toLocaleString()
+        ])
+        const csvContent = [
+            headers.map(h => `"${h}"`).join(','),
+            ...rows.map(row => row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(','))
+        ].join('\n')
+        const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' })
+        const link = document.createElement('a')
+        const url = URL.createObjectURL(blob)
+        link.setAttribute('href', url)
+        link.setAttribute('download', `frontend-eval-submissions-${new Date().toISOString().split('T')[0]}.csv`)
+        link.click()
+        setToast({ type: 'success', message: `Exported ${filteredSubmissions.length} submissions` })
+    }
+
     return (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
             {toast ? <Toast item={toast} onClose={() => setToast(null)} /> : null}
@@ -914,78 +990,100 @@ export default function AdminFrontendEval({ initialTab = 'tests' }) {
 
             {tab === 'tests' ? (
                 <>
-                    <div style={{ background: 'linear-gradient(135deg, #1a2a4e, #0f172a)', borderRadius: 20, border: '1px solid #1e3a5f', padding: 28, display: 'grid', gap: 20 }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingBottom: 16, borderBottom: '1px solid #1e3a5f' }}>
-                            <div>
-                                <div style={{ color: '#f8fafc', fontWeight: 900, fontSize: 20 }}>{editing ? '✏️ Edit Use Case' : '➕ Create New Use Case'}</div>
-                                <div style={{ color: '#64748b', fontSize: 13, marginTop: 4 }}>Define frontend evaluation task for students</div>
+                    {/* Form Panel - Collapsible */}
+                    <div style={{ background: 'linear-gradient(135deg, #1a2a4e, #0f172a)', borderRadius: 20, border: '1px solid #1e3a5f', overflow: 'hidden' }}>
+                        <button 
+                            onClick={() => setShowFormPanel(!showFormPanel)}
+                            style={{ width: '100%', padding: '22px 24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: showFormPanel ? 'rgba(59,130,246,0.15)' : 'transparent', border: 'none', cursor: 'pointer', borderBottom: showFormPanel ? '1px solid #1e3a5f' : 'none', transition: 'all 0.2s' }}
+                        >
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                                <div style={{ color: '#3b82f6', fontSize: 20 }}>{showFormPanel ? '▼' : '▶'}</div>
+                                <div>
+                                    <div style={{ color: '#f8fafc', fontWeight: 900, fontSize: 18 }}>{editing ? '✏️ Edit Use Case' : '➕ Create New Use Case'}</div>
+                                    <div style={{ color: '#64748b', fontSize: 12, marginTop: 2 }}>Define frontend evaluation task for students</div>
+                                </div>
                             </div>
-                            {editing ? <button onClick={resetForm} style={{ background: 'transparent', border: '1px solid #334155', color: '#94a3b8', cursor: 'pointer', padding: '8px 14px', borderRadius: 10, fontSize: 13, fontWeight: 600 }}>Cancel Edit</button> : null}
-                        </div>
+                            {editing && (
+                                <button onClick={(e) => { e.stopPropagation(); resetForm() }} style={{ background: 'transparent', border: '1px solid #334155', color: '#94a3b8', cursor: 'pointer', padding: '6px 12px', borderRadius: 8, fontSize: 12, fontWeight: 600 }}>Cancel Edit</button>
+                            )}
+                        </button>
 
-                        <div style={{ display: 'grid', gap: 16 }}>
-                            {/* Title Field */}
-                            <div style={{ display: 'grid', gap: 8 }}>
-                                <label style={{ color: '#cbd5e1', fontWeight: 700, fontSize: 13, textTransform: 'uppercase', letterSpacing: '0.5px' }}>📌 Use Case Title *</label>
-                                <input value={form.title} onChange={e => { setForm(prev => ({ ...prev, title: e.target.value })); if (formErrors.title) setFormErrors(prev => ({ ...prev, title: '' })) }} placeholder="e.g., E-Commerce Product Page" style={{ width: '100%', padding: '14px 16px', background: '#020617', border: `1px solid ${formErrors.title ? '#ef4444' : '#334155'}`, borderRadius: 12, color: '#e2e8f0', fontSize: 15, outline: 'none', transition: 'border-color 0.2s ease' }} />
-                                {formErrors.title ? <div style={{ fontSize: 12, color: '#fca5a5', background: 'rgba(127,29,29,0.2)', border: '1px solid rgba(239,68,68,0.35)', borderRadius: 8, padding: '6px 8px' }}>{formErrors.title}</div> : null}
-                                <div style={{ fontSize: 11, color: '#64748b' }}>A clear, concise title for the use case</div>
-                            </div>
+                        {showFormPanel && (
+                            <div style={{ padding: 28, borderTop: '1px solid #1e3a5f', display: 'grid', gap: 20 }}>
+                                {/* Section 1: Basic Info */}
+                                <div style={{ background: 'linear-gradient(135deg, rgba(37,99,235,0.1), rgba(14,165,233,0.08))', border: '1px solid rgba(59,130,246,0.2)', borderRadius: 16, padding: 20 }}>
+                                    <div style={{ color: '#3b82f6', fontWeight: 900, fontSize: 14, marginBottom: 16, textTransform: 'uppercase', letterSpacing: '0.5px', display: 'flex', alignItems: 'center', gap: 8 }}>📌 Use Case Details</div>
+                                    
+                                    <div style={{ display: 'grid', gap: 16 }}>
+                                        {/* Title */}
+                                        <div style={{ display: 'grid', gap: 8 }}>
+                                            <label style={{ color: '#cbd5e1', fontWeight: 700, fontSize: 12.5, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Title *</label>
+                                            <input value={form.title} onChange={e => { setForm(prev => ({ ...prev, title: e.target.value })); if (formErrors.title) setFormErrors(prev => ({ ...prev, title: '' })) }} placeholder="e.g., E-Commerce Product Page" style={{ width: '100%', padding: '12px 14px', background: '#020617', border: `1px solid ${formErrors.title ? '#ef4444' : '#334155'}`, borderRadius: 10, color: '#e2e8f0', fontSize: 14, outline: 'none', transition: 'all 0.2s ease' }} />
+                                            {formErrors.title && <div style={{ fontSize: 12, color: '#fca5a5' }}>{formErrors.title}</div>}
+                                        </div>
 
-                            {/* Description Field */}
-                            <div style={{ display: 'grid', gap: 8 }}>
-                                <label style={{ color: '#cbd5e1', fontWeight: 700, fontSize: 13, textTransform: 'uppercase', letterSpacing: '0.5px' }}>📝 Description *</label>
-                                <textarea value={form.description} onChange={e => { setForm(prev => ({ ...prev, description: e.target.value })); if (formErrors.description) setFormErrors(prev => ({ ...prev, description: '' })) }} rows={3} placeholder="Describe what students need to build..." style={{ width: '100%', padding: '14px 16px', background: '#020617', border: `1px solid ${formErrors.description ? '#ef4444' : '#334155'}`, borderRadius: 12, color: '#e2e8f0', fontSize: 15, resize: 'vertical', outline: 'none', fontFamily: 'inherit', transition: 'border-color 0.2s ease' }} />
-                                {formErrors.description ? <div style={{ fontSize: 12, color: '#fca5a5', background: 'rgba(127,29,29,0.2)', border: '1px solid rgba(239,68,68,0.35)', borderRadius: 8, padding: '6px 8px' }}>{formErrors.description}</div> : null}
-                                <div style={{ fontSize: 11, color: '#64748b' }}>Provide context and overview of the task</div>
-                            </div>
+                                        {/* Description and Requirements in 2 columns */}
+                                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+                                            {/* Description */}
+                                            <div style={{ display: 'grid', gap: 8 }}>
+                                                <label style={{ color: '#cbd5e1', fontWeight: 700, fontSize: 12.5, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Description *</label>
+                                                <textarea value={form.description} onChange={e => { setForm(prev => ({ ...prev, description: e.target.value })); if (formErrors.description) setFormErrors(prev => ({ ...prev, description: '' })) }} rows={3} placeholder="Describe what students need to build..." style={{ width: '100%', padding: '12px 14px', background: '#020617', border: `1px solid ${formErrors.description ? '#ef4444' : '#334155'}`, borderRadius: 10, color: '#e2e8f0', fontSize: 14, resize: 'vertical', outline: 'none', fontFamily: 'inherit', transition: 'all 0.2s ease' }} />
+                                                {formErrors.description && <div style={{ fontSize: 12, color: '#fca5a5' }}>{formErrors.description}</div>}
+                                            </div>
 
-                            {/* Requirements Field */}
-                            <div style={{ display: 'grid', gap: 8 }}>
-                                <label style={{ color: '#cbd5e1', fontWeight: 700, fontSize: 13, textTransform: 'uppercase', letterSpacing: '0.5px' }}>✅ Requirements & Features *</label>
-                                <textarea value={form.requirements} onChange={e => { setForm(prev => ({ ...prev, requirements: e.target.value })); if (formErrors.requirements) setFormErrors(prev => ({ ...prev, requirements: '' })) }} rows={4} placeholder="• List expected features&#10;• Include technical requirements&#10;• Specify any constraints or must-haves" style={{ width: '100%', padding: '14px 16px', background: '#020617', border: `1px solid ${formErrors.requirements ? '#ef4444' : '#334155'}`, borderRadius: 12, color: '#e2e8f0', fontSize: 15, resize: 'vertical', outline: 'none', fontFamily: 'inherit', transition: 'border-color 0.2s ease' }} />
-                                {formErrors.requirements ? <div style={{ fontSize: 12, color: '#fca5a5', background: 'rgba(127,29,29,0.2)', border: '1px solid rgba(239,68,68,0.35)', borderRadius: 8, padding: '6px 8px' }}>{formErrors.requirements}</div> : null}
-                                <div style={{ fontSize: 11, color: '#64748b' }}>Use line breaks for each requirement</div>
-                            </div>
-
-                            {/* Rubric Weights */}
-                            {requirementLines.length > 0 ? (
-                                <div style={{ display: 'grid', gap: 8 }}>
-                                    <label style={{ color: '#cbd5e1', fontWeight: 700, fontSize: 13, textTransform: 'uppercase', letterSpacing: '0.5px' }}>📊 Requirement Weights <span style={{ fontSize: 11, color: '#64748b', fontWeight: 400, textTransform: 'none' }}>(toggle each line's priority)</span></label>
-                                    <div style={{ display: 'grid', gap: 6, maxHeight: 200, overflowY: 'auto', padding: 2 }}>
-                                        {requirementLines.map((line, i) => {
-                                            const weight = (form.rubric_json || {})[line] || 'must'
-                                            return (
-                                                <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px', background: '#020617', borderRadius: 10, border: `1px solid ${weight === 'must' ? '#334155' : '#1e3a5f'}` }}>
-                                                    <div style={{ flex: 1, color: '#e2e8f0', fontSize: 13, lineHeight: 1.4 }}>{line}</div>
-                                                    <button
-                                                        type="button"
-                                                        onClick={() => setForm(prev => ({ ...prev, rubric_json: { ...(prev.rubric_json || {}), [line]: (prev.rubric_json || {})[line] === 'nice' ? 'must' : 'nice' } }))}
-                                                        style={{ border: 'none', borderRadius: 8, padding: '5px 10px', fontWeight: 800, fontSize: 11, cursor: 'pointer', whiteSpace: 'nowrap', background: weight === 'must' ? 'linear-gradient(135deg, #dc2626, #b91c1c)' : '#334155', color: '#fff' }}
-                                                    >
-                                                        {weight === 'must' ? '★ Must Have' : '◎ Nice to Have'}
-                                                    </button>
-                                                </div>
-                                            )
-                                        })}
+                                            {/* Requirements */}
+                                            <div style={{ display: 'grid', gap: 8 }}>
+                                                <label style={{ color: '#cbd5e1', fontWeight: 700, fontSize: 12.5, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Requirements *</label>
+                                                <textarea value={form.requirements} onChange={e => { setForm(prev => ({ ...prev, requirements: e.target.value })); if (formErrors.requirements) setFormErrors(prev => ({ ...prev, requirements: '' })) }} rows={3} placeholder="• List expected features&#10;• Include technical requirements" style={{ width: '100%', padding: '12px 14px', background: '#020617', border: `1px solid ${formErrors.requirements ? '#ef4444' : '#334155'}`, borderRadius: 10, color: '#e2e8f0', fontSize: 14, resize: 'vertical', outline: 'none', fontFamily: 'inherit', transition: 'all 0.2s ease' }} />
+                                                {formErrors.requirements && <div style={{ fontSize: 12, color: '#fca5a5' }}>{formErrors.requirements}</div>}
+                                            </div>
+                                        </div>
                                     </div>
-                                    <div style={{ fontSize: 11, color: '#64748b' }}>Must Have requirements are weighted more heavily in evaluation scoring</div>
                                 </div>
-                            ) : null}
 
-                            {/* Attempt Limit & Submit */}
-                            <div style={{ display: 'grid', gridTemplateColumns: '200px 1fr', gap: 16, alignItems: 'flex-end' }}>
-                                <div style={{ display: 'grid', gap: 8 }}>
-                                    <label style={{ color: '#cbd5e1', fontWeight: 700, fontSize: 13, textTransform: 'uppercase', letterSpacing: '0.5px' }}>🔄 Attempt Limit</label>
-                                    <input type="number" min="1" value={form.attempt_limit ?? ''} onChange={e => setForm(prev => ({ ...prev, attempt_limit: e.target.value ? Number(e.target.value) : null }))} placeholder="e.g., 3" style={{ width: '100%', padding: '14px 16px', background: '#020617', border: '1px solid #334155', borderRadius: 12, color: '#e2e8f0', fontSize: 15, outline: 'none' }} />
-                                    <div style={{ fontSize: 11, color: '#64748b' }}>Leave empty for unlimited</div>
+                                {/* Section 2: Rubric Weights */}
+                                {requirementLines.length > 0 && (
+                                    <div style={{ background: 'linear-gradient(135deg, rgba(168,85,247,0.1), rgba(124,58,237,0.08))', border: '1px solid rgba(168,85,247,0.2)', borderRadius: 16, padding: 20 }}>
+                                        <div style={{ color: '#a855f7', fontWeight: 900, fontSize: 14, marginBottom: 16, textTransform: 'uppercase', letterSpacing: '0.5px', display: 'flex', alignItems: 'center', gap: 8 }}>📊 Requirement Priorities</div>
+                                        <div style={{ display: 'grid', gap: 8, maxHeight: 250, overflowY: 'auto' }}>
+                                            {requirementLines.map((line, i) => {
+                                                const weight = (form.rubric_json || {})[line] || 'must'
+                                                return (
+                                                    <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 12px', background: '#020617', borderRadius: 10, border: `1px solid ${weight === 'must' ? '#7c3aed' : '#334155'}` }}>
+                                                        <div style={{ flex: 1, color: '#e2e8f0', fontSize: 13 }}>{line}</div>
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => setForm(prev => ({ ...prev, rubric_json: { ...(prev.rubric_json || {}), [line]: (prev.rubric_json || {})[line] === 'nice' ? 'must' : 'nice' } }))}
+                                                            style={{ border: 'none', borderRadius: 8, padding: '6px 12px', fontWeight: 700, fontSize: 11.5, cursor: 'pointer', whiteSpace: 'nowrap', background: weight === 'must' ? '#a855f7' : '#334155', color: '#fff', transition: 'all 0.2s' }}
+                                                        >
+                                                            {weight === 'must' ? '★ Must' : '◎ Nice'}
+                                                        </button>
+                                                    </div>
+                                                )
+                                            })}
+                                        </div>
+                                    </div>
+                                )}
+
+                                {/* Section 3: Settings */}
+                                <div style={{ background: 'linear-gradient(135deg, rgba(34,197,94,0.1), rgba(21,128,61,0.08))', border: '1px solid rgba(34,197,94,0.2)', borderRadius: 16, padding: 20 }}>
+                                    <div style={{ color: '#22c55e', fontWeight: 900, fontSize: 14, marginBottom: 16, textTransform: 'uppercase', letterSpacing: '0.5px', display: 'flex', alignItems: 'center', gap: 8 }}>⚙️ Settings</div>
+                                    <div style={{ display: 'grid', gridTemplateColumns: '200px 1fr', gap: 16 }}>
+                                        <div style={{ display: 'grid', gap: 8 }}>
+                                            <label style={{ color: '#cbd5e1', fontWeight: 700, fontSize: 12.5, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Attempt Limit</label>
+                                            <input type="number" min="1" value={form.attempt_limit ?? ''} onChange={e => setForm(prev => ({ ...prev, attempt_limit: e.target.value ? Number(e.target.value) : null }))} placeholder="e.g., 3" style={{ width: '100%', padding: '12px 14px', background: '#020617', border: '1px solid #334155', borderRadius: 10, color: '#e2e8f0', fontSize: 14, outline: 'none' }} />
+                                            <div style={{ fontSize: 11, color: '#64748b' }}>Leave empty for unlimited</div>
+                                        </div>
+                                        <button onClick={saveTest} style={{ padding: '12px 24px', borderRadius: 10, border: 'none', background: 'linear-gradient(135deg, #2563eb, #0ea5e9)', color: '#fff', fontWeight: 800, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, fontSize: 14, height: 'fit-content', alignSelf: 'flex-end' }}>
+                                            <Plus size={18} /> {editing ? 'Update' : 'Create'}
+                                        </button>
+                                    </div>
                                 </div>
-                                <button onClick={saveTest} style={{ padding: '14px 24px', borderRadius: 12, border: 'none', background: 'linear-gradient(135deg, #2563eb, #0ea5e9)', color: '#fff', fontWeight: 800, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, fontSize: 15 }}>
-                                    <Plus size={18} /> {editing ? 'Update Use Case' : 'Create Use Case'}
-                                </button>
                             </div>
-                        </div>
+                        )}
                     </div>
+
+                    {/* Tasks Grid */}
 
                     {loading ? (
                         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(340px, 1fr))', gap: 18 }}>
@@ -1081,7 +1179,7 @@ export default function AdminFrontendEval({ initialTab = 'tests' }) {
                         </div>
                     </div>
 
-                    <div style={{ background: '#0f172a', borderRadius: 14, border: '1px solid #1e293b', padding: 12, display: 'grid', gridTemplateColumns: '1.5fr 0.8fr 0.8fr auto', gap: 10 }}>
+                    <div style={{ background: '#0f172a', borderRadius: 14, border: '1px solid #1e293b', padding: 12, display: 'grid', gridTemplateColumns: '1.5fr 0.8fr 0.8fr 0.7fr auto', gap: 10 }}>
                         <input
                             value={submissionQuery}
                             onChange={e => setSubmissionQuery(e.target.value)}
@@ -1100,33 +1198,36 @@ export default function AdminFrontendEval({ initialTab = 'tests' }) {
                             <option value="score-desc">Score High to Low</option>
                             <option value="score-asc">Score Low to High</option>
                         </select>
+                        <button onClick={downloadCSV} disabled={!filteredSubmissions.length} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, padding: '10px 14px', borderRadius: 10, border: '1px solid #0ea5e9', background: filteredSubmissions.length ? 'rgba(14,165,233,0.1)' : '#1e3a5f', color: filteredSubmissions.length ? '#0ea5e9' : '#64748b', cursor: filteredSubmissions.length ? 'pointer' : 'not-allowed', fontWeight: 700, fontSize: 12 }}><Download size={14} />Export CSV</button>
                         <div style={{ color: '#94a3b8', fontSize: 12, display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#020617', border: '1px solid #334155', borderRadius: 10, padding: '0 12px', fontWeight: 700 }}>
                             {filteredSubmissions.length} results
                         </div>
                     </div>
 
                     <div style={{ background: '#0f172a', borderRadius: 20, border: '1px solid #1e293b', overflow: 'hidden' }}>
-                        <div style={{ background: 'linear-gradient(135deg, #0f172a, #020617)', padding: '18px 24px', borderBottom: '1px solid #1e293b', display: 'grid', gridTemplateColumns: '1.4fr 1fr 110px 120px 190px 80px', gap: 16, color: '#64748b', fontSize: 12, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                        <div style={{ background: 'linear-gradient(135deg, #0f172a, #020617)', padding: '18px 24px', borderBottom: '1px solid #1e293b', display: 'grid', gridTemplateColumns: '1.4fr 1fr 110px 120px 190px 60px 60px', gap: 12, color: '#64748b', fontSize: 12, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
                             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>👤 Student / Test</div>
                             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>📦 Type</div>
                             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>⭐ Score</div>
                             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>▶️ Runtime</div>
                             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>⏰ Submitted</div>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>👁️ View</div>
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4 }}>View</div>
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4 }}>Delete</div>
                         </div>
                         {filteredSubmissions.map((sub, idx) => (
-                            <div key={sub.id} style={{ display: 'grid', gridTemplateColumns: '1.4fr 1fr 110px 120px 190px 80px', gap: 16, padding: '16px 24px', alignItems: 'center', borderBottom: idx === filteredSubmissions.length - 1 ? 'none' : '1px solid #111827', background: idx % 2 === 0 ? 'transparent' : 'rgba(255,255,255,0.01)', transition: 'all 0.2s' }}>
+                            <div key={sub.id} style={{ display: 'grid', gridTemplateColumns: '1.4fr 1fr 110px 120px 190px 60px 60px', gap: 12, padding: '16px 24px', alignItems: 'center', borderBottom: idx === filteredSubmissions.length - 1 ? 'none' : '1px solid #111827', background: idx % 2 === 0 ? 'transparent' : 'rgba(255,255,255,0.01)', transition: 'all 0.2s' }}>
                                 <div>
                                     <div style={{ color: '#e2e8f0', fontWeight: 700, fontSize: 14 }}>{sub.student_name || 'Student'}</div>
                                     <div style={{ color: '#64748b', fontSize: 12, marginTop: 2 }}>📋 {sub.test_title}</div>
                                 </div>
-                                <div style={{ color: '#94a3b8', fontSize: 13, background: sub.submission_type === 'zip' ? 'rgba(59, 130, 246, 0.1)' : 'rgba(168, 85, 247, 0.1)', padding: '6px 10px', borderRadius: 8, fontWeight: 600 }}>{sub.submission_type === 'zip' ? '📦 ZIP' : '📁 Multi-file'}</div>
+                                <div style={{ color: '#94a3b8', fontSize: 13, background: sub.submission_type === 'zip' ? 'rgba(59, 130, 246, 0.1)' : 'rgba(168, 85, 247, 0.1)', padding: '6px 10px', borderRadius: 8, fontWeight: 600 }}>{sub.submission_type === 'zip' ? '📦 ZIP' : '📁 Multi'}</div>
                                 <div style={{ color: '#38bdf8', fontWeight: 900, fontSize: 16 }}>{Math.round(sub.score || 0)}</div>
-                                <div style={{ color: sub.runtime_status === 'passed' ? '#34d399' : sub.runtime_status === 'failed' ? '#f87171' : '#fbbf24', fontWeight: 700, background: sub.runtime_status === 'passed' ? 'rgba(52, 211, 153, 0.1)' : sub.runtime_status === 'failed' ? 'rgba(248, 113, 113, 0.1)' : 'rgba(251, 191, 36, 0.1)', padding: '6px 10px', borderRadius: 8 }}>
-                                    {sub.runtime_status === 'passed' ? '✅ Passed' : sub.runtime_status === 'failed' ? '❌ Failed' : '⏸ Skipped'}
+                                <div style={{ color: sub.runtime_status === 'passed' ? '#34d399' : sub.runtime_status === 'failed' ? '#f87171' : '#fbbf24', fontWeight: 700, background: sub.runtime_status === 'passed' ? 'rgba(52, 211, 153, 0.1)' : sub.runtime_status === 'failed' ? 'rgba(248, 113, 113, 0.1)' : 'rgba(251, 191, 36, 0.1)', padding: '6px 10px', borderRadius: 8, fontSize: 12 }}>
+                                    {sub.runtime_status === 'passed' ? '✅' : sub.runtime_status === 'failed' ? '❌' : '⏸'}  {sub.runtime_status}
                                 </div>
                                 <div style={{ color: '#94a3b8', fontSize: 12 }}>{new Date(sub.submitted_at).toLocaleString()}</div>
-                                <button onClick={() => openReport(sub.id)} style={{ padding: '9px 12px', borderRadius: 10, border: '1px solid #334155', background: '#111827', color: '#e2e8f0', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, fontSize: 12, fontWeight: 600, transition: 'all 0.2s' }}><Eye size={14} />View</button>
+                                <button onClick={() => openReport(sub.id)} style={{ padding: '8px 10px', borderRadius: 8, border: '1px solid #334155', background: '#111827', color: '#e2e8f0', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4, fontSize: 11, fontWeight: 600, transition: 'all 0.2s' }}><Eye size={13} /></button>
+                                <button onClick={() => deleteSubmission(sub.id)} style={{ padding: '8px 10px', borderRadius: 8, border: '1px solid #7f1d1d', background: '#2a0d0d', color: '#fca5a5', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4, fontSize: 11, fontWeight: 600, transition: 'all 0.2s' }}><Trash2 size={13} /></button>
                             </div>
                         ))}
                         {!filteredSubmissions.length ? <div style={{ padding: 40, color: '#94a3b8', textAlign: 'center', background: 'rgba(0,0,0,0.2)' }}>
