@@ -14,6 +14,17 @@ import {
 
 const API_BASE = (import.meta.env.VITE_API_URL || 'http://localhost:3000') + '/api'
 const COLORS = ['#3b82f6', '#8b5cf6', '#06b6d4', '#10b981', '#f59e0b', '#ef4444', '#ec4899', '#14b8a6']
+const authHeader = () => {
+    const token = localStorage.getItem('authToken')
+    return token ? { Authorization: `Bearer ${token}` } : {}
+}
+const withAuth = (config = {}) => ({
+    ...config,
+    headers: {
+        ...authHeader(),
+        ...(config.headers || {})
+    }
+})
 
 // ==================== SHARED STYLES ====================
 const cardStyle = {
@@ -246,7 +257,7 @@ function SystemHealthDashboard() {
 
     const fetchHealth = useCallback(async () => {
         try {
-            const res = await axios.get(`${API_BASE}/admin/system-health`)
+            const res = await axios.get(`${API_BASE}/admin/system-health`, withAuth())
             setHealth(res.data)
         } catch (error) {
             console.error('Health check failed:', error)
@@ -451,8 +462,8 @@ function BulkOperations() {
 
     useEffect(() => {
         Promise.all([
-            axios.get(`${API_BASE}/users`),
-            axios.get(`${API_BASE}/submissions`)
+            axios.get(`${API_BASE}/users`, withAuth()),
+            axios.get(`${API_BASE}/submissions`, withAuth())
         ]).then(([usersRes, subsRes]) => {
             const allUsers = Array.isArray(usersRes.data) ? usersRes.data : (usersRes.data.users || [])
             setStudents(allUsers.filter(u => u.role === 'student'))
@@ -471,7 +482,7 @@ function BulkOperations() {
                 newMentorId: targetMentor,
                 adminId: 'admin-001',
                 adminName: 'Admin'
-            })
+            }, withAuth())
             setResult({ type: 'success', message: res.data.message })
             setSelectedStudents([])
         } catch (err) {
@@ -489,7 +500,7 @@ function BulkOperations() {
                 action: bulkAction,
                 adminId: 'admin-001',
                 adminName: 'Admin'
-            })
+            }, withAuth())
             setResult({ type: 'success', message: res.data.message })
             setSelectedSubmissions([])
         } catch (err) {
@@ -507,7 +518,7 @@ function BulkOperations() {
                 submissionIds: selectedSubmissions,
                 adminId: 'admin-001',
                 adminName: 'Admin'
-            })
+            }, withAuth())
             setResult({ type: 'success', message: res.data.message })
             setSelectedSubmissions([])
             setSubmissions(prev => prev.filter(s => !selectedSubmissions.includes(s.id)))
@@ -743,8 +754,8 @@ function AuditLogs() {
                 if (filters.resourceType) params.append('resourceType', filters.resourceType)
 
                 const [logsRes, statsRes] = await Promise.all([
-                    axios.get(`${API_BASE}/admin/audit-logs?${params}`),
-                    axios.get(`${API_BASE}/admin/audit-logs/stats`)
+                    axios.get(`${API_BASE}/admin/audit-logs?${params}`, withAuth()),
+                    axios.get(`${API_BASE}/admin/audit-logs/stats`, withAuth())
                 ])
                 setLogs(logsRes.data.logs)
                 setTotal(logsRes.data.pagination.total)
@@ -947,8 +958,8 @@ function ProblemSetTemplates() {
 
     useEffect(() => {
         Promise.all([
-            axios.get(`${API_BASE}/admin/templates`),
-            axios.get(`${API_BASE}/problems`)
+            axios.get(`${API_BASE}/admin/templates`, withAuth()),
+            axios.get(`${API_BASE}/problems`, withAuth())
         ]).then(([tRes, pRes]) => {
             setTemplates(tRes.data)
             const allProblems = Array.isArray(pRes.data) ? pRes.data : (pRes.data.problems || [])
@@ -964,7 +975,7 @@ function ProblemSetTemplates() {
                 tags: form.tags.split(',').map(t => t.trim()).filter(Boolean),
                 createdBy: 'admin-001',
                 adminName: 'Admin'
-            })
+            }, withAuth())
             setTemplates(prev => [{ ...form, id: res.data.id, problemCount: form.problemIds.length, created_at: new Date() }, ...prev])
             setShowCreate(false)
             setForm({ name: '', description: '', difficulty: 'Mixed', tags: '', problemIds: [] })
@@ -976,7 +987,7 @@ function ProblemSetTemplates() {
     const handleDelete = async (id) => {
         if (!window.confirm('Delete this template?')) return
         try {
-            await axios.delete(`${API_BASE}/admin/templates/${id}?adminId=admin-001&adminName=Admin`)
+            await axios.delete(`${API_BASE}/admin/templates/${id}?adminId=admin-001&adminName=Admin`, withAuth())
             setTemplates(prev => prev.filter(t => t.id !== id))
         } catch (err) {
             alert(err.response?.data?.error || err.message)
@@ -988,7 +999,7 @@ function ProblemSetTemplates() {
             const res = await axios.post(`${API_BASE}/admin/templates/${id}/apply`, {
                 adminId: 'admin-001',
                 adminName: 'Admin'
-            })
+            }, withAuth())
             alert(res.data.message)
         } catch (err) {
             alert(err.response?.data?.error || err.message)
@@ -997,7 +1008,7 @@ function ProblemSetTemplates() {
 
     const viewTemplate = async (id) => {
         try {
-            const res = await axios.get(`${API_BASE}/admin/templates/${id}`)
+            const res = await axios.get(`${API_BASE}/admin/templates/${id}`, withAuth())
             setSelectedTemplate(res.data)
         } catch (err) {
             alert('Failed to load template details')
@@ -1190,7 +1201,7 @@ function AutomatedBackups() {
     const [creating, setCreating] = useState(false)
 
     useEffect(() => {
-        axios.get(`${API_BASE}/admin/backups`).then(res => {
+        axios.get(`${API_BASE}/admin/backups`, withAuth()).then(res => {
             setBackups(res.data)
             setLoading(false)
         }).catch(() => setLoading(false))
@@ -1202,7 +1213,7 @@ function AutomatedBackups() {
             const res = await axios.post(`${API_BASE}/admin/backups`, {
                 adminId: 'admin-001',
                 adminName: 'Admin'
-            })
+            }, withAuth())
             setBackups(prev => [{
                 id: res.data.backupId,
                 status: 'completed',
@@ -1220,15 +1231,25 @@ function AutomatedBackups() {
     const deleteBackup = async (id) => {
         if (!window.confirm('Delete this backup?')) return
         try {
-            await axios.delete(`${API_BASE}/admin/backups/${id}`)
+            await axios.delete(`${API_BASE}/admin/backups/${id}`, withAuth())
             setBackups(prev => prev.filter(b => b.id !== id))
         } catch (err) {
             alert('Error: ' + err.message)
         }
     }
 
-    const downloadBackup = (id) => {
-        window.open(`${API_BASE}/admin/backups/${id}/download`, '_blank')
+    const downloadBackup = async (id) => {
+        try {
+            const res = await axios.get(`${API_BASE}/admin/backups/${id}/download`, withAuth({ responseType: 'blob' }))
+            const objectUrl = URL.createObjectURL(res.data)
+            const a = document.createElement('a')
+            a.href = objectUrl
+            a.download = `backup_${id}.json`
+            a.click()
+            URL.revokeObjectURL(objectUrl)
+        } catch (err) {
+            alert('Download failed: ' + (err.response?.data?.error || err.message))
+        }
     }
 
     if (loading) return <div className="loading-spinner" />
@@ -1324,7 +1345,7 @@ function DataExportTools() {
             const url = `${API_BASE}/admin/export/${type}?format=${format}&adminId=admin-001&adminName=Admin`
 
             if (format === 'json') {
-                const res = await axios.get(url)
+                const res = await axios.get(url, withAuth())
                 const blob = new Blob([JSON.stringify(res.data, null, 2)], { type: 'application/json' })
                 const objectUrl = URL.createObjectURL(blob)
                 const a = document.createElement('a')
@@ -1333,7 +1354,7 @@ function DataExportTools() {
                 a.click()
                 URL.revokeObjectURL(objectUrl)
             } else {
-                const res = await axios.get(url, { responseType: 'blob' })
+                const res = await axios.get(url, withAuth({ responseType: 'blob' }))
                 const objectUrl = URL.createObjectURL(res.data)
                 const a = document.createElement('a')
                 a.href = objectUrl
@@ -1415,7 +1436,7 @@ function AdminAnalytics() {
     const [loading, setLoading] = useState(true)
 
     useEffect(() => {
-        axios.get(`${API_BASE}/admin/analytics/comprehensive`)
+        axios.get(`${API_BASE}/admin/analytics/comprehensive`, withAuth())
             .then(res => { setData(res.data); setLoading(false) })
             .catch(() => setLoading(false))
     }, [])

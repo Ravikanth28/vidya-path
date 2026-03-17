@@ -117,6 +117,15 @@ function matchStudentsFromRows(rows, allStudents, emailToId, nameToId) {
     return { matched: Array.from(matchedIds), unmatched };
 }
 
+function normalizeStudentIds(value) {
+    let ids = value;
+    if (typeof ids === 'string') {
+        try { ids = JSON.parse(ids); } catch { ids = []; }
+    }
+    if (!Array.isArray(ids)) return [];
+    return Array.from(new Set(ids.map(id => String(id).trim()).filter(Boolean)));
+}
+
 module.exports = function (pool, authenticate, authorize) {
 
     const router = require('express').Router();
@@ -144,6 +153,38 @@ module.exports = function (pool, authenticate, authorize) {
         }
     }
     ensureBatchTables();
+
+    async function getBatchOrThrow(batchId) {
+        const [[batch]] = await pool.query('SELECT * FROM student_batches WHERE id = ?', [batchId]);
+        if (!batch) {
+            const error = new Error('Batch not found');
+            error.statusCode = 404;
+            throw error;
+        }
+        return {
+            ...batch,
+            student_ids: normalizeStudentIds(batch.student_ids),
+        };
+    }
+
+    async function loadStudentsByIds(studentIds) {
+        if (!studentIds.length) return [];
+        const placeholders = studentIds.map(() => '?').join(',');
+        const [rows] = await pool.query(
+            `SELECT id, name, email FROM users WHERE id IN (${placeholders}) ORDER BY name ASC`,
+            studentIds
+        );
+        return rows;
+    }
+
+    async function saveBatchStudentIds(batchId, studentIds) {
+        const normalizedIds = normalizeStudentIds(studentIds);
+        await pool.query(
+            'UPDATE student_batches SET student_ids = ?, student_count = ? WHERE id = ?',
+            [JSON.stringify(normalizedIds), normalizedIds.length, batchId]
+        );
+        return normalizedIds;
+    }
 
     // ─── GET /api/batches — list all batches ──────────────────────────────
     router.get('/batches', authenticate, authorize('admin'), async (req, res) => {
@@ -304,31 +345,106 @@ module.exports = function (pool, authenticate, authorize) {
     // ─── GET /api/batches/:id — single batch detail ──────────────────────
     router.get('/batches/:id', authenticate, authorize('admin'), async (req, res) => {
         try {
-            const [[batch]] = await pool.query('SELECT * FROM student_batches WHERE id = ?', [req.params.id]);
-            if (!batch) return res.status(404).json({ error: 'Batch not found' });
-
-            let studentIds = batch.student_ids;
-            if (typeof studentIds === 'string') {
-                try { studentIds = JSON.parse(studentIds); } catch { studentIds = []; }
-            }
-            if (!Array.isArray(studentIds)) studentIds = [];
-
-            let students = [];
-            if (studentIds.length > 0) {
-                const placeholders = studentIds.map(() => '?').join(',');
-                const [rows] = await pool.query(
-                    `SELECT id, name, email FROM users WHERE id IN (${placeholders})`,
-                    studentIds
-                );
-                students = rows;
-            }
+            const batch = await getBatchOrThrow(req.params.id);
+            const students = await loadStudentsByIds(batch.student_ids);
 
             res.json({
                 success: true,
-                batch: { ...batch, student_ids: studentIds, students }
+                batch: { ...batch, students }
             });
         } catch (err) {
-            res.status(500).json({ error: err.message });
+            res.status(err.statusCode || 500).json({ error: err.message });
+        }
+    });
+
+    router.post('/batches/:id/students', authenticate, authorize('admin'), async (req, res) => {
+        try {
+            const batch = await getBatchOrThrow(req.params.id);
+            const { student_id, student_ids } = req.body || {};
+            const incomingIds = normalizeStudentIds(student_ids || (student_id ? [student_id] : []));
+
+            if (!incomingIds.length) {
+                return res.status(400).json({ error: 'student_id or student_ids is required' });
+            }
+
+            const placeholders = incomingIds.map(() => '?').join(',');
+            const [rows] = await pool.query(
+                `SELECT id FROM users WHERE role = 'student' AND id IN (${placeholders})`,
+                incomingIds
+            );
+            const validIds = new Set(rows.map(row => String(row.id)));
+            const existingIds = new Set(batch.student_ids);
+            const mergedIds = [...batch.student_ids];
+
+            incomingIds.forEach(id => {
+                if (validIds.has(id) && !existingIds.has(id)) {
+                    mergedIds.push(id);
+                    existingIds.add(id);
+                }
+            });
+
+            const savedIds = await saveBatchStudentIds(batch.id, mergedIds);
+            const students = await loadStudentsByIds(savedIds);
+
+            res.json({
+                success: true,
+                batch: { ...batch, student_ids: savedIds, student_count: savedIds.length, students }
+            });
+        } catch (err) {
+            res.status(err.statusCode || 500).json({ error: err.message });
+        }
+    });
+
+    router.delete('/batches/:id/students/:studentId', authenticate, authorize('admin'), async (req, res) => {
+        try {
+            const batch = await getBatchOrThrow(req.params.id);
+            const studentId = String(req.params.studentId);
+            const nextIds = batch.student_ids.filter(id => id !== studentId);
+            const savedIds = await saveBatchStudentIds(batch.id, nextIds);
+            const students = await loadStudentsByIds(savedIds);
+
+            res.json({
+                success: true,
+                batch: { ...batch, student_ids: savedIds, student_count: savedIds.length, students }
+            });
+        } catch (err) {
+            res.status(err.statusCode || 500).json({ error: err.message });
+        }
+    });
+
+    router.post('/batches/:id/students/:studentId/move', authenticate, authorize('admin'), async (req, res) => {
+        try {
+            const sourceBatch = await getBatchOrThrow(req.params.id);
+            const targetBatchId = String(req.body?.target_batch_id || '').trim();
+            const studentId = String(req.params.studentId);
+
+            if (!targetBatchId) {
+                return res.status(400).json({ error: 'target_batch_id is required' });
+            }
+            if (targetBatchId === sourceBatch.id) {
+                return res.status(400).json({ error: 'Target batch must be different from the source batch' });
+            }
+
+            const targetBatch = await getBatchOrThrow(targetBatchId);
+            const sourceIds = sourceBatch.student_ids.filter(id => id !== studentId);
+            const targetIds = targetBatch.student_ids.includes(studentId)
+                ? targetBatch.student_ids
+                : [...targetBatch.student_ids, studentId];
+
+            await saveBatchStudentIds(sourceBatch.id, sourceIds);
+            await saveBatchStudentIds(targetBatch.id, targetIds);
+
+            const refreshedSource = await getBatchOrThrow(sourceBatch.id);
+            const students = await loadStudentsByIds(refreshedSource.student_ids);
+
+            res.json({
+                success: true,
+                batch: { ...refreshedSource, students },
+                moved_to_batch_id: targetBatch.id,
+                moved_to_batch_name: targetBatch.batch_name,
+            });
+        } catch (err) {
+            res.status(err.statusCode || 500).json({ error: err.message });
         }
     });
 

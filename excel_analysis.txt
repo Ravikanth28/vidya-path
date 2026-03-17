@@ -1,0 +1,31 @@
+Sheet Names: ["META","CISCO","Apple","AUTODESK","EC COUNCIL"]
+
+Sheet: META
+Row 0: ["META"]
+Row 1: []
+Row 2: ["Name","Section"]
+Row 3: ["POLISETTI AKHILA JYOTHI","A"]
+
+Sheet: CISCO
+Row 0: ["CISCO"]
+Row 1: ["Name","Section"]
+Row 2: ["KONA KUSUMA RATNAJA","A"]
+Row 3: ["GOLLAKOTI MOHA LAKSHMI RAMYA ","A"]
+
+Sheet: Apple
+Row 0: ["Apple"]
+Row 1: ["Name","Section"]
+Row 2: ["RITHIKA S","A"]
+Row 3: ["LOGHAASRI J","A"]
+
+Sheet: AUTODESK
+Row 0: ["AUTODESK"]
+Row 1: ["Column1","Column2"]
+Row 2: ["ELAKEYAN.S","D"]
+Row 3: ["ABINASH.S","D"]
+
+Sheet: EC COUNCIL
+Row 0: ["EC COUNCIL"]
+Row 1: ["Name","Section"]
+Row 2: ["SAI BALAJI J","A"]
+Row 3: ["SHYAM K","A"]
