@@ -14428,6 +14428,10 @@ async function ensureFrontendEvalTables() {
     const batchRouter = require('./routes/batch_routes');
     app.use('/api', batchRouter(pool, authenticate, authorize));
 
+    // Register Lab Exercise Routes
+    const labExerciseRouter = require('./routes/lab_exercise_routes');
+    app.use('/api', labExerciseRouter(pool, authenticate, cerebrasChat));
+
     httpServer.listen(PORT, '0.0.0.0', () => {
         console.log(`🚀 Server running on http://127.0.0.1:${PORT}`);
         console.log('🔌 WebSocket ready for real-time updates');

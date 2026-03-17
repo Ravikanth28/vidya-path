@@ -1,6 +1,6 @@
 ﻿import { useState, useEffect, useRef, useMemo } from 'react'
 import { Routes, Route, useLocation } from 'react-router-dom'
-import { LayoutDashboard, Users, Trophy, Award, List, Search, Send, Activity, CheckCircle, Check, TrendingUp, Clock, Globe, FileCode, Plus, X, Code, ChevronRight, Upload, AlertTriangle, Zap, Target, Sparkles, Bot, Wand2, Eye, FileText, BarChart2, RefreshCw, Calendar, HelpCircle, Trash2, Save, Brain, XCircle, Shield, Download, ClipboardList, Settings, Database, MessageSquare, Github, ExternalLink, BarChart3, Video, Building2, Filter, ChevronDown, Hash, Percent, ArrowUpDown, Link2, Layers, Mic } from 'lucide-react'
+import { LayoutDashboard, Users, Trophy, Award, List, Search, Send, Activity, CheckCircle, Check, TrendingUp, Clock, Globe, FileCode, Plus, X, Code, ChevronRight, Upload, AlertTriangle, Zap, Target, Sparkles, Bot, Wand2, Eye, FileText, BarChart2, RefreshCw, Calendar, HelpCircle, Trash2, Save, Brain, XCircle, Shield, Download, ClipboardList, Settings, Database, MessageSquare, Github, ExternalLink, BarChart3, Video, Building2, Filter, ChevronDown, Hash, Percent, ArrowUpDown, Link2, Layers, Mic, FlaskConical } from 'lucide-react'
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, BarChart, Bar, Legend } from 'recharts'
 import DashboardLayout from '../components/DashboardLayout'
 import { AIChatbot, AIFloatingButton } from '../components/AIChatbot'
@@ -28,6 +28,7 @@ import CompanyRoundManager from '../components/CompanyRoundManager'
 import AdminCommTest from '../components/AdminCommTest'
 import AdminFrontendEval from '../components/AdminFrontendEval'
 import BatchManager from '../components/BatchManager'
+import AdminLabExercise from '../components/AdminLabExercise'
 import { useAuth } from '../App'
 import { useI18n } from '../services/i18n.jsx'
 import axios from 'axios'
@@ -155,6 +156,14 @@ function AdminPortal() {
                 setTitle('Batch Manager')
                 setSubtitle('Create and manage student batches from CSV uploads')
                 break
+            case 'lab-exercises':
+                setTitle('Lab Exercises')
+                setSubtitle('Create and manage programming, ML, SQL and other coding labs')
+                break
+            case 'lab-submissions':
+                setTitle('Lab Submissions')
+                setSubtitle('Review student lab exercise submissions and AI evaluation reports')
+                break
             default:
                 setTitle(t('dashboard'))
                 setSubtitle(t('system_administration'))
@@ -181,21 +190,13 @@ function AdminPortal() {
                 { path: '/admin/frontend-evals', label: 'Frontend Eval', icon: <Code size={20} /> }
             ]
         },
+        { path: '/admin/lab-exercises', label: 'Lab Exercises', icon: <FlaskConical size={20} /> },
         {
             label: 'Allocations',
             icon: <Users size={20} />,
             defaultExpanded: false,
             children: [
                 { path: '/admin/allocations', label: t('allocations'), icon: <Users size={20} /> }
-            ]
-        },
-        {
-            label: 'Rankings',
-            icon: <Trophy size={20} />,
-            defaultExpanded: false,
-            children: [
-                { path: '/admin/student-leaderboard', label: t('student_ranks'), icon: <Trophy size={20} /> },
-                { path: '/admin/mentor-leaderboard', label: t('mentor_ranks'), icon: <Award size={20} /> }
             ]
         },
         {
@@ -241,8 +242,7 @@ function AdminPortal() {
                 <Route path="/skill-tests" element={<SkillTestManager />} />
                 <Route path="/skill-submissions" element={<SkillSubmissions user={user} isAdmin={true} />} />
                 <Route path="/allocations" element={<Allocations />} />
-                <Route path="/student-leaderboard" element={<StudentLeaderboard />} />
-                <Route path="/mentor-leaderboard" element={<MentorLeaderboard />} />
+
                 <Route path="/all-submissions" element={<AllSubmissions />} />
                 <Route path="/live-monitoring" element={<AdminLiveMonitoring user={user} />} />
                 <Route path="/analytics" element={<AdminAnalyticsDashboard />} />
@@ -264,6 +264,8 @@ function AdminPortal() {
                 <Route path="/frontend-evals" element={<AdminFrontendEval initialTab="tests" />} />
                 <Route path="/frontend-submissions" element={<AdminFrontendEval initialTab="submissions" />} />
                 <Route path="/batch-add" element={<BatchManager />} />
+                <Route path="/lab-exercises" element={<AdminLabExercise initialTab="questions" />} />
+                <Route path="/lab-submissions" element={<AdminLabExercise initialTab="submissions" />} />
             </Routes>
         </DashboardLayout>
     )

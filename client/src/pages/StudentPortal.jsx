@@ -1,6 +1,6 @@
 ﻿import React, { useState, useEffect, useRef } from 'react'
 import { Routes, Route, useLocation } from 'react-router-dom'
-import { LayoutDashboard, ClipboardList, Code, Send, Trophy, Clock, CheckCircle, XCircle, ChevronRight, Play, Upload, FileText, Trash2, Eye, AlertTriangle, Download, Lightbulb, HelpCircle, Sparkles, Target, Zap, BookOpen, Brain, Award, X, Video, Shield, Search, BarChart2, BarChart3, Flame, Layers, Database, RefreshCw, TrendingUp, Radar, Users, ArrowUpRight, ArrowDownRight, Minus, PieChart, MessageSquare, Github, ExternalLink, Link2, Calendar, Map, Building2, Mic } from 'lucide-react'
+import { LayoutDashboard, ClipboardList, Code, Send, Trophy, Clock, CheckCircle, XCircle, ChevronRight, Play, Upload, FileText, Trash2, Eye, AlertTriangle, Download, Lightbulb, HelpCircle, Sparkles, Target, Zap, BookOpen, Brain, Award, X, Video, Shield, Search, BarChart2, BarChart3, Flame, Layers, Database, RefreshCw, TrendingUp, Radar, Users, ArrowUpRight, ArrowDownRight, Minus, PieChart, MessageSquare, Github, ExternalLink, Link2, Calendar, Map, Building2, Mic, FlaskConical } from 'lucide-react'
 import DashboardLayout from '@/components/DashboardLayout'
 import AptitudeTestInterface from '@/components/AptitudeTestInterface'
 import GlobalTestInterface from '@/components/GlobalTestInterface'
@@ -33,6 +33,7 @@ import StudentResourceLinks from '@/components/StudentResourceLinks'
 import StudentMCQ from '@/components/StudentMCQ'
 import CommunicationTest from '@/components/CommunicationTest'
 import FrontendEvaluationPortal from '@/components/FrontendEvaluationPortal'
+import StudentLabExercise from '@/components/StudentLabExercise'
 import CertificatePortal from '@/components/CertificatePortal'
 import { StudentAIReviewDashboard } from '@/components/AICodeReview'
 import { CompanyRoadmap, CompanyPrep } from '@/components/CompanyFeatures'
@@ -169,6 +170,10 @@ function StudentPortal() {
                 setTitle('Frontend Submissions')
                 setSubtitle('Review your frontend evaluation reports')
                 break
+            case 'lab-exercises':
+                setTitle('Lab Exercises')
+                setSubtitle('Complete your assigned coding and data labs')
+                break
             default:
                 setTitle(t('dashboard'))
                 setSubtitle(t('welcome_back_name', { name: user?.name || '' }))
@@ -197,6 +202,7 @@ function StudentPortal() {
                 { path: '/student/frontend-evals', label: 'Frontend Eval', icon: <Code size={20} /> }
             ]
         },
+        { path: '/student/lab-exercises', label: 'Lab Exercises', icon: <FlaskConical size={20} /> },
         {
             label: 'Progress & Analytics',
             icon: <TrendingUp size={20} />,
@@ -204,9 +210,6 @@ function StudentPortal() {
             children: [
                 { path: '/student/submissions', label: t('my_submissions'), icon: <Send size={20} /> },
                 { path: '/student/skill-submissions', label: 'Skill Submissions', icon: <Target size={20} /> },
-                { path: '/student/analytics', label: t('my_analytics'), icon: <TrendingUp size={20} /> },
-                { path: '/student/leaderboard', label: 'Leaderboard', icon: <Trophy size={20} /> },
-                { path: '/student/badges', label: 'Skill Badges', icon: <Award size={20} /> },
                 { path: '/student/certificates', label: 'My Certificates', icon: <Award size={20} /> },
                 { path: '/student/reports', label: 'Export Reports', icon: <Download size={20} /> },
                 { path: '/student/frontend-submissions', label: 'Frontend Submissions', icon: <Code size={20} /> }
@@ -219,8 +222,7 @@ function StudentPortal() {
             children: [
                 { path: '/student/code-reviews', label: 'Code Reviews', icon: <Github size={20} /> },
                 { path: '/student/ai-reviews', label: 'AI Code Reviews', icon: <Zap size={20} /> },
-                { path: '/student/plagiarism', label: 'Plagiarism Check', icon: <AlertTriangle size={20} /> },
-                { path: '/student/messaging', label: 'Direct Messages', icon: <MessageSquare size={20} />, badge: unreadCount }
+                { path: '/student/plagiarism', label: 'Plagiarism Check', icon: <AlertTriangle size={20} /> }
             ]
         },
         {
@@ -245,14 +247,12 @@ function StudentPortal() {
                 <Route path="/skill-tests" element={<SkillTestPortal user={user} />} />
                 <Route path="/skill-submissions" element={<SkillSubmissions user={user} />} />
                 <Route path="/submissions" element={<Submissions user={user} />} />
-                <Route path="/analytics" element={<StudentAnalytics user={user} />} />
-                <Route path="/leaderboard" element={<GamificationLeaderboard limit={100} />} />
-                <Route path="/badges" element={<AchievementBadges studentId={user?.id} />} />
+
                 <Route path="/reports" element={<ExportReports user={user} />} />
                 <Route path="/code-reviews" element={<StudentCodeReviews user={user} />} />
                 <Route path="/ai-reviews" element={<StudentAIReviewDashboard user={user} />} />
                 <Route path="/plagiarism" element={<PlagiarismChecker user={user} />} />
-                <Route path="/messaging" element={<DirectMessaging currentUser={user} />} />
+
                 <Route path="/availability" element={<MentorAvailabilityView user={user} />} />
                 <Route path="/certificates" element={<CertificatePortal user={user} />} />
                 <Route path="/features" element={<FeaturesShowcase />} />
@@ -265,6 +265,7 @@ function StudentPortal() {
                 <Route path="/comm-test" element={<CommunicationTest user={user} />} />
                 <Route path="/frontend-evals" element={<FrontendEvaluationPortal initialTab="tests" />} />
                 <Route path="/frontend-submissions" element={<FrontendEvaluationPortal initialTab="submissions" />} />
+                <Route path="/lab-exercises" element={<StudentLabExercise user={user} />} />
             </Routes>
         </DashboardLayout>
     )

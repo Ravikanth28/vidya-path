@@ -57,8 +57,157 @@ function Toast({ msg, type, onClose }) {
     );
 }
 
+// ─── CRT Report Modal ─────────────────────────────────────────────────────────
+function CRTReportModal({ attemptId, onClose }) {
+    const [data, setData] = useState(null)
+    const [loading, setLoading] = useState(true)
+
+    useEffect(() => {
+        axios.get(`${API}/api/crt/attempt/${attemptId}/report`, { headers: authHeader() })
+            .then(r => setData(r.data))
+            .catch(() => setData(null))
+            .finally(() => setLoading(false))
+    }, [attemptId])
+
+    if (loading) return (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.75)', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <div style={{ color: '#e2e8f0', fontWeight: 600 }}><RefreshCw size={20} style={{ animation: 'spin 1s linear infinite' }} /> Loading report…</div>
+        </div>
+    )
+
+    if (!data) return (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.75)', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <div style={{ background: '#1e293b', borderRadius: 16, padding: 32, textAlign: 'center', color: '#f87171' }}>
+                Failed to load report. <button onClick={onClose} style={{ marginTop: 12, display: 'block', margin: '12px auto 0', padding: '8px 20px', background: '#334155', border: 'none', color: '#94a3b8', borderRadius: 8, cursor: 'pointer' }}>Close</button>
+            </div>
+        </div>
+    )
+
+    const { attempt: a, answers } = data
+    const passed = (a.overall_score || 0) >= (a.pass_percentage || 60)
+    const sectionScores = a.section_scores || {}
+    const violations = a.proctoring_violations || []
+
+    return (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.8)', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
+            <div style={{ background: '#0f172a', border: '1px solid #334155', borderRadius: 20, width: '100%', maxWidth: 820, maxHeight: '92vh', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+                {/* Header */}
+                <div style={{ padding: '20px 24px', borderBottom: '1px solid #334155', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: passed ? 'rgba(16,185,129,0.07)' : 'rgba(239,68,68,0.07)' }}>
+                    <div>
+                        <div style={{ fontWeight: 800, fontSize: '1.05rem', color: '#f1f5f9', display: 'flex', alignItems: 'center', gap: 10 }}>
+                            {passed ? <CheckCircle2 size={20} color="#10b981" /> : <XCircle size={20} color="#ef4444" />}
+                            Round Test Report — {a.student_name || `Student #${a.student_id}`}
+                        </div>
+                        <div style={{ fontSize: 13, color: '#94a3b8', marginTop: 3 }}>{a.company_name} · {a.title} · {a.difficulty}</div>
+                    </div>
+                    <div style={{ display: 'flex', gap: 20, alignItems: 'center' }}>
+                        <div style={{ textAlign: 'center' }}>
+                            <div style={{ fontSize: 32, fontWeight: 900, color: passed ? '#10b981' : '#ef4444' }}>{Math.round(a.overall_score || 0)}%</div>
+                            <div style={{ fontSize: 11, color: '#64748b' }}>Overall Score</div>
+                        </div>
+                        <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#94a3b8' }}><X size={22} /></button>
+                    </div>
+                </div>
+
+                <div style={{ flex: 1, overflowY: 'auto', padding: 24, display: 'grid', gap: 20 }}>
+                    {/* Stats row */}
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12 }}>
+                        {[
+                            { label: 'Rank', value: `#${a.rank || '—'}`, color: '#60a5fa' },
+                            { label: 'Percentile', value: `${a.percentile || 0}%`, color: '#a78bfa' },
+                            { label: 'Class Avg', value: `${a.class_average || 0}%`, color: '#fbbf24' },
+                            { label: 'Participants', value: a.total_participants || 0, color: '#34d399' },
+                        ].map(({ label, value, color }) => (
+                            <div key={label} style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid #334155', borderRadius: 12, padding: '14px 16px', textAlign: 'center' }}>
+                                <div style={{ fontSize: 22, fontWeight: 800, color }}>{value}</div>
+                                <div style={{ fontSize: 11, color: '#64748b', marginTop: 2 }}>{label}</div>
+                            </div>
+                        ))}
+                    </div>
+
+                    {/* Section Score Breakdown */}
+                    {Object.keys(sectionScores).length > 0 && (
+                        <div style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid #334155', borderRadius: 14, padding: 18 }}>
+                            <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 14, color: '#f1f5f9' }}>Section Score Breakdown</div>
+                            <div style={{ display: 'grid', gap: 10 }}>
+                                {Object.entries(sectionScores).map(([sec, info]) => {
+                                    const def = SEC_MAP[sec]
+                                    const pct = Math.round(info?.score ?? info ?? 0)
+                                    return (
+                                        <div key={sec}>
+                                            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
+                                                <span style={{ fontSize: 13, color: '#e2e8f0', display: 'flex', alignItems: 'center', gap: 6 }}>
+                                                    {def ? <>{def.icon} {def.label}</> : sec}
+                                                </span>
+                                                <span style={{ fontSize: 13, fontWeight: 700, color: pct >= 60 ? '#4ade80' : '#f87171' }}>{pct}%</span>
+                                            </div>
+                                            <div style={{ height: 6, background: '#1e293b', borderRadius: 3 }}>
+                                                <div style={{ height: '100%', width: `${pct}%`, background: pct >= 60 ? '#10b981' : '#ef4444', borderRadius: 3 }} />
+                                            </div>
+                                        </div>
+                                    )
+                                })}
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Answers review (first 10 MCQ) */}
+                    {answers && answers.length > 0 && (
+                        <div style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid #334155', borderRadius: 14, padding: 18 }}>
+                            <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 14, color: '#f1f5f9' }}>Answer Review ({answers.length} questions)</div>
+                            <div style={{ display: 'grid', gap: 10 }}>
+                                {answers.slice(0, 15).map((ans, i) => {
+                                    const correct = ans.question_type === 'mcq' ? ans.student_answer === ans.correct_answer : ans.is_correct
+                                    return (
+                                        <div key={ans.id || i} style={{ padding: '10px 14px', background: correct ? 'rgba(16,185,129,0.07)' : 'rgba(239,68,68,0.07)', border: `1px solid ${correct ? 'rgba(16,185,129,0.25)' : 'rgba(239,68,68,0.25)'}`, borderRadius: 10 }}>
+                                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8 }}>
+                                                <div style={{ fontSize: 13, color: '#e2e8f0', flex: 1 }}>
+                                                    <span style={{ fontSize: 10, fontWeight: 700, color: '#64748b', textTransform: 'uppercase', marginRight: 6 }}>Q{i + 1} [{ans.section}]</span>
+                                                    {ans.question?.slice(0, 120)}{ans.question?.length > 120 ? '…' : ''}
+                                                </div>
+                                                <span style={{ fontSize: 11, fontWeight: 700, color: correct ? '#4ade80' : '#f87171', whiteSpace: 'nowrap' }}>{correct ? '✓ Correct' : '✗ Wrong'}</span>
+                                            </div>
+                                            {ans.question_type === 'mcq' && (
+                                                <div style={{ marginTop: 5, fontSize: 12, color: '#94a3b8' }}>
+                                                    Student: <strong style={{ color: correct ? '#4ade80' : '#f87171' }}>{ans.student_answer || '—'}</strong>
+                                                    {!correct && <> · Correct: <strong style={{ color: '#4ade80' }}>{ans.correct_answer}</strong></>}
+                                                </div>
+                                            )}
+                                            {ans.explanation && <div style={{ marginTop: 4, fontSize: 11, color: '#475569', fontStyle: 'italic' }}>💡 {ans.explanation}</div>}
+                                        </div>
+                                    )
+                                })}
+                                {answers.length > 15 && <div style={{ fontSize: 12, color: '#475569', textAlign: 'center' }}>…and {answers.length - 15} more questions</div>}
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Violations */}
+                    {violations.length > 0 && (
+                        <div style={{ background: 'rgba(245,158,11,0.06)', border: '1px solid rgba(245,158,11,0.3)', borderRadius: 14, padding: 18 }}>
+                            <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 12, color: '#fbbf24', display: 'flex', alignItems: 'center', gap: 6 }}>
+                                <Shield size={16} /> Proctoring Violations ({violations.length})
+                            </div>
+                            <div style={{ display: 'grid', gap: 6 }}>
+                                {violations.map((v, i) => (
+                                    <div key={i} style={{ display: 'flex', justifyContent: 'space-between', padding: '7px 12px', background: 'rgba(0,0,0,0.2)', borderRadius: 8, fontSize: 12 }}>
+                                        <span style={{ color: '#fcd34d', fontWeight: 600, textTransform: 'capitalize' }}>{(v.type || 'violation').replace(/_/g,' ')}</span>
+                                        <span style={{ color: '#64748b' }}>{v.time ? new Date(v.time).toLocaleTimeString() : '—'}</span>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    )}
+                </div>
+            </div>
+        </div>
+    )
+}
+
 // ─── Attempt table ─────────────────────────────────────────────────────────────
 function AttemptsTable({ attempts, onClose, onDelete }) {
+    const [reportAttemptId, setReportAttemptId] = useState(null)
+
     return (
         <div style={{ marginTop: '16px', borderTop: '1px solid #334155', paddingTop: '16px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '12px' }}>
@@ -89,9 +238,16 @@ function AttemptsTable({ attempts, onClose, onDelete }) {
                                     <td style={{ padding: '8px', textAlign: 'center', color: '#64748b' }}>{new Date(a.started_at).toLocaleDateString()}</td>
                                     <td style={{ padding: '8px', textAlign: 'center', color: '#64748b' }}>{a.completed_at ? new Date(a.completed_at).toLocaleDateString() : '—'}</td>
                                     <td style={{ padding: '8px', textAlign: 'center' }}>
-                                        <button onClick={() => onDelete(a.id)} style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)', color: '#f87171', borderRadius: '6px', cursor: 'pointer', padding: '4px 8px', fontSize: '11px', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '4px', margin: '0 auto' }}>
-                                            <Trash2 size={12} /> Delete
-                                        </button>
+                                        <div style={{ display: 'flex', gap: 5, justifyContent: 'center' }}>
+                                            {a.status === 'completed' && (
+                                                <button onClick={() => setReportAttemptId(a.id)} style={{ display: 'flex', alignItems: 'center', gap: 4, background: 'rgba(99,102,241,0.1)', border: '1px solid rgba(99,102,241,0.3)', color: '#a5b4fc', borderRadius: '6px', cursor: 'pointer', padding: '4px 8px', fontSize: '11px', fontWeight: 600 }}>
+                                                    <Eye size={11} /> Check
+                                                </button>
+                                            )}
+                                            <button onClick={() => onDelete(a.id)} style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)', color: '#f87171', borderRadius: '6px', cursor: 'pointer', padding: '4px 8px', fontSize: '11px', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                                <Trash2 size={12} /> Delete
+                                            </button>
+                                        </div>
                                     </td>
                                 </tr>
                             ))}
@@ -99,6 +255,7 @@ function AttemptsTable({ attempts, onClose, onDelete }) {
                     </table>
                 </div>
             )}
+            {reportAttemptId && <CRTReportModal attemptId={reportAttemptId} onClose={() => setReportAttemptId(null)} />}
         </div>
     );
 }
