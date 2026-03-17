@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react'
-import { Upload, Trash2, Edit3, Users, FileText, Plus, X, Search, Check, AlertCircle, FolderPlus, FileSpreadsheet, Layers } from 'lucide-react'
+import { Upload, Trash2, Edit3, Users, FileText, Plus, X, Search, Check, AlertCircle, FolderPlus, FileSpreadsheet, Layers, UserPlus, ArrowRightLeft } from 'lucide-react'
 
 const API = (import.meta.env.VITE_API_URL || 'http://localhost:3000') + '/api'
 const authHeader = () => ({ Authorization: `Bearer ${localStorage.getItem('authToken')}` })
@@ -108,6 +108,300 @@ function BatchDetailModal({ batch, onClose }) {
                                     <div style={{ flex: 1, minWidth: 0 }}>
                                         <div style={{ color: '#e6eefb', fontWeight: 700, fontSize: 14, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{student.name}</div>
                                         <div style={{ color: '#91a6cb', fontSize: 12, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{student.email}</div>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    )}
+                </div>
+            </div>
+        </div>
+    )
+}
+
+function EnhancedBatchDetailModal({ batch, allBatches, onClose, onUpdated, showToast }) {
+    const [batchMeta, setBatchMeta] = useState(batch)
+    const [students, setStudents] = useState([])
+    const [allStudents, setAllStudents] = useState([])
+    const [loading, setLoading] = useState(true)
+    const [searchQuery, setSearchQuery] = useState('')
+    const [studentSearch, setStudentSearch] = useState('')
+    const [showAddPanel, setShowAddPanel] = useState(false)
+    const [workingStudentId, setWorkingStudentId] = useState('')
+    const [moveTargets, setMoveTargets] = useState({})
+
+    async function loadBatchDetail() {
+        setLoading(true)
+        try {
+            const response = await fetch(`${API}/batches/${batch.id}`, { headers: authHeaderJSON() })
+            const data = await response.json()
+            if (!response.ok || !data.success) throw new Error(data.error || 'Failed to load batch')
+            setBatchMeta(data.batch || batch)
+            setStudents(data.batch?.students || [])
+        } catch (error) {
+            showToast?.({ type: 'error', message: error.message })
+        } finally {
+            setLoading(false)
+        }
+    }
+
+    async function loadAllStudents() {
+        try {
+            const response = await fetch(`${API}/crt/students`, { headers: authHeaderJSON() })
+            const data = await response.json()
+            setAllStudents(Array.isArray(data) ? data : [])
+        } catch {
+            setAllStudents([])
+        }
+    }
+
+    useEffect(() => {
+        loadBatchDetail()
+        loadAllStudents()
+    }, [batch.id])
+
+    const filteredStudents = useMemo(() => {
+        const q = searchQuery.toLowerCase().trim()
+        if (!q) return students
+        return students.filter(s =>
+            (s.name || '').toLowerCase().includes(q) || (s.email || '').toLowerCase().includes(q)
+        )
+    }, [students, searchQuery])
+
+    const availableStudents = useMemo(() => {
+        const existingIds = new Set(students.map(student => String(student.id)))
+        const q = studentSearch.toLowerCase().trim()
+        return allStudents.filter(student => {
+            if (existingIds.has(String(student.id))) return false
+            if (!q) return true
+            return String(student.name || '').toLowerCase().includes(q) ||
+                String(student.email || '').toLowerCase().includes(q)
+        })
+    }, [allStudents, students, studentSearch])
+
+    const otherBatches = useMemo(() =>
+        (allBatches || []).filter(item => item.id !== batch.id),
+        [allBatches, batch.id]
+    )
+
+    async function addStudent(studentId) {
+        setWorkingStudentId(String(studentId))
+        try {
+            const response = await fetch(`${API}/batches/${batch.id}/students`, {
+                method: 'POST',
+                headers: authHeaderJSON(),
+                body: JSON.stringify({ student_id: studentId }),
+            })
+            const data = await response.json()
+            if (!response.ok || !data.success) throw new Error(data.error || 'Failed to add student')
+            showToast?.({ type: 'success', message: 'Student added to batch' })
+            setStudentSearch('')
+            await loadBatchDetail()
+            onUpdated?.()
+        } catch (error) {
+            showToast?.({ type: 'error', message: error.message })
+        } finally {
+            setWorkingStudentId('')
+        }
+    }
+
+    async function removeStudent(studentId) {
+        if (!window.confirm('Remove this student from the batch?')) return
+        setWorkingStudentId(String(studentId))
+        try {
+            const response = await fetch(`${API}/batches/${batch.id}/students/${studentId}`, {
+                method: 'DELETE',
+                headers: authHeaderJSON(),
+            })
+            const data = await response.json()
+            if (!response.ok || !data.success) throw new Error(data.error || 'Failed to remove student')
+            showToast?.({ type: 'success', message: 'Student removed from batch' })
+            await loadBatchDetail()
+            onUpdated?.()
+        } catch (error) {
+            showToast?.({ type: 'error', message: error.message })
+        } finally {
+            setWorkingStudentId('')
+        }
+    }
+
+    async function moveStudent(studentId) {
+        const targetBatchId = moveTargets[studentId]
+        if (!targetBatchId) {
+            showToast?.({ type: 'error', message: 'Choose a target batch first' })
+            return
+        }
+
+        setWorkingStudentId(String(studentId))
+        try {
+            const response = await fetch(`${API}/batches/${batch.id}/students/${studentId}/move`, {
+                method: 'POST',
+                headers: authHeaderJSON(),
+                body: JSON.stringify({ target_batch_id: targetBatchId }),
+            })
+            const data = await response.json()
+            if (!response.ok || !data.success) throw new Error(data.error || 'Failed to move student')
+            setMoveTargets(prev => ({ ...prev, [studentId]: '' }))
+            showToast?.({ type: 'success', message: `Student moved to ${data.moved_to_batch_name}` })
+            await loadBatchDetail()
+            onUpdated?.()
+        } catch (error) {
+            showToast?.({ type: 'error', message: error.message })
+        } finally {
+            setWorkingStudentId('')
+        }
+    }
+
+    return (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(2, 6, 23, 0.85)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9998, padding: 16 }}>
+            <div style={{
+                width: 860, maxWidth: '96vw', maxHeight: '88vh', overflow: 'hidden',
+                background: 'linear-gradient(165deg, #0f1d3b, #0b1428)',
+                borderRadius: 24, border: '1px solid #1e355f',
+                boxShadow: '0 24px 60px rgba(0, 0, 0, 0.55)',
+                display: 'flex', flexDirection: 'column'
+            }}>
+                <div style={{ padding: '20px 26px', borderBottom: '1px solid #193457', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <div>
+                        <div style={{ color: '#f8fafc', fontWeight: 900, fontSize: 22 }}>Batch: {batchMeta.batch_name}</div>
+                        <div style={{ color: '#8197bc', fontSize: 13, marginTop: 4 }}>
+                            {batchMeta.student_count} students
+                            {batchMeta.sheet_name ? ` • Sheet: ${batchMeta.sheet_name}` : ''}
+                            {batchMeta.source_filename ? ` • File: ${batchMeta.source_filename}` : ''}
+                        </div>
+                    </div>
+                    <button onClick={onClose} style={{ background: '#1b2d4f', border: '1px solid #29466f', color: '#9fb2d5', borderRadius: 12, width: 36, height: 36, cursor: 'pointer', display: 'grid', placeItems: 'center' }}><X size={18} /></button>
+                </div>
+
+                <div style={{ padding: '14px 26px 0', display: 'grid', gap: 12 }}>
+                    <div style={{ display: 'flex', gap: 10, alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap' }}>
+                        <div style={{ position: 'relative', flex: 1, minWidth: 260 }}>
+                            <Search size={16} style={{ position: 'absolute', left: 14, top: '50%', transform: 'translateY(-50%)', color: '#64748b' }} />
+                            <input
+                                value={searchQuery}
+                                onChange={e => setSearchQuery(e.target.value)}
+                                placeholder="Search students..."
+                                style={{ width: '100%', padding: '12px 14px 12px 40px', background: '#0b1428', border: '1px solid #284570', color: '#d8e3f7', borderRadius: 12, outline: 'none', fontSize: 14 }}
+                            />
+                        </div>
+                        <button
+                            onClick={() => setShowAddPanel(prev => !prev)}
+                            style={{
+                                display: 'flex', alignItems: 'center', gap: 8,
+                                padding: '11px 14px', borderRadius: 12, cursor: 'pointer',
+                                border: '1px solid rgba(59, 130, 246, 0.35)',
+                                background: showAddPanel ? 'rgba(59, 130, 246, 0.18)' : '#14233f',
+                                color: '#dbeafe', fontWeight: 800
+                            }}
+                        >
+                            <UserPlus size={16} /> {showAddPanel ? 'Close Add Panel' : 'Add Student'}
+                        </button>
+                    </div>
+
+                    {showAddPanel && (
+                        <div style={{ background: '#101b33', border: '1px solid #284570', borderRadius: 16, padding: 16, display: 'grid', gap: 12 }}>
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
+                                <div>
+                                    <div style={{ color: '#f8fafc', fontSize: 15, fontWeight: 800 }}>Add another student</div>
+                                    <div style={{ color: '#8197bc', fontSize: 12, marginTop: 3 }}>Students already in this batch are hidden.</div>
+                                </div>
+                                <div style={{ color: '#60a5fa', fontSize: 12, fontWeight: 700 }}>{availableStudents.length} available</div>
+                            </div>
+                            <div style={{ position: 'relative' }}>
+                                <Search size={16} style={{ position: 'absolute', left: 14, top: '50%', transform: 'translateY(-50%)', color: '#64748b' }} />
+                                <input
+                                    value={studentSearch}
+                                    onChange={e => setStudentSearch(e.target.value)}
+                                    placeholder="Search students to add..."
+                                    style={{ width: '100%', padding: '12px 14px 12px 40px', background: '#0b1428', border: '1px solid #284570', color: '#d8e3f7', borderRadius: 12, outline: 'none', fontSize: 14 }}
+                                />
+                            </div>
+                            <div style={{ maxHeight: 220, overflowY: 'auto', display: 'grid', gap: 8 }}>
+                                {availableStudents.slice(0, 25).map(student => (
+                                    <div key={student.id} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 14px', borderRadius: 12, background: '#12213c', border: '1px solid #1e3457' }}>
+                                        <div style={{ flex: 1, minWidth: 0 }}>
+                                            <div style={{ color: '#e6eefb', fontWeight: 700, fontSize: 14, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{student.name}</div>
+                                            <div style={{ color: '#91a6cb', fontSize: 12, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{student.email}</div>
+                                        </div>
+                                        <button
+                                            onClick={() => addStudent(student.id)}
+                                            disabled={workingStudentId === String(student.id)}
+                                            style={{
+                                                border: 'none', borderRadius: 10, padding: '9px 12px',
+                                                cursor: workingStudentId === String(student.id) ? 'not-allowed' : 'pointer',
+                                                background: 'linear-gradient(135deg, #2563eb, #0ea5e9)', color: '#fff', fontWeight: 800
+                                            }}
+                                        >
+                                            {workingStudentId === String(student.id) ? 'Adding...' : 'Add'}
+                                        </button>
+                                    </div>
+                                ))}
+                                {availableStudents.length === 0 && (
+                                    <div style={{ color: '#8197bc', textAlign: 'center', padding: 24 }}>No available students found.</div>
+                                )}
+                            </div>
+                        </div>
+                    )}
+                </div>
+
+                <div style={{ padding: '14px 26px 20px', flex: 1, overflowY: 'auto' }}>
+                    {loading ? (
+                        <div style={{ color: '#8197bc', textAlign: 'center', padding: 40 }}>Loading...</div>
+                    ) : filteredStudents.length === 0 ? (
+                        <div style={{ color: '#8197bc', textAlign: 'center', padding: 40 }}>No students found</div>
+                    ) : (
+                        <div style={{ display: 'grid', gap: 8 }}>
+                            {filteredStudents.map(student => (
+                                <div key={student.id} style={{
+                                    display: 'flex', alignItems: 'center', gap: 14,
+                                    padding: '12px 16px', borderRadius: 12,
+                                    background: '#12213c', border: '1px solid #1e3457',
+                                }}>
+                                    <div style={{
+                                        width: 38, height: 38, borderRadius: 10,
+                                        background: 'linear-gradient(135deg, #3b82f6, #8b5cf6)',
+                                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                        color: '#fff', fontWeight: 800, fontSize: 14, flexShrink: 0
+                                    }}>
+                                        {(student.name || '?')[0].toUpperCase()}
+                                    </div>
+                                    <div style={{ flex: 1, minWidth: 0 }}>
+                                        <div style={{ color: '#e6eefb', fontWeight: 700, fontSize: 14, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{student.name}</div>
+                                        <div style={{ color: '#91a6cb', fontSize: 12, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{student.email}</div>
+                                    </div>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+                                        <select
+                                            value={moveTargets[student.id] || ''}
+                                            onChange={e => setMoveTargets(prev => ({ ...prev, [student.id]: e.target.value }))}
+                                            style={{ minWidth: 180, padding: '10px 12px', background: '#0b1428', border: '1px solid #284570', color: '#d8e3f7', borderRadius: 10, outline: 'none', fontSize: 12 }}
+                                        >
+                                            <option value="">Move to batch...</option>
+                                            {otherBatches.map(targetBatch => (
+                                                <option key={targetBatch.id} value={targetBatch.id}>{targetBatch.batch_name}</option>
+                                            ))}
+                                        </select>
+                                        <button
+                                            onClick={() => moveStudent(student.id)}
+                                            disabled={workingStudentId === String(student.id) || !moveTargets[student.id]}
+                                            style={{
+                                                display: 'flex', alignItems: 'center', gap: 6,
+                                                padding: '9px 12px', borderRadius: 10, border: '1px solid #2a4b77',
+                                                background: '#162846', color: '#cbd5e1', fontWeight: 700, cursor: workingStudentId === String(student.id) || !moveTargets[student.id] ? 'not-allowed' : 'pointer'
+                                            }}
+                                        >
+                                            <ArrowRightLeft size={14} /> Move
+                                        </button>
+                                        <button
+                                            onClick={() => removeStudent(student.id)}
+                                            disabled={workingStudentId === String(student.id)}
+                                            style={{
+                                                padding: '9px 12px', borderRadius: 10, border: '1px solid rgba(239, 68, 68, 0.25)',
+                                                background: 'rgba(239, 68, 68, 0.08)', color: '#f87171', fontWeight: 700,
+                                                cursor: workingStudentId === String(student.id) ? 'not-allowed' : 'pointer'
+                                            }}
+                                        >
+                                            Remove
+                                        </button>
                                     </div>
                                 </div>
                             ))}
@@ -329,7 +623,7 @@ export default function BatchManager() {
     return (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
             {toast && <Toast item={toast} onClose={() => setToast(null)} />}
-            {detailBatch && <BatchDetailModal batch={detailBatch} onClose={() => setDetailBatch(null)} />}
+            {detailBatch && <EnhancedBatchDetailModal batch={detailBatch} allBatches={batches} onClose={() => setDetailBatch(null)} onUpdated={loadBatches} showToast={setToast} />}
             {uploadResult && <UploadResultModal result={uploadResult} onClose={() => setUploadResult(null)} />}
 
             {/* Header */}

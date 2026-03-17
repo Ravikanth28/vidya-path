@@ -4,6 +4,17 @@ import { Award, Download, CheckCircle, XCircle, Shield, Calendar, User, RefreshC
 
 const BACKEND_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000'
 const API_BASE = BACKEND_URL + '/api'
+const authHeader = () => {
+    const token = localStorage.getItem('authToken')
+    return token ? { Authorization: `Bearer ${token}` } : {}
+}
+const withAuth = (config = {}) => ({
+    ...config,
+    headers: {
+        ...authHeader(),
+        ...(config.headers || {})
+    }
+})
 
 // ─── Score → Medal ───────────────────────────────────────────────────────────
 function getMedal(score, passingScore = 70) {
@@ -395,7 +406,7 @@ export function AdminCertificateManager() {
 
     // Load all students once
     useEffect(() => {
-        axios.get(`${API_BASE}/users`).then(r => {
+        axios.get(`${API_BASE}/users`, withAuth()).then(r => {
             const all = (r.data.users || r.data || []).filter(u => u.role === 'student')
             setAllStudents(all)
         }).catch(() => {})
@@ -420,7 +431,7 @@ export function AdminCertificateManager() {
         setForm(p => ({ ...p, sourceId: '', sourceTitle: '' }))
         setPassedStudents([])
         setBulkResult(null)
-        axios.get(`${API_BASE}${endpoint}`)
+        axios.get(`${API_BASE}${endpoint}`, withAuth())
             .then(r => {
                 // Different endpoints wrap their data differently
                 const raw = r.data.tests || r.data.skillTests || r.data || []
@@ -451,9 +462,9 @@ export function AdminCertificateManager() {
         // Fetch passed students for this test
         if (form.type !== 'skill_path') {
             setPassedLoading(true)
-            axios.get(`${API_BASE}/certificates/passed-students`, {
+            axios.get(`${API_BASE}/certificates/passed-students`, withAuth({
                 params: { type: form.type, sourceId: testId }
-            })
+            }))
                 .then(r => setPassedStudents(r.data.students || []))
                 .catch(() => setPassedStudents([]))
                 .finally(() => setPassedLoading(false))
@@ -469,13 +480,13 @@ export function AdminCertificateManager() {
                 ...form,
                 score: parseFloat(form.score),
                 passingScore: parseFloat(form.passingScore)
-            })
+            }, withAuth())
             setResult({ success: true, data: res.data })
             // Refresh passed students list
             if (form.sourceId && form.type !== 'skill_path') {
-                axios.get(`${API_BASE}/certificates/passed-students`, {
+                axios.get(`${API_BASE}/certificates/passed-students`, withAuth({
                     params: { type: form.type, sourceId: form.sourceId }
-                }).then(r => setPassedStudents(r.data.students || [])).catch(() => {})
+                })).then(r => setPassedStudents(r.data.students || [])).catch(() => {})
             }
         } catch (err) {
             setResult({ success: false, error: err.response?.data?.error || err.message })
@@ -494,12 +505,12 @@ export function AdminCertificateManager() {
                 sourceId: form.sourceId,
                 sourceTitle: form.sourceTitle,
                 passingScore: parseFloat(form.passingScore || 70)
-            })
+            }, withAuth())
             setBulkResult(res.data)
             // Refresh passed students list
-            axios.get(`${API_BASE}/certificates/passed-students`, {
+            axios.get(`${API_BASE}/certificates/passed-students`, withAuth({
                 params: { type: form.type, sourceId: form.sourceId }
-            }).then(r => setPassedStudents(r.data.students || [])).catch(() => {})
+            })).then(r => setPassedStudents(r.data.students || [])).catch(() => {})
         } catch (err) {
             setBulkResult({ success: false, error: err.response?.data?.error || err.message })
         } finally {
@@ -777,9 +788,9 @@ function AllCertsManager() {
         setLoading(true)
         setErrorMsg(null)
         try {
-            const res = await axios.get(`${API_BASE}/certificates/all`, {
+            const res = await axios.get(`${API_BASE}/certificates/all`, withAuth({
                 params: { search, type: typeFilter, page, limit: LIMIT }
-            })
+            }))
             setCerts(res.data.certificates || [])
             setTotal(res.data.total || 0)
         } catch (e) {
@@ -797,7 +808,7 @@ function AllCertsManager() {
         try {
             const certIds = certs.map(c => c.id)
             if (certIds.length === 0) return
-            await axios.delete(`${API_BASE}/certificates/bulk-delete`, { data: { certIds } })
+            await axios.delete(`${API_BASE}/certificates/bulk-delete`, withAuth({ data: { certIds } }))
             fetchAll()
         } catch (e) {
             setErrorMsg('Bulk delete failed: ' + (e.response?.data?.error || e.message))
@@ -812,7 +823,7 @@ function AllCertsManager() {
         setConfirmDelete(null)
         setDeleting(cert.id)
         try {
-            await axios.delete(`${API_BASE}/certificates/${cert.id}`)
+            await axios.delete(`${API_BASE}/certificates/${cert.id}`, withAuth())
             setCerts(prev => prev.filter(c => c.id !== cert.id))
             setTotal(prev => Math.max(0, prev - 1))
         } catch (e) {

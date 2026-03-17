@@ -3,6 +3,17 @@ import axios from 'axios'
 import { Users, Plus, Search, Edit, Trash2, X, Save, RefreshCw, Shield, Eye, EyeOff, Key, ChevronLeft, ChevronRight, UserPlus, UserX, Filter, Mail, Phone, Hash, CheckCircle, XCircle, AlertTriangle, Download } from 'lucide-react'
 
 const API_BASE = (import.meta.env.VITE_API_URL || 'http://localhost:3000') + '/api'
+const authHeader = () => {
+    const token = localStorage.getItem('authToken')
+    return token ? { Authorization: `Bearer ${token}` } : {}
+}
+const withAuth = (config = {}) => ({
+    ...config,
+    headers: {
+        ...authHeader(),
+        ...(config.headers || {})
+    }
+})
 
 const cardStyle = { background: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: '16px', padding: '1.5rem', transition: 'all 0.3s ease' }
 const inputStyle = { width: '100%', padding: '0.7rem 1rem', borderRadius: '10px', border: '1px solid var(--border-color)', background: 'var(--bg-card)', color: 'var(--text)', fontSize: '0.85rem', outline: 'none', boxSizing: 'border-box' }
@@ -38,7 +49,7 @@ export default function UserManagement() {
             if (filters.search) params.set('search', filters.search)
             if (filters.batch) params.set('batch', filters.batch)
 
-            const res = await axios.get(`${API_BASE}/admin/users?${params}`)
+            const res = await axios.get(`${API_BASE}/admin/users?${params}`, withAuth())
             setUsers(res.data.data)
             setPagination(prev => ({ ...prev, page, total: res.data.pagination.total, pages: res.data.pagination.pages }))
         } catch (err) { console.error(err) }
@@ -47,7 +58,7 @@ export default function UserManagement() {
 
     const fetchMentors = async () => {
         try {
-            const res = await axios.get(`${API_BASE}/users?role=mentor`)
+            const res = await axios.get(`${API_BASE}/users?role=mentor`, withAuth())
             setMentors(Array.isArray(res.data) ? res.data : res.data.data || [])
         } catch (err) { console.error(err) }
     }
@@ -60,7 +71,7 @@ export default function UserManagement() {
     const handleCreate = async () => {
         if (!formData.name || !formData.email || !formData.password) return showMsg('Name, email, and password are required', 'error')
         try {
-            await axios.post(`${API_BASE}/admin/users`, formData)
+            await axios.post(`${API_BASE}/admin/users`, formData, withAuth())
             showMsg(`User ${formData.name} created successfully`)
             setShowModal(false)
             setFormData({ name: '', email: '', password: '', role: 'student', mentorId: '', batch: '', phone: '' })
@@ -70,7 +81,7 @@ export default function UserManagement() {
 
     const handleUpdate = async () => {
         try {
-            await axios.put(`${API_BASE}/admin/users/${editUser.id}`, formData)
+            await axios.put(`${API_BASE}/admin/users/${editUser.id}`, formData, withAuth())
             showMsg(`User ${editUser.id} updated successfully`)
             setEditUser(null); setShowModal(false)
             fetchUsers(pagination.page)
@@ -79,7 +90,7 @@ export default function UserManagement() {
 
     const handleDelete = async (userId) => {
         try {
-            await axios.delete(`${API_BASE}/admin/users/${userId}`)
+            await axios.delete(`${API_BASE}/admin/users/${userId}`, withAuth())
             showMsg(`User ${userId} deleted`)
             setDeleteConfirm(null)
             fetchUsers(pagination.page)
@@ -89,7 +100,7 @@ export default function UserManagement() {
     const handleResetPassword = async (userId) => {
         if (!newPassword) return showMsg('Password cannot be empty', 'error')
         try {
-            await axios.post(`${API_BASE}/admin/users/${userId}/reset-password`, { newPassword })
+            await axios.post(`${API_BASE}/admin/users/${userId}/reset-password`, { newPassword }, withAuth())
             showMsg('Password reset successfully')
             setShowResetPassword(null); setNewPassword('')
         } catch (err) { showMsg('Failed to reset password', 'error') }
@@ -98,7 +109,7 @@ export default function UserManagement() {
     const handleToggleStatus = async (userId, currentStatus) => {
         const next = currentStatus === 'active' ? 'suspended' : 'active'
         try {
-            await axios.patch(`${API_BASE}/admin/users/${userId}/status`, { status: next })
+            await axios.patch(`${API_BASE}/admin/users/${userId}/status`, { status: next }, withAuth())
             showMsg(`User status changed to ${next}`)
             fetchUsers(pagination.page)
         } catch (err) { showMsg('Failed to change status', 'error') }
