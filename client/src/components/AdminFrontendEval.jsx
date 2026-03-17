@@ -840,6 +840,15 @@ export default function AdminFrontendEval({ initialTab = 'tests' }) {
         try { return value ? JSON.parse(value) : fallback } catch { return fallback }
     }
 
+    async function readApiError(res) {
+        try {
+            const data = await res.json()
+            return data?.error || data?.message || `Server error: ${res.status}`
+        } catch {
+            return `Server error: ${res.status}`
+        }
+    }
+
     async function loadData() {
         setLoading(true)
         try {
@@ -1064,7 +1073,7 @@ export default function AdminFrontendEval({ initialTab = 'tests' }) {
                 method: 'POST',
                 headers: authHeader()
             })
-            if (!res.ok) throw new Error(`Server error: ${res.status}`)
+            if (!res.ok) throw new Error(await readApiError(res))
             const data = await res.json()
             if (!data.success) throw new Error(data.error || 'Re-evaluation failed')
             await loadData()
@@ -1089,7 +1098,7 @@ export default function AdminFrontendEval({ initialTab = 'tests' }) {
                 headers: authHeader(),
                 body: JSON.stringify({ ids: Array.from(selectedSubmissionIds) })
             })
-            if (!res.ok) throw new Error(`Server error: ${res.status}`)
+            if (!res.ok) throw new Error(await readApiError(res))
             const data = await res.json()
             if (!data.success) throw new Error(data.error || 'Bulk re-evaluation failed')
             await loadData()
@@ -1477,7 +1486,12 @@ export default function AdminFrontendEval({ initialTab = 'tests' }) {
                             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4 }}>Re-Eval</div>
                             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4 }}>Delete</div>
                         </div>
-                        {filteredSubmissions.map((sub, idx) => (
+                        {filteredSubmissions.map((sub, idx) => {
+                            const canReEvaluate = sub.re_evaluation_available !== false
+                            const reEvalTitle = canReEvaluate
+                                ? 'Re-evaluate submission'
+                                : 'Original submission files are no longer available for re-evaluation'
+                            return (
                             <div key={sub.id} style={{ display: 'grid', gridTemplateColumns: '50px 1.4fr 1fr 110px 120px 190px 50px 50px 50px', gap: 12, padding: '16px 24px', alignItems: 'center', borderBottom: idx === filteredSubmissions.length - 1 ? 'none' : '1px solid #111827', background: idx % 2 === 0 ? 'rgba(2,6,23,0.3)' : 'rgba(15,23,42,0.5)', transition: 'all 0.2s ease', cursor: 'pointer' }} onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(56, 189, 248, 0.05)'} onMouseLeave={(e) => e.currentTarget.style.background = idx % 2 === 0 ? 'rgba(2,6,23,0.3)' : 'rgba(15,23,42,0.5)'}>
                                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                                     <input
@@ -1501,10 +1515,11 @@ export default function AdminFrontendEval({ initialTab = 'tests' }) {
                                 </div>
                                 <div style={{ color: '#94a3b8', fontSize: 12 }}>{new Date(sub.submitted_at).toLocaleString()}</div>
                                 <button onClick={() => openReport(sub.id)} style={{ padding: '9px 11px', borderRadius: 8, border: '1px solid #334155', background: 'rgba(51, 65, 85, 0.3)', color: '#93c5fd', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4, fontSize: 11, fontWeight: 600, transition: 'all 0.2s', boxShadow: '0 2px 4px rgba(0,0,0,0.2)' }} onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(59, 130, 246, 0.2)'; e.currentTarget.style.border = '1px solid #3b82f6' }} onMouseLeave={(e) => { e.currentTarget.style.background = 'rgba(51, 65, 85, 0.3)'; e.currentTarget.style.border = '1px solid #334155' }}><Eye size={13} /></button>
-                                <button onClick={() => reEvaluateSubmission(sub.id)} disabled={bulkOperationInProgress} style={{ padding: '9px 11px', borderRadius: 8, border: '1px solid #7c2d12', background: 'rgba(127, 29, 29, 0.2)', color: '#fca5a5', cursor: bulkOperationInProgress ? 'wait' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4, fontSize: 11, fontWeight: 600, transition: 'all 0.2s', boxShadow: '0 2px 4px rgba(0,0,0,0.2)', opacity: bulkOperationInProgress ? 0.5 : 1 }} onMouseEnter={(e) => { if (!bulkOperationInProgress) { e.currentTarget.style.background = 'rgba(248, 113, 113, 0.2)'; e.currentTarget.style.border = '1px solid #f87171' } }} onMouseLeave={(e) => { e.currentTarget.style.background = 'rgba(127, 29, 29, 0.2)'; e.currentTarget.style.border = '1px solid #7c2d12' }}>Re-Eval</button>
+                                <button onClick={() => reEvaluateSubmission(sub.id)} disabled={bulkOperationInProgress || !canReEvaluate} title={reEvalTitle} style={{ padding: '9px 11px', borderRadius: 8, border: `1px solid ${canReEvaluate ? '#7c2d12' : '#334155'}`, background: canReEvaluate ? 'rgba(127, 29, 29, 0.2)' : 'rgba(51, 65, 85, 0.25)', color: canReEvaluate ? '#fca5a5' : '#64748b', cursor: bulkOperationInProgress ? 'wait' : canReEvaluate ? 'pointer' : 'not-allowed', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4, fontSize: 11, fontWeight: 600, transition: 'all 0.2s', boxShadow: '0 2px 4px rgba(0,0,0,0.2)', opacity: bulkOperationInProgress || !canReEvaluate ? 0.5 : 1 }} onMouseEnter={(e) => { if (!bulkOperationInProgress && canReEvaluate) { e.currentTarget.style.background = 'rgba(248, 113, 113, 0.2)'; e.currentTarget.style.border = '1px solid #f87171' } }} onMouseLeave={(e) => { e.currentTarget.style.background = canReEvaluate ? 'rgba(127, 29, 29, 0.2)' : 'rgba(51, 65, 85, 0.25)'; e.currentTarget.style.border = canReEvaluate ? '1px solid #7c2d12' : '1px solid #334155' }}>Re-Eval</button>
                                 <button onClick={() => deleteSubmission(sub.id)} style={{ padding: '9px 11px', borderRadius: 8, border: '1px solid #7f1d1d', background: 'rgba(127, 29, 29, 0.2)', color: '#fca5a5', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4, fontSize: 11, fontWeight: 600, transition: 'all 0.2s', boxShadow: '0 2px 4px rgba(0,0,0,0.2)' }} onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(248, 113, 113, 0.2)'; e.currentTarget.style.border = '1px solid #f87171' }} onMouseLeave={(e) => { e.currentTarget.style.background = 'rgba(127, 29, 29, 0.2)'; e.currentTarget.style.border = '1px solid #7f1d1d' }}><Trash2 size={13} /></button>
                             </div>
-                        ))}
+                            )
+                        })}
                         {!filteredSubmissions.length ? <div style={{ padding: 60, color: '#94a3b8', textAlign: 'center', background: 'rgba(2, 6, 23, 0.5)' }}>
                             <div style={{ fontSize: 48, marginBottom: 16, opacity: 0.7 }}>📭</div>
                             <div style={{ fontSize: 15, fontWeight: 500 }}>No submissions match your filters</div>

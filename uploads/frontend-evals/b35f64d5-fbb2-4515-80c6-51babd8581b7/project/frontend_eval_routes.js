@@ -658,7 +658,7 @@ Return ONLY valid JSON with this exact shape:
 
     try {
         const aiResp = await cerebrasChat([{ role: 'user', content: prompt }], {
-            model: 'gpt-oss-120b',
+            model: 'llama3.1-8b',
             temperature: 0.2,
             max_tokens: 900,
         });

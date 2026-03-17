@@ -282,7 +282,7 @@ module.exports = function communicationRoutes(pool, authenticate, cerebrasChat) 
             const aiResponse = await cerebrasChat(
                 [{ role: 'system', content: 'You are an expert English language assessment content creator. Generate high-quality, professional test questions. Always respond with valid JSON only, no markdown.' },
                  { role: 'user', content: prompts[module_type] }],
-                { model: 'gpt-oss-120b', temperature: 0.7, max_tokens: 2048 }
+                { model: 'llama3.1-8b', temperature: 0.7, max_tokens: 2048 }
             );
 
             let generated = [];
@@ -756,7 +756,7 @@ Respond ONLY with valid JSON, no markdown:
 
             const aiResponse = await cerebrasChat(
                 [{ role: 'user', content: prompt }],
-                { model: 'gpt-oss-120b', temperature: 0.4, max_tokens: 512 }
+                { model: 'llama3.1-8b', temperature: 0.4, max_tokens: 512 }
             );
 
             let evaluation;
@@ -939,7 +939,7 @@ Respond ONLY with the spoken text — no labels, no JSON, just natural speech.`;
 
             const aiResponse = await cerebrasChat(
                 [{ role: 'user', content: prompt }],
-                { model: 'gpt-oss-120b', temperature: 0.8, max_tokens: 200 }
+                { model: 'llama3.1-8b', temperature: 0.8, max_tokens: 200 }
             );
             const speech = (aiResponse.choices[0]?.message?.content || '').trim();
             res.json({ success: true, speech });
@@ -988,7 +988,7 @@ Respond ONLY with valid JSON:
 
             let scores = { languageScore: 70, pronunciationScore: 70, confidenceScore: 70, overallScore: 70, feedback: 'Good contribution.' };
             try {
-                const aiResp = await cerebrasChat([{ role: 'user', content: prompt }], { model: 'gpt-oss-120b', temperature: 0.3, max_tokens: 200 });
+                const aiResp = await cerebrasChat([{ role: 'user', content: prompt }], { model: 'llama3.1-8b', temperature: 0.3, max_tokens: 200 });
                 let raw = (aiResp.choices[0]?.message?.content || '{}').replace(/```json\s*|\s*```/g, '').trim();
                 scores = { ...scores, ...JSON.parse(raw) };
             } catch {}

@@ -52,7 +52,7 @@ async function callAI(messages, maxTokens = 4096) {
     const resp = await fetch(CEREBRAS_URL, {
         method: 'POST',
         headers: { 'Authorization': `Bearer ${key}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ model: 'gpt-oss-120b', messages, temperature: 0.7, max_tokens: maxTokens })
+        body: JSON.stringify({ model: 'llama3.1-8b', messages, temperature: 0.7, max_tokens: maxTokens })
     });
     if (!resp.ok) throw new Error(`Cerebras API ${resp.status}`);
     const data = await resp.json();

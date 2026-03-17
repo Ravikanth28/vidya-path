@@ -137,6 +137,49 @@ async function ensureDir(dirPath) {
     await fsp.mkdir(dirPath, { recursive: true });
 }
 
+function getExistingSubmissionProjectRoot(row) {
+    const existingExtracted = row.extracted_path ? path.resolve(row.extracted_path) : null;
+    if (existingExtracted && fs.existsSync(existingExtracted)) {
+        return existingExtracted;
+    }
+
+    if (row.stored_path) {
+        const projectFromStoredPath = path.resolve(path.join(row.stored_path, 'project'));
+        if (fs.existsSync(projectFromStoredPath)) {
+            return projectFromStoredPath;
+        }
+    }
+
+    const localByIdPath = path.join(API_UPLOAD_ROOT, String(row.id || ''), 'project');
+    if (fs.existsSync(localByIdPath)) {
+        return localByIdPath;
+    }
+
+    return null;
+}
+
+async function hasSubmissionReplaySource(pool, row) {
+    if (getExistingSubmissionProjectRoot(row)) {
+        return true;
+    }
+
+    const zipBuffer = await getZipFromDatabase(pool, row.id);
+    if (zipBuffer && Buffer.isBuffer(zipBuffer)) {
+        return true;
+    }
+
+    if (row.stored_path && fs.existsSync(row.stored_path)) {
+        try {
+            const entries = await fsp.readdir(row.stored_path, { withFileTypes: true });
+            return entries.some(entry => entry.isFile() && /\.zip$/i.test(entry.name));
+        } catch {
+            return false;
+        }
+    }
+
+    return false;
+}
+
 function requireAdmin(req, res, next) {
     if (req.user?.role !== 'admin') {
         return res.status(403).json({ success: false, error: 'Admin access required' });
@@ -864,7 +907,7 @@ Return ONLY valid JSON with this exact shape:
 
     try {
         const aiResp = await cerebrasChat([{ role: 'user', content: prompt }], {
-            model: 'gpt-oss-120b',
+            model: 'llama3.1-8b',
             temperature: 0.2,
             max_tokens: 900,
         });
@@ -1123,14 +1166,24 @@ module.exports = function frontendEvalRoutes(pool, authenticate, cerebrasChat) {
         try {
             const [rows] = await pool.query(`
                 SELECT s.id, s.test_id, s.student_id, s.submission_type, s.score, s.runtime_status,
-                       s.runtime_summary, s.submitted_at, t.title AS test_title,
+                       s.runtime_summary, s.submitted_at, s.stored_path, s.extracted_path, t.title AS test_title,
                        u.name AS student_name, u.email AS student_email
                 FROM frontend_eval_submissions s
                 LEFT JOIN frontend_eval_tests t ON t.id = s.test_id
                 LEFT JOIN users u ON u.id = s.student_id
                 ORDER BY s.submitted_at DESC
             `);
-            res.json({ success: true, submissions: rows });
+            const submissions = await Promise.all(rows.map(async row => {
+                const re_evaluation_available = await hasSubmissionReplaySource(pool, row);
+                return {
+                    ...row,
+                    re_evaluation_available,
+                };
+            }));
+            res.json({
+                success: true,
+                submissions: submissions.map(({ stored_path, extracted_path, ...row }) => row),
+            });
         } catch (err) {
             res.status(500).json({ success: false, error: err.message });
         }
@@ -1274,23 +1327,7 @@ module.exports = function frontendEvalRoutes(pool, authenticate, cerebrasChat) {
                 return res.status(404).json({ success: false, error: 'Submission not found' });
             }
 
-            let extractedRoot = null;
-            const existingExtracted = row.extracted_path ? path.resolve(row.extracted_path) : null;
-            if (existingExtracted && fs.existsSync(existingExtracted)) {
-                extractedRoot = existingExtracted;
-            }
-
-            if (!extractedRoot && row.stored_path) {
-                const projectFromStoredPath = path.resolve(path.join(row.stored_path, 'project'));
-                if (fs.existsSync(projectFromStoredPath)) {
-                    extractedRoot = projectFromStoredPath;
-                }
-            }
-
-            if (!extractedRoot) {
-                const localByIdPath = path.join(API_UPLOAD_ROOT, id, 'project');
-                if (fs.existsSync(localByIdPath)) extractedRoot = localByIdPath;
-            }
+            let extractedRoot = getExistingSubmissionProjectRoot(row);
 
             if (!extractedRoot) {
                 tempRoot = path.join(os.tmpdir(), 'frontend-evals-admin-reeval', `${id}-${Date.now()}`);
@@ -1313,8 +1350,9 @@ module.exports = function frontendEvalRoutes(pool, authenticate, cerebrasChat) {
             }
 
             if (!extractedRoot) {
-                return res.status(400).json({
+                return res.status(409).json({
                     success: false,
+                    code: 'SUBMISSION_FILES_UNAVAILABLE',
                     error: 'Unable to locate submission files for re-evaluation. Please submit again.',
                 });
             }
@@ -1547,13 +1585,24 @@ module.exports = function frontendEvalRoutes(pool, authenticate, cerebrasChat) {
             const studentId = String(req.user.id);
             const [rows] = await pool.query(`
                 SELECT s.id, s.test_id, s.submission_type, s.score, s.runtime_status, s.runtime_summary, s.submitted_at,
+                       s.stored_path, s.extracted_path,
                        t.title AS test_title
                 FROM frontend_eval_submissions s
                 LEFT JOIN frontend_eval_tests t ON t.id = s.test_id
                 WHERE s.student_id = ?
                 ORDER BY s.submitted_at DESC
             `, [studentId]);
-            res.json({ success: true, submissions: rows });
+            const submissions = await Promise.all(rows.map(async row => {
+                const re_evaluation_available = await hasSubmissionReplaySource(pool, row);
+                return {
+                    ...row,
+                    re_evaluation_available,
+                };
+            }));
+            res.json({
+                success: true,
+                submissions: submissions.map(({ stored_path, extracted_path, ...row }) => row),
+            });
         } catch (err) {
             res.status(500).json({ success: false, error: err.message });
         }
@@ -1597,23 +1646,7 @@ module.exports = function frontendEvalRoutes(pool, authenticate, cerebrasChat) {
                 return res.status(404).json({ success: false, error: 'Submission not found' });
             }
 
-            let extractedRoot = null;
-            const existingExtracted = row.extracted_path ? path.resolve(row.extracted_path) : null;
-            if (existingExtracted && fs.existsSync(existingExtracted)) {
-                extractedRoot = existingExtracted;
-            }
-
-            if (!extractedRoot && row.stored_path) {
-                const projectFromStoredPath = path.resolve(path.join(row.stored_path, 'project'));
-                if (fs.existsSync(projectFromStoredPath)) {
-                    extractedRoot = projectFromStoredPath;
-                }
-            }
-
-            if (!extractedRoot) {
-                const localByIdPath = path.join(API_UPLOAD_ROOT, id, 'project');
-                if (fs.existsSync(localByIdPath)) extractedRoot = localByIdPath;
-            }
+            let extractedRoot = getExistingSubmissionProjectRoot(row);
 
             if (!extractedRoot) {
                 tempRoot = path.join(os.tmpdir(), 'frontend-evals-reeval', `${id}-${Date.now()}`);
@@ -1636,8 +1669,9 @@ module.exports = function frontendEvalRoutes(pool, authenticate, cerebrasChat) {
             }
 
             if (!extractedRoot) {
-                return res.status(400).json({
+                return res.status(409).json({
                     success: false,
+                    code: 'SUBMISSION_FILES_UNAVAILABLE',
                     error: 'Unable to locate submission files for re-evaluation. Please submit again.',
                 });
             }
