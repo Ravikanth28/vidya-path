@@ -3,7 +3,7 @@
  * Admin uploads a single Excel/CSV file.
  * - If Excel (.xlsx/.xls): each SHEET becomes its own batch (sheet name = batch name).
  * - If CSV: the uploaded file name (minus extension) is the batch name.
- * Students are matched by email, name, or ID against registered users.
+ * Students are matched by email, name, or ID against registered users
  */
 
 const { v4: uuidv4 } = require('uuid');
