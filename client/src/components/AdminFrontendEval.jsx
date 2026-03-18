@@ -830,6 +830,7 @@ export default function AdminFrontendEval({ initialTab = 'tests' }) {
     const [batchFilter, setBatchFilter] = useState('all')
     const [runtimeFilter, setRuntimeFilter] = useState('all')
     const [sortBy, setSortBy] = useState('latest')
+    const [taskFilter, setTaskFilter] = useState('all')
     const [batches, setBatches] = useState([])
     const [selectedSubmissionIds, setSelectedSubmissionIds] = useState(new Set())
     const [bulkOperationInProgress, setBulkOperationInProgress] = useState(false)
@@ -918,13 +919,17 @@ export default function AdminFrontendEval({ initialTab = 'tests' }) {
             list = list.filter(sub => String(sub.runtime_status || '').toLowerCase() === runtimeFilter)
         }
 
+        if (taskFilter !== 'all') {
+            list = list.filter(sub => String(sub.test_id) === String(taskFilter))
+        }
+
         if (sortBy === 'latest') list.sort((a, b) => new Date(b.submitted_at) - new Date(a.submitted_at))
         if (sortBy === 'oldest') list.sort((a, b) => new Date(a.submitted_at) - new Date(b.submitted_at))
         if (sortBy === 'score-desc') list.sort((a, b) => Number(b.score || 0) - Number(a.score || 0))
         if (sortBy === 'score-asc') list.sort((a, b) => Number(a.score || 0) - Number(b.score || 0))
 
         return list
-    }, [submissions, submissionQuery, batchFilter, runtimeFilter, sortBy, batches, batchStudentLookup])
+    }, [submissions, submissionQuery, batchFilter, runtimeFilter, sortBy, batches, batchStudentLookup, taskFilter])
 
     const submissionStats = useMemo(() => {
         const total = filteredSubmissions.length
@@ -937,7 +942,6 @@ export default function AdminFrontendEval({ initialTab = 'tests' }) {
         if (batchFilter === 'all') {
             return { label: 'Batch Report', totalStudents: 0, attendedStudents: 0, active: false }
         }
-
         const selectedBatch = batches.find(batch => batch.id === batchFilter)
         const batchStudentIds = new Set((selectedBatch?.student_ids || []).map(id => String(id)))
         const attendedStudents = new Set(
@@ -945,7 +949,6 @@ export default function AdminFrontendEval({ initialTab = 'tests' }) {
                 .filter(sub => batchStudentIds.has(String(sub.student_id)))
                 .map(sub => String(sub.student_id))
         )
-
         return {
             label: selectedBatch?.batch_name || 'Batch Report',
             totalStudents: batchStudentIds.size,
@@ -953,6 +956,23 @@ export default function AdminFrontendEval({ initialTab = 'tests' }) {
             active: true,
         }
     }, [batchFilter, batches, submissions])
+
+    const taskCompletionStat = useMemo(() => {
+        if (taskFilter === 'all') {
+            return { label: '—', value: '—', sub: 'Select a task title', active: false }
+        }
+        const selectedTest = tests.find(t => String(t.id) === String(taskFilter))
+        const uniqueStudents = new Set(
+            submissions.filter(s => String(s.test_id) === String(taskFilter)).map(s => String(s.student_id))
+        ).size
+        const assigned = selectedTest?.assigned_count ?? safeJson(selectedTest?.assigned_students, []).length ?? 0
+        return {
+            label: selectedTest?.title || 'Task',
+            value: `${uniqueStudents}/${assigned}`,
+            sub: 'students completed',
+            active: true,
+        }
+    }, [taskFilter, tests, submissions])
 
     const requirementLines = useMemo(() =>
         String(form.requirements || '').split('\n')
@@ -1378,7 +1398,7 @@ export default function AdminFrontendEval({ initialTab = 'tests' }) {
                 </>
             ) : (
                 <div style={{ display: 'grid', gap: 20 }}>
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: 14 }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, minmax(0, 1fr))', gap: 14 }}>
                         <div style={{ background: 'linear-gradient(135deg, rgba(15, 23, 42, 0.8), rgba(2, 6, 23, 0.6))', border: '1px solid rgba(30, 41, 59, 0.5)', boxShadow: '0 4px 15px rgba(0, 0, 0, 0.3)', borderRadius: 14, padding: 18 }}>
                             <div style={{ color: '#94a3b8', fontSize: 10, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.5px' }}>📊 Total Submissions</div>
                             <div style={{ color: '#f0f9ff', fontSize: 32, fontWeight: 900, marginTop: 10 }}>{submissionStats.total}</div>
@@ -1400,12 +1420,21 @@ export default function AdminFrontendEval({ initialTab = 'tests' }) {
                                 {batchReport.active ? `${batchReport.attendedStudents}/${batchReport.totalStudents}` : '—'}
                             </div>
                             <div style={{ color: '#64748b', fontSize: 11, marginTop: 10 }}>
-                                {batchReport.active ? 'Attended' : 'Select batch'}
+                                {batchReport.active ? `${batchReport.label} attended` : 'Select batch'}
+                            </div>
+                        </div>
+                        <div style={{ background: 'linear-gradient(135deg, rgba(15, 23, 42, 0.8), rgba(2, 6, 23, 0.6))', border: '1px solid rgba(20, 184, 166, 0.2)', boxShadow: '0 4px 15px rgba(20, 184, 166, 0.1)', borderRadius: 14, padding: 18 }}>
+                            <div style={{ color: '#99f6e4', fontSize: 10, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.5px' }}>📋 Task Completion</div>
+                            <div style={{ color: taskCompletionStat.active ? '#2dd4bf' : '#94a3b8', fontSize: 32, fontWeight: 900, marginTop: 10 }}>
+                                {taskCompletionStat.value}
+                            </div>
+                            <div style={{ color: '#64748b', fontSize: 11, marginTop: 10, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                {taskCompletionStat.sub}
                             </div>
                         </div>
                     </div>
 
-                    <div style={{ background: '#0f172a', borderRadius: 16, border: '1px solid #1e293b', padding: 16, display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr 1fr auto', gap: 12, alignItems: 'center' }}>
+                    <div style={{ background: '#0f172a', borderRadius: 16, border: '1px solid #1e293b', padding: 16, display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr 1fr 1fr auto', gap: 12, alignItems: 'center' }}>
                         <input
                             value={submissionQuery}
                             onChange={e => setSubmissionQuery(e.target.value)}
@@ -1420,6 +1449,14 @@ export default function AdminFrontendEval({ initialTab = 'tests' }) {
                             <option value="all">All Batches</option>
                             {batches.map(batch => (
                                 <option key={batch.id} value={batch.id}>{batch.batch_name}</option>
+                            ))}
+                        </select>
+                        <select value={taskFilter} onChange={e => setTaskFilter(e.target.value)} style={{ background: 'rgba(2, 6, 23, 0.8)', border: '1px solid #334155', borderRadius: 10, color: '#e2e8f0', padding: '11px 12px', outline: 'none', fontWeight: 500, fontSize: 13, transition: 'all 0.2s', boxShadow: '0 2px 4px rgba(0,0,0,0.2)', cursor: 'pointer' }}
+                            onFocus={(e) => { e.currentTarget.style.borderColor = '#3b82f6'; e.currentTarget.style.boxShadow = '0 0 12px rgba(59, 130, 246, 0.2)' }}
+                            onBlur={(e) => { e.currentTarget.style.borderColor = '#334155'; e.currentTarget.style.boxShadow = '0 2px 4px rgba(0,0,0,0.2)' }}>
+                            <option value="all">All Tasks</option>
+                            {tests.map(test => (
+                                <option key={test.id} value={test.id}>{test.title}</option>
                             ))}
                         </select>
                         <select value={runtimeFilter} onChange={e => setRuntimeFilter(e.target.value)} style={{ background: 'rgba(2, 6, 23, 0.8)', border: '1px solid #334155', borderRadius: 10, color: '#e2e8f0', padding: '11px 12px', outline: 'none', fontWeight: 500, fontSize: 13, transition: 'all 0.2s', boxShadow: '0 2px 4px rgba(0,0,0,0.2)', cursor: 'pointer' }}
