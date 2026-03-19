@@ -903,6 +903,11 @@ function AptitudeTestInterface({ test, user, onClose, onComplete }) {
 
                             {/* Options */}
                             <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                                {(!questions[currentQuestion].options || questions[currentQuestion].options.length === 0) && (
+                                    <div style={{ color: 'rgba(255,255,255,0.4)', fontSize: '0.95rem', padding: '1rem', textAlign: 'center' }}>
+                                        No options available for this question.
+                                    </div>
+                                )}
                                 {questions[currentQuestion].options.map((option, idx) => {
                                     const optionLetter = ['A', 'B', 'C', 'D'][idx]
                                     const isSelected = answers[questions[currentQuestion].id] === option
