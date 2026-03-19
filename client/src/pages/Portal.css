@@ -1,4 +1,7 @@
 /* Portal Styles */
+/* ── Import AI Animations ── */
+@import '../components/AIAnimations.css';
+
 .animate-fadeIn {
     animation: fadeIn 0.4s ease-out forwards;
 }
@@ -8,26 +11,62 @@
 }
 
 @keyframes fadeIn {
-    from {
-        opacity: 0;
-    }
-
-    to {
-        opacity: 1;
-    }
+    from { opacity: 0; }
+    to   { opacity: 1; }
 }
 
 @keyframes slideUp {
-    from {
-        opacity: 0;
-        transform: translateY(20px);
-    }
-
-    to {
-        opacity: 1;
-        transform: translateY(0);
-    }
+    from { opacity: 0; transform: translateY(20px); }
+    to   { opacity: 1; transform: translateY(0);    }
 }
+
+/* ── AI-enhanced loading spinner ── */
+.loading-spinner {
+    width: 44px;
+    height: 44px;
+    border: 3px solid rgba(59,130,246,0.15);
+    border-top-color: #3b82f6;
+    border-radius: 50%;
+    animation: aiSpinnerRotate 0.75s linear infinite;
+    margin: 4rem auto;
+}
+
+@keyframes aiSpinnerRotate {
+    to { transform: rotate(360deg); }
+}
+
+/* ── Chart section section-divider label ── */
+.ai-chart-label {
+    font-size: 0.75rem;
+    font-weight: 700;
+    letter-spacing: 0.8px;
+    text-transform: uppercase;
+    color: var(--text-muted);
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    margin-bottom: 0.75rem;
+}
+
+/* ── AI stat card stagger grid (admin 6-col) ── */
+.ai-stagger.admin-stat-grid {
+    display: grid;
+    grid-template-columns: repeat(6, 1fr);
+    gap: 1rem;
+    margin-bottom: 2rem;
+}
+
+@media (max-width: 1600px) {
+    .ai-stagger.admin-stat-grid { grid-template-columns: repeat(3, 1fr) !important; }
+}
+@media (max-width: 1200px) {
+    .ai-stagger.admin-stat-grid { grid-template-columns: repeat(2, 1fr) !important; }
+}
+@media (max-width: 768px) {
+    .ai-stagger.admin-stat-grid { grid-template-columns: 1fr !important; }
+}
+
+
 
 /* ==================== DASHBOARD STYLES ==================== */
 

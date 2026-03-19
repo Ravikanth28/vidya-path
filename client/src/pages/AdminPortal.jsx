@@ -1,6 +1,7 @@
 ﻿import { useState, useEffect, useRef, useMemo } from 'react'
 import { Routes, Route, useLocation } from 'react-router-dom'
 import { LayoutDashboard, Users, Trophy, Award, List, Search, Send, Activity, CheckCircle, Check, TrendingUp, Clock, Globe, FileCode, Plus, X, Code, ChevronRight, Upload, AlertTriangle, Zap, Target, Sparkles, Bot, Wand2, Eye, FileText, BarChart2, RefreshCw, Calendar, HelpCircle, Trash2, Save, Brain, XCircle, Shield, Download, ClipboardList, Settings, Database, MessageSquare, Github, ExternalLink, BarChart3, Video, Building2, Filter, ChevronDown, Hash, Percent, ArrowUpDown, Link2, Layers, Mic, FlaskConical } from 'lucide-react'
+import { AIPageTransition, AIWelcomeHeader, AIStatCard, AISectionDivider, DataFlowLine, CountUp } from '../components/AIAnimations'
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, BarChart, Bar, Legend } from 'recharts'
 import DashboardLayout from '../components/DashboardLayout'
 import { AIChatbot, AIFloatingButton } from '../components/AIChatbot'
@@ -296,345 +297,99 @@ function Dashboard() {
     const activeToday = stats.recentSubmissions?.length || 0
 
     return (
-        <div className="animate-fadeIn">
-            {/* Welcome Header */}
-            <div style={{
-                background: 'linear-gradient(135deg, rgba(59, 130, 246, 0.1) 0%, rgba(139, 92, 246, 0.1) 50%, rgba(6, 182, 212, 0.05) 100%)',
-                borderRadius: '20px',
-                padding: '2rem 2.5rem',
-                marginBottom: '2rem',
-                border: '1px solid rgba(59, 130, 246, 0.2)',
-                position: 'relative',
-                overflow: 'hidden'
-            }}>
-                <div style={{
-                    position: 'absolute',
-                    top: '-50%',
-                    right: '-10%',
-                    width: '400px',
-                    height: '400px',
-                    background: 'radial-gradient(circle, rgba(59, 130, 246, 0.15) 0%, transparent 70%)',
-                    pointerEvents: 'none'
-                }} />
-                <div style={{ position: 'relative', zIndex: 1 }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginBottom: '0.5rem' }}>
-                        <div style={{
-                            width: '48px',
-                            height: '48px',
-                            borderRadius: '14px',
-                            background: 'linear-gradient(135deg, #3b82f6, #8b5cf6)',
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            boxShadow: '0 8px 24px rgba(59, 130, 246, 0.3)'
-                        }}>
-                            <Shield size={24} color="white" />
-                        </div>
-                        <div>
-                            <h1 style={{ margin: 0, fontSize: '1.75rem', fontWeight: 800, background: 'linear-gradient(135deg, #fff, #94a3b8)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>
-                                Admin Control Center
-                            </h1>
-                            <p style={{ margin: 0, color: 'var(--text-muted)', fontSize: '0.9rem' }}>
-                                Monitor performance, manage content, and track platform health
-                            </p>
-                        </div>
-                    </div>
-                </div>
-            </div>
+        <AIPageTransition>
+            {/* Welcome Header — AI & Data Science themed */}
+            <AIWelcomeHeader
+                icon={Shield}
+                title="Admin Control Center"
+                sub="Monitor performance, manage content, and track platform health"
+                badges={[
+                    { label: 'Neural Analytics',     color: 'rgba(59,130,246,0.12)',  text: '#60a5fa',  border: 'rgba(59,130,246,0.25)' },
+                    { label: 'ML Monitoring',        color: 'rgba(139,92,246,0.12)', text: '#a78bfa',  border: 'rgba(139,92,246,0.25)' },
+                    { label: 'Data Intelligence',    color: 'rgba(6,182,212,0.12)',   text: '#22d3ee',  border: 'rgba(6,182,212,0.25)'  },
+                ]}
+            />
 
-            {/* Main Stats Grid - 6 Cards */}
-            <div style={{
+            {/* Main Stats Grid — animated stagger */}
+            <AISectionDivider label="Platform Overview" icon={BarChart3} />
+            <div className="ai-stagger" style={{
                 display: 'grid',
                 gridTemplateColumns: 'repeat(6, 1fr)',
                 gap: '1rem',
                 marginBottom: '2rem'
             }}>
                 {/* Total Students */}
-                <div style={{
-                    background: 'var(--bg-card)',
-                    border: '1px solid var(--border-color)',
-                    borderRadius: '16px',
-                    padding: '1.5rem',
-                    position: 'relative',
-                    overflow: 'hidden',
-                    transition: 'all 0.3s ease'
-                }}>
-                    <div style={{
-                        position: 'absolute',
-                        top: 0,
-                        right: 0,
-                        width: '80px',
-                        height: '80px',
-                        background: 'radial-gradient(circle at top right, rgba(59, 130, 246, 0.15), transparent 70%)'
-                    }} />
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
-                        <div style={{
-                            width: '48px',
-                            height: '48px',
-                            borderRadius: '12px',
-                            background: 'linear-gradient(135deg, #1e40af, #3b82f6)',
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            boxShadow: '0 4px 12px rgba(59, 130, 246, 0.3)'
-                        }}>
-                            <Users size={22} color="white" />
+                <AIStatCard
+                    icon={Users}
+                    label="Total Students"
+                    value={stats.totalStudents}
+                    gradient="linear-gradient(135deg,#1e40af,#3b82f6)"
+                    glowRgb="59,130,246"
+                    footer={
+                        <div style={{ padding: '0.3rem 0.7rem', background: 'rgba(16,185,129,0.1)', borderRadius: '20px', display: 'inline-flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.73rem', fontWeight: 600, color: '#10b981' }}>
+                            <TrendingUp size={12} /> +12% this month
                         </div>
-                        <div>
-                            <div style={{ fontSize: '1.75rem', fontWeight: 800, color: 'var(--text)' }}>{stats.totalStudents}</div>
-                            <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Total Students</div>
-                        </div>
-                    </div>
-                    <div style={{
-                        marginTop: '1rem',
-                        padding: '0.35rem 0.75rem',
-                        background: 'rgba(16, 185, 129, 0.1)',
-                        borderRadius: '20px',
-                        display: 'inline-flex',
-                        alignItems: 'center',
-                        gap: '0.35rem',
-                        fontSize: '0.75rem',
-                        fontWeight: 600,
-                        color: '#10b981'
-                    }}>
-                        <TrendingUp size={12} /> +12% this month
-                    </div>
-                </div>
+                    }
+                />
 
                 {/* Total Mentors */}
-                <div style={{
-                    background: 'var(--bg-card)',
-                    border: '1px solid var(--border-color)',
-                    borderRadius: '16px',
-                    padding: '1.5rem',
-                    position: 'relative',
-                    overflow: 'hidden'
-                }}>
-                    <div style={{
-                        position: 'absolute',
-                        top: 0,
-                        right: 0,
-                        width: '80px',
-                        height: '80px',
-                        background: 'radial-gradient(circle at top right, rgba(139, 92, 246, 0.15), transparent 70%)'
-                    }} />
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
-                        <div style={{
-                            width: '48px',
-                            height: '48px',
-                            borderRadius: '12px',
-                            background: 'linear-gradient(135deg, #6d28d9, #8b5cf6)',
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            boxShadow: '0 4px 12px rgba(139, 92, 246, 0.3)'
-                        }}>
-                            <Award size={22} color="white" />
-                        </div>
-                        <div>
-                            <div style={{ fontSize: '1.75rem', fontWeight: 800, color: 'var(--text)' }}>{totalMentors}</div>
-                            <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Active Mentors</div>
-                        </div>
-                    </div>
-                    <div style={{
-                        marginTop: '1rem',
-                        fontSize: '0.75rem',
-                        color: 'var(--text-muted)'
-                    }}>
-                        ~{Math.round(stats.totalStudents / totalMentors)} students/mentor
-                    </div>
-                </div>
+                <AIStatCard
+                    icon={Award}
+                    label="Active Mentors"
+                    value={totalMentors}
+                    gradient="linear-gradient(135deg,#6d28d9,#8b5cf6)"
+                    glowRgb="139,92,246"
+                    footer={<div style={{ fontSize: '0.73rem', color: 'var(--text-muted)' }}>~{Math.round(stats.totalStudents / totalMentors)} students/mentor</div>}
+                />
 
                 {/* Submissions */}
-                <div style={{
-                    background: 'var(--bg-card)',
-                    border: '1px solid var(--border-color)',
-                    borderRadius: '16px',
-                    padding: '1.5rem',
-                    position: 'relative',
-                    overflow: 'hidden'
-                }}>
-                    <div style={{
-                        position: 'absolute',
-                        top: 0,
-                        right: 0,
-                        width: '80px',
-                        height: '80px',
-                        background: 'radial-gradient(circle at top right, rgba(6, 182, 212, 0.15), transparent 70%)'
-                    }} />
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
-                        <div style={{
-                            width: '48px',
-                            height: '48px',
-                            borderRadius: '12px',
-                            background: 'linear-gradient(135deg, #0891b2, #06b6d4)',
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            boxShadow: '0 4px 12px rgba(6, 182, 212, 0.3)'
-                        }}>
-                            <Send size={22} color="white" />
-                        </div>
-                        <div>
-                            <div style={{ fontSize: '1.75rem', fontWeight: 800, color: 'var(--text)' }}>{stats.totalSubmissions}</div>
-                            <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Submissions</div>
-                        </div>
-                    </div>
-                    <div style={{
-                        marginTop: '1rem',
-                        fontSize: '0.75rem',
-                        color: 'var(--text-muted)'
-                    }}>
-                        {avgSubmissionsPerStudent} avg per student
-                    </div>
-                </div>
+                <AIStatCard
+                    icon={Send}
+                    label="Submissions"
+                    value={stats.totalSubmissions}
+                    gradient="linear-gradient(135deg,#0891b2,#06b6d4)"
+                    glowRgb="6,182,212"
+                    footer={<div style={{ fontSize: '0.73rem', color: 'var(--text-muted)' }}>{avgSubmissionsPerStudent} avg per student</div>}
+                />
 
                 {/* Success Rate */}
-                <div style={{
-                    background: 'var(--bg-card)',
-                    border: '1px solid var(--border-color)',
-                    borderRadius: '16px',
-                    padding: '1.5rem',
-                    position: 'relative',
-                    overflow: 'hidden'
-                }}>
-                    <div style={{
-                        position: 'absolute',
-                        top: 0,
-                        right: 0,
-                        width: '80px',
-                        height: '80px',
-                        background: 'radial-gradient(circle at top right, rgba(16, 185, 129, 0.15), transparent 70%)'
-                    }} />
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
-                        <div style={{
-                            width: '48px',
-                            height: '48px',
-                            borderRadius: '12px',
-                            background: 'linear-gradient(135deg, #047857, #10b981)',
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            boxShadow: '0 4px 12px rgba(16, 185, 129, 0.3)'
-                        }}>
-                            <CheckCircle size={22} color="white" />
+                <AIStatCard
+                    icon={CheckCircle}
+                    label="Success Rate"
+                    value={stats.successRate}
+                    suffix="%"
+                    gradient="linear-gradient(135deg,#047857,#10b981)"
+                    glowRgb="16,185,129"
+                    footer={
+                        <div style={{ height: '6px', background: 'rgba(16,185,129,0.15)', borderRadius: '3px', overflow: 'hidden' }}>
+                            <div className="ai-progress-bar" style={{ '--bar-width': `${stats.successRate}%`, height: '100%', background: 'linear-gradient(90deg,#10b981,#06b6d4)', borderRadius: '3px' }} />
                         </div>
-                        <div>
-                            <div style={{ fontSize: '1.75rem', fontWeight: 800, color: 'var(--text)' }}>{stats.successRate}%</div>
-                            <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Success Rate</div>
-                        </div>
-                    </div>
-                    <div style={{
-                        marginTop: '1rem',
-                        height: '6px',
-                        background: 'rgba(16, 185, 129, 0.15)',
-                        borderRadius: '3px',
-                        overflow: 'hidden'
-                    }}>
-                        <div style={{
-                            height: '100%',
-                            width: `${stats.successRate}%`,
-                            background: 'linear-gradient(90deg, #10b981, #06b6d4)',
-                            borderRadius: '3px',
-                            transition: 'width 1s ease'
-                        }} />
-                    </div>
-                </div>
+                    }
+                />
 
                 {/* Total Content */}
-                <div style={{
-                    background: 'var(--bg-card)',
-                    border: '1px solid var(--border-color)',
-                    borderRadius: '16px',
-                    padding: '1.5rem',
-                    position: 'relative',
-                    overflow: 'hidden'
-                }}>
-                    <div style={{
-                        position: 'absolute',
-                        top: 0,
-                        right: 0,
-                        width: '80px',
-                        height: '80px',
-                        background: 'radial-gradient(circle at top right, rgba(245, 158, 11, 0.15), transparent 70%)'
-                    }} />
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
-                        <div style={{
-                            width: '48px',
-                            height: '48px',
-                            borderRadius: '12px',
-                            background: 'linear-gradient(135deg, #4f46e5, #f59e0b)',
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            boxShadow: '0 4px 12px rgba(245, 158, 11, 0.3)'
-                        }}>
-                            <FileCode size={22} color="white" />
-                        </div>
-                        <div>
-                            <div style={{ fontSize: '1.75rem', fontWeight: 800, color: 'var(--text)' }}>{stats.totalContent}</div>
-                            <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Total Content</div>
-                        </div>
-                    </div>
-                    <div style={{
-                        marginTop: '1rem',
-                        fontSize: '0.75rem',
-                        color: 'var(--text-muted)'
-                    }}>
-                        Tasks, Problems & Tests
-                    </div>
-                </div>
+                <AIStatCard
+                    icon={FileCode}
+                    label="Total Content"
+                    value={stats.totalContent}
+                    gradient="linear-gradient(135deg,#4f46e5,#f59e0b)"
+                    glowRgb="245,158,11"
+                    footer={<div style={{ fontSize: '0.73rem', color: 'var(--text-muted)' }}>Tasks, Problems & Tests</div>}
+                />
 
                 {/* Active Today */}
-                <div style={{
-                    background: 'var(--bg-card)',
-                    border: '1px solid var(--border-color)',
-                    borderRadius: '16px',
-                    padding: '1.5rem',
-                    position: 'relative',
-                    overflow: 'hidden'
-                }}>
-                    <div style={{
-                        position: 'absolute',
-                        top: 0,
-                        right: 0,
-                        width: '80px',
-                        height: '80px',
-                        background: 'radial-gradient(circle at top right, rgba(236, 72, 153, 0.15), transparent 70%)'
-                    }} />
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
-                        <div style={{
-                            width: '48px',
-                            height: '48px',
-                            borderRadius: '12px',
-                            background: 'linear-gradient(135deg, #be185d, #ec4899)',
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            boxShadow: '0 4px 12px rgba(236, 72, 153, 0.3)'
-                        }}>
-                            <Zap size={22} color="white" />
+                <AIStatCard
+                    icon={Zap}
+                    label="Active Today"
+                    value={activeToday}
+                    gradient="linear-gradient(135deg,#be185d,#ec4899)"
+                    glowRgb="236,72,153"
+                    footer={
+                        <div style={{ padding: '0.3rem 0.65rem', background: 'rgba(236,72,153,0.1)', borderRadius: '20px', display: 'inline-flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.73rem', fontWeight: 600, color: '#ec4899' }}>
+                            <Activity size={12} /> Live
                         </div>
-                        <div>
-                            <div style={{ fontSize: '1.75rem', fontWeight: 800, color: 'var(--text)' }}>{activeToday}</div>
-                            <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Active Today</div>
-                        </div>
-                    </div>
-                    <div style={{
-                        marginTop: '1rem',
-                        padding: '0.35rem 0.75rem',
-                        background: 'rgba(236, 72, 153, 0.1)',
-                        borderRadius: '20px',
-                        display: 'inline-flex',
-                        alignItems: 'center',
-                        gap: '0.35rem',
-                        fontSize: '0.75rem',
-                        fontWeight: 600,
-                        color: '#ec4899'
-                    }}>
-                        <Activity size={12} /> Live
-                    </div>
-                </div>
+                    }
+                />
             </div>
 
             {/* Charts Section */}
@@ -929,7 +684,7 @@ function Dashboard() {
                     </div>
                 </div>
             </div>
-        </div>
+        </AIPageTransition>
     )
 }
 

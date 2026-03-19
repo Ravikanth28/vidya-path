@@ -1,0 +1,360 @@
+/* ==========================================================
+   AI & Data Science Department — Animation Library
+   Mentor Hub | Department of AI & Data Science
+   ========================================================== */
+
+/* ── Keyframes ─────────────────────────────────────────── */
+
+/* Smooth page enter (slide up + fade) */
+@keyframes aiPageEnter {
+    from { opacity: 0; transform: translateY(22px) scale(0.985); }
+    to   { opacity: 1; transform: translateY(0)    scale(1);     }
+}
+
+/* Stat number entrance (blur in) */
+@keyframes aiStatIn {
+    from { opacity: 0; transform: translateY(10px); filter: blur(6px); }
+    to   { opacity: 1; transform: translateY(0);    filter: blur(0);   }
+}
+
+/* Card stagger slide-in */
+@keyframes aiCardIn {
+    from { opacity: 0; transform: translateY(18px); }
+    to   { opacity: 1; transform: translateY(0);    }
+}
+
+/* Neural ring pulse (expands & fades out) */
+@keyframes neuralRing {
+    0%   { transform: scale(1);   opacity: 0.65; }
+    100% { transform: scale(2.6); opacity: 0;    }
+}
+
+/* Data packet flowing along a line */
+@keyframes dataFlow {
+    0%   { transform: translateX(-100%); opacity: 0;   }
+    8%   { opacity: 1; }
+    92%  { opacity: 1; }
+    100% { transform: translateX(600%);  opacity: 0;   }
+}
+
+/* Animated gradient border pan */
+@keyframes borderPan {
+    0%   { background-position: 0%   50%; }
+    50%  { background-position: 100% 50%; }
+    100% { background-position: 0%   50%; }
+}
+
+/* AI icon glow pulse */
+@keyframes iconGlow {
+    0%, 100% { box-shadow: 0 4px 14px var(--ai-glow, rgba(59,130,246,0.35)); }
+    50%       { box-shadow: 0 4px 28px var(--ai-glow, rgba(139,92,246,0.55)), 0 0 44px rgba(59,130,246,0.15); }
+}
+
+/* Department badge dot pulse */
+@keyframes deptDot {
+    0%, 100% { transform: scale(1);   opacity: 1; }
+    50%       { transform: scale(1.6); opacity: 0.5; }
+}
+
+/* Floating data particle */
+@keyframes particleRise {
+    0%   { transform: translateY(0)    translateX(0);  opacity: 0;   }
+    10%  { opacity: 0.6; }
+    90%  { opacity: 0.5; }
+    100% { transform: translateY(-90px) translateX(14px); opacity: 0; }
+}
+
+/* Cursor blink */
+@keyframes caretBlink {
+    0%, 100% { opacity: 1; }
+    50%       { opacity: 0; }
+}
+
+/* Shimmer / skeleton loading */
+@keyframes shimmerSweep {
+    0%   { background-position: -200% 0; }
+    100% { background-position:  200% 0; }
+}
+
+/* Progress bar fill */
+@keyframes barFill {
+    from { width: 0%; }
+    to   { width: var(--bar-width, 70%); }
+}
+
+/* Matrix char drop */
+@keyframes matChar {
+    0%   { transform: translateY(-10px); opacity: 0; }
+    20%  { opacity: 0.8; }
+    80%  { opacity: 0.8; }
+    100% { transform: translateY(10px);  opacity: 0; }
+}
+
+/* Rotate (for orbit rings) */
+@keyframes orbitSpin {
+    from { transform: rotate(0deg);   }
+    to   { transform: rotate(360deg); }
+}
+@keyframes orbitSpinReverse {
+    from { transform: rotate(0deg);    }
+    to   { transform: rotate(-360deg); }
+}
+
+
+/* ── Page Transition ───────────────────────────────────── */
+
+.ai-page-enter {
+    animation: aiPageEnter 0.48s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+
+/* ── Stagger Grid ──────────────────────────────────────── */
+
+.ai-stagger > * {
+    animation: aiCardIn 0.42s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+.ai-stagger > *:nth-child(1)  { animation-delay: 0.04s; }
+.ai-stagger > *:nth-child(2)  { animation-delay: 0.08s; }
+.ai-stagger > *:nth-child(3)  { animation-delay: 0.12s; }
+.ai-stagger > *:nth-child(4)  { animation-delay: 0.16s; }
+.ai-stagger > *:nth-child(5)  { animation-delay: 0.20s; }
+.ai-stagger > *:nth-child(6)  { animation-delay: 0.24s; }
+.ai-stagger > *:nth-child(7)  { animation-delay: 0.28s; }
+.ai-stagger > *:nth-child(8)  { animation-delay: 0.32s; }
+.ai-stagger > *:nth-child(9)  { animation-delay: 0.36s; }
+.ai-stagger > *:nth-child(10) { animation-delay: 0.40s; }
+
+
+/* ── Stat Number ───────────────────────────────────────── */
+
+.ai-count-num {
+    display: inline-block;
+    animation: aiStatIn 0.55s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+
+/* ── Glow Hover Card ───────────────────────────────────── */
+
+.ai-glow-card {
+    transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1),
+                box-shadow 0.3s cubic-bezier(0.4, 0, 0.2, 1),
+                border-color 0.3s ease;
+}
+.ai-glow-card:hover {
+    transform: translateY(-6px) scale(1.012);
+    box-shadow: 0 22px 52px -14px rgba(59,130,246,0.28),
+                0 0 0 1px rgba(59,130,246,0.22);
+}
+
+
+/* ── Animated Gradient Border Card ────────────────────── */
+
+.ai-border-card {
+    position: relative;
+    border-radius: 18px;
+    padding: 2px;
+    background: linear-gradient(270deg, #3b82f6, #8b5cf6, #06b6d4, #3b82f6);
+    background-size: 300% 300%;
+    animation: borderPan 4.5s ease infinite;
+}
+.ai-border-card-inner {
+    background: var(--bg-card);
+    border-radius: 16px;
+    padding: 1.5rem;
+    height: 100%;
+}
+
+
+/* ── Data Flow Line ────────────────────────────────────── */
+
+.ai-flow-track {
+    position: relative;
+    height: 2px;
+    background: rgba(59,130,246,0.10);
+    border-radius: 2px;
+    overflow: hidden;
+    margin: 0.6rem 0;
+}
+.ai-flow-packet {
+    position: absolute;
+    top: -2px;
+    height: 6px;
+    border-radius: 3px;
+    animation: dataFlow 2.8s ease-in-out infinite;
+}
+.ai-flow-packet:nth-child(1) { width: 44px; animation-delay: 0s;    background: linear-gradient(90deg, transparent, #3b82f6, #8b5cf6, transparent); }
+.ai-flow-packet:nth-child(2) { width: 28px; animation-delay: 0.9s;  background: linear-gradient(90deg, transparent, #8b5cf6, #06b6d4, transparent); }
+.ai-flow-packet:nth-child(3) { width: 58px; animation-delay: 1.8s;  background: linear-gradient(90deg, transparent, #06b6d4, #3b82f6, transparent); }
+
+
+/* ── Neural Pulse Rings ────────────────────────────────── */
+
+.ai-pulse-wrap {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+.ai-pulse-ring {
+    position: absolute;
+    inset: -5px;
+    border-radius: 50%;
+    border: 2px solid rgba(59,130,246,0.45);
+    animation: neuralRing 2.2s ease-out infinite;
+}
+.ai-pulse-ring:nth-child(2) { animation-delay: 0.75s; }
+.ai-pulse-ring:nth-child(3) { animation-delay: 1.5s;  }
+
+
+/* ── AI Icon (glow pulse) ──────────────────────────────── */
+
+.ai-icon-glow {
+    animation: iconGlow 3s ease-in-out infinite;
+}
+
+
+/* ── Department Badge ──────────────────────────────────── */
+
+.ai-dept-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.45rem;
+    padding: 0.28rem 0.8rem;
+    border-radius: 20px;
+    font-size: 0.68rem;
+    font-weight: 700;
+    letter-spacing: 0.6px;
+    text-transform: uppercase;
+    background: linear-gradient(135deg, rgba(59,130,246,0.13), rgba(139,92,246,0.13));
+    border: 1px solid rgba(59,130,246,0.28);
+    color: #60a5fa;
+    backdrop-filter: blur(4px);
+}
+.ai-dept-badge-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: #60a5fa;
+    animation: deptDot 1.8s ease-in-out infinite;
+    flex-shrink: 0;
+}
+
+
+/* ── Floating Particles ────────────────────────────────── */
+
+.ai-particles-host {
+    position: absolute;
+    inset: 0;
+    overflow: hidden;
+    pointer-events: none;
+    z-index: 0;
+}
+.ai-ptcl {
+    position: absolute;
+    width: 4px;
+    height: 4px;
+    border-radius: 50%;
+    animation: particleRise 4.5s ease-in-out infinite;
+}
+
+
+/* ── Section Divider ───────────────────────────────────── */
+
+.ai-divider {
+    display: flex;
+    align-items: center;
+    gap: 0.9rem;
+    margin: 2rem 0 1.5rem;
+}
+.ai-divider-line {
+    flex: 1;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, var(--border-color), transparent);
+}
+.ai-divider-label {
+    display: flex;
+    align-items: center;
+    gap: 0.45rem;
+    font-size: 0.75rem;
+    font-weight: 700;
+    letter-spacing: 0.9px;
+    text-transform: uppercase;
+    color: var(--text-muted);
+    white-space: nowrap;
+}
+
+
+/* ── Shimmer Skeleton ──────────────────────────────────── */
+
+.ai-shimmer {
+    background: linear-gradient(
+        90deg,
+        var(--bg-card) 25%,
+        rgba(59,130,246,0.07) 50%,
+        var(--bg-card) 75%
+    );
+    background-size: 200% 100%;
+    animation: shimmerSweep 1.6s infinite;
+}
+
+
+/* ── Animated Progress Bar ─────────────────────────────── */
+
+.ai-progress-bar {
+    animation: barFill 1.2s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+
+/* ── Matrix Decoration ─────────────────────────────────── */
+
+.ai-matrix-char {
+    display: inline-block;
+    animation: matChar 1.2s ease-in-out infinite;
+    color: #10b981;
+    font-family: 'Courier New', monospace;
+    font-size: 0.68rem;
+    opacity: 0;
+    user-select: none;
+}
+.ai-matrix-char:nth-child(2) { animation-delay: 0.15s; }
+.ai-matrix-char:nth-child(3) { animation-delay: 0.30s; }
+.ai-matrix-char:nth-child(4) { animation-delay: 0.45s; }
+.ai-matrix-char:nth-child(5) { animation-delay: 0.60s; }
+.ai-matrix-char:nth-child(6) { animation-delay: 0.75s; }
+
+
+/* ── Orbit Rings (for sidebar logo) ───────────────────── */
+
+.ai-orbit-ring {
+    position: absolute;
+    border-radius: 50%;
+    border: 1px solid rgba(59,130,246,0.25);
+    border-style: dashed;
+    animation: orbitSpin 8s linear infinite;
+    pointer-events: none;
+}
+.ai-orbit-ring.reverse {
+    animation-name: orbitSpinReverse;
+    animation-duration: 12s;
+    border-color: rgba(139,92,246,0.2);
+}
+
+
+/* ── Cursor Blink ──────────────────────────────────────── */
+
+.ai-cursor {
+    display: inline-block;
+    width: 2px;
+    height: 1em;
+    background: #60a5fa;
+    margin-left: 2px;
+    vertical-align: middle;
+    animation: caretBlink 1s step-end infinite;
+}
+
+
+/* ── Utility ───────────────────────────────────────────── */
+
+/* Prevent stagger flash on fast connections */
+.ai-stagger > * { opacity: 0; }
+.ai-stagger > *[style*="animation"] { opacity: 1; }

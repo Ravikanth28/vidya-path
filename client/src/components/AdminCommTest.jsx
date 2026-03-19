@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import {
     Mic, Plus, Trash2, Edit3, Users, Play, Square, BarChart2,
     X, Search, CheckCircle, CheckCircle2, Clock, BookOpen, Volume2, MessageSquare,
-    PenTool, Eye, AlertCircle, AlertTriangle, Briefcase, FileText, Brain, List, Headphones, ArrowRight, Radio
+    PenTool, Eye, AlertCircle, AlertTriangle, Briefcase, FileText, Brain, List, Headphones, ArrowRight, Radio, Download
 } from 'lucide-react';
 import {
     BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer
@@ -530,6 +530,7 @@ function ReportsView({ testId: propTestId, testTitle }) {
     const [dateFrom, setDateFrom] = useState('');
     const [dateTo, setDateTo] = useState('');
     const [deleting, setDeleting] = useState(null);
+    const [deletingAll, setDeletingAll] = useState(false);
     const [fetchKey, setFetchKey] = useState(0);
 
     useEffect(() => {
@@ -577,6 +578,53 @@ function ReportsView({ testId: propTestId, testTitle }) {
         setDeleting(null);
     };
 
+    const handleDeleteAll = async () => {
+        const count = sessions.length;
+        if (!window.confirm(`Delete ALL ${count} visible report${count !== 1 ? 's' : ''}? This cannot be undone.`)) return;
+        setDeletingAll(true);
+        try {
+            const ids = sessions.map(s => s.id);
+            const res = await fetch(`${API}/admin/comm-test/reports`, {
+                method: 'DELETE',
+                headers: { ...authHeader(), 'Content-Type': 'application/json' },
+                body: JSON.stringify({ ids }),
+            });
+            const data = await res.json();
+            if (!res.ok || !data.success) {
+                alert('Delete failed: ' + (data.error || 'Unknown error'));
+            } else {
+                setSessions([]);
+                setTotal(0);
+            }
+        } catch (e) {
+            console.error(e);
+            alert('Delete failed. Check your connection.');
+        }
+        setDeletingAll(false);
+    };
+
+    const downloadCSV = () => {
+        const headers = ['Student Name', 'Student Email', 'Test', 'Date', 'Score (%)', 'Status'];
+        const rows = sessions.map(s => [
+            s.student_name || 'Unknown',
+            s.student_email || '',
+            s.test_title || '',
+            s.started_at ? new Date(s.started_at).toLocaleString() : '',
+            s.overall_score != null ? s.overall_score : '',
+            s.completed_at ? 'Completed' : 'In Progress',
+        ]);
+        const csv = [headers, ...rows]
+            .map(r => r.map(v => `"${String(v).replace(/"/g, '""')}"`).join(','))
+            .join('\n');
+        const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `comm_test_reports_${new Date().toISOString().slice(0,10)}.csv`;
+        a.click();
+        URL.revokeObjectURL(url);
+    };
+
     const selStyle = { padding: '8px 10px', background: D.inputBg, border: `1px solid ${D.inputBorder}`, borderRadius: 8, fontSize: 13, color: D.text, cursor: 'pointer' };
 
     if (viewSession) return <SessionReport sessionId={viewSession} onBack={() => setViewSession(null)}/>;
@@ -622,6 +670,18 @@ function ReportsView({ testId: propTestId, testTitle }) {
                     <button onClick={resetFilters}
                         style={{ padding: '8px 16px', background: D.purple, border: 'none', borderRadius: 8, fontSize: 13, color: 'white', cursor: 'pointer', fontWeight: 700, letterSpacing: '0.02em' }}>
                         Reset
+                    </button>
+
+                    {/* Download CSV */}
+                    <button onClick={downloadCSV} disabled={sessions.length === 0}
+                        style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 14px', background: 'rgba(52,211,153,0.12)', border: '1px solid rgba(52,211,153,0.35)', borderRadius: 8, fontSize: 13, color: '#34d399', cursor: sessions.length === 0 ? 'not-allowed' : 'pointer', fontWeight: 600, opacity: sessions.length === 0 ? 0.5 : 1, whiteSpace: 'nowrap' }}>
+                        <Download size={14}/> Download CSV
+                    </button>
+
+                    {/* Delete All */}
+                    <button onClick={handleDeleteAll} disabled={sessions.length === 0 || deletingAll}
+                        style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 14px', background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.4)', borderRadius: 8, fontSize: 13, color: '#ef4444', cursor: sessions.length === 0 || deletingAll ? 'not-allowed' : 'pointer', fontWeight: 600, opacity: sessions.length === 0 || deletingAll ? 0.5 : 1, whiteSpace: 'nowrap' }}>
+                        <Trash2 size={14}/> {deletingAll ? 'Deleting...' : `Delete All (${sessions.length})`}
                     </button>
                 </div>
 

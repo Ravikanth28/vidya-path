@@ -490,6 +490,28 @@ module.exports = function communicationRoutes(pool, authenticate, cerebrasChat) 
         }
     });
 
+    // DELETE /admin/comm-test/reports  (bulk delete by explicit session IDs)
+    router.delete('/admin/comm-test/reports', authenticate, requireAdmin, async (req, res) => {
+        try {
+            const { ids } = req.body;
+            if (!Array.isArray(ids) || ids.length === 0) {
+                return res.status(400).json({ success: false, error: 'No session IDs provided' });
+            }
+            // Session IDs are UUIDs (strings) — sanitise: allow only alphanumeric + hyphens
+            const safeIds = ids.map(String).filter(id => /^[a-f0-9\-]{8,36}$/i.test(id));
+            if (safeIds.length === 0) {
+                return res.status(400).json({ success: false, error: 'Invalid session IDs' });
+            }
+            const placeholders = safeIds.map(() => '?').join(',');
+            // Delete child rows first, then parent sessions
+            await pool.query(`DELETE FROM comm_test_submissions WHERE session_id IN (${placeholders})`, safeIds);
+            const [result] = await pool.query(`DELETE FROM comm_test_sessions WHERE id IN (${placeholders})`, safeIds);
+            res.json({ success: true, deleted: result.affectedRows });
+        } catch (err) {
+            res.status(500).json({ success: false, error: err.message });
+        }
+    });
+
     // GET /admin/comm-test/stats
     router.get('/admin/comm-test/stats', authenticate, requireAdmin, async (req, res) => {
         try {
