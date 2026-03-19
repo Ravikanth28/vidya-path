@@ -1,7 +1,7 @@
 /**
  * Batch Management Routes
  * Admin uploads a single Excel/CSV file.
- * - If Excel (.xlsx/.xls): each SHEET becomes its own batch (sheet name = batch name).
+ * - If Excel (.xlsx/.xls): each SHEET becomes its own batch (sheet name = batch name)
  * - If CSV: the uploaded file name (minus extension) is the batch name
  * Students are matched by email, name, or ID against registered users
  */
