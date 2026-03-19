@@ -3830,7 +3830,7 @@ app.get('/api/aptitude/:id', async (req, res) => {
         const cleanQuestions = questions.map(q => ({
             id: q.question_id,
             question: q.question,
-            options: [q.option_1, q.option_2, q.option_3, q.option_4].filter(Boolean),
+            options: [q.option_1, q.option_2, q.option_3, q.option_4].filter(opt => opt !== null && opt !== undefined && opt !== ''),
             correctAnswer: q.correct_answer,
             explanation: q.explanation,
             category: q.category
@@ -3944,7 +3944,7 @@ app.post('/api/aptitude/:id/submit', validate(aptitudeSubmitSchema), async (req,
         const questionResults = questions.map(q => {
             const userAnswer = answers[q.question_id];
             // Get all options for this question
-            const options = [q.option_1, q.option_2, q.option_3, q.option_4].filter(Boolean);
+            const options = [q.option_1, q.option_2, q.option_3, q.option_4].filter(opt => opt !== null && opt !== undefined && opt !== '');
             // Get the correct option text using the index
             const correctOptionText = options[q.correct_answer];
             // Compare user's answer (option text) with correct option text
@@ -4040,6 +4040,49 @@ app.post('/api/aptitude/:id/submit', validate(aptitudeSubmitSchema), async (req,
 });
 
 // Update Aptitude Test Status
+// Update Aptitude Test (details + questions)
+app.put('/api/aptitude/:id', async (req, res) => {
+    const connection = await pool.getConnection();
+    try {
+        await connection.beginTransaction();
+        const testId = req.params.id;
+        const { title, difficulty, duration, passingScore, maxTabSwitches, maxAttempts, startTime, deadline, description, status, questions } = req.body;
+
+        let formattedStartTime = null;
+        let formattedDeadline = null;
+        if (startTime) formattedStartTime = new Date(startTime).toISOString().slice(0, 19).replace('T', ' ');
+        if (deadline) formattedDeadline = new Date(deadline).toISOString().slice(0, 19).replace('T', ' ');
+
+        await connection.query(
+            'UPDATE aptitude_tests SET title=?, difficulty=?, duration=?, total_questions=?, passing_score=?, max_tab_switches=?, max_attempts=?, start_time=?, deadline=?, description=?, status=? WHERE id=?',
+            [title, difficulty, duration || 30, questions ? questions.length : undefined, passingScore || 60, maxTabSwitches || 3, maxAttempts || 1, formattedStartTime, formattedDeadline, description || '', status || 'live', testId]
+        );
+
+        if (questions) {
+            // Delete existing and re-insert
+            await connection.query('DELETE FROM aptitude_questions WHERE test_id = ?', [testId]);
+            for (const q of questions) {
+                const questionId = q.id || require('uuid').v4();
+                const options = q.options || [];
+                await connection.query(
+                    'INSERT INTO aptitude_questions (question_id, test_id, question, option_1, option_2, option_3, option_4, correct_answer, explanation, category) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+                    [questionId, testId, q.question, options[0] || '', options[1] || '', options[2] || '', options[3] || '', q.correctAnswer, q.explanation || '', q.category || 'general']
+                );
+            }
+            await connection.query('UPDATE aptitude_tests SET total_questions=? WHERE id=?', [questions.length, testId]);
+        }
+
+        await connection.commit();
+        res.json({ success: true });
+    } catch (error) {
+        await connection.rollback();
+        console.error('Aptitude Update Error:', error);
+        res.status(500).json({ error: error.message });
+    } finally {
+        connection.release();
+    }
+});
+
 app.patch('/api/aptitude/:id/status', async (req, res) => {
     try {
         const { status } = req.body;

@@ -3440,6 +3440,7 @@ function AdminSubmissionReportModal({ submission, onClose }) {
 
 // ==================== GLOBAL TASKS COMPONENT ====================
 function GlobalTasks() {
+    const user = useAuth()?.user
     const [tasks, setTasks] = useState([])
     const [loading, setLoading] = useState(true)
     const [showModal, setShowModal] = useState(false)
@@ -3481,7 +3482,7 @@ function GlobalTasks() {
     }
 
     const fetchTasks = () => {
-        axios.get(`${API_BASE}/tasks?mentorId=${ADMIN_ID}`)
+        axios.get(`${API_BASE}/tasks?mentorId=${user?.id}`)
             .then(res => {
                 setTasks(Array.isArray(res.data) ? res.data : (res.data?.data || []))
                 setLoading(false)
@@ -3545,7 +3546,7 @@ function GlobalTasks() {
     const handleSubmit = async (e) => {
         e.preventDefault()
         try {
-            await axios.post(`${API_BASE}/tasks`, { ...task, mentorId: ADMIN_ID })
+            await axios.post(`${API_BASE}/tasks`, { ...task, mentorId: user?.id })
             setShowModal(false)
             setTask({
                 title: '', type: 'machine_learning', difficulty: 'medium',
@@ -3591,7 +3592,7 @@ function GlobalTasks() {
                     description: obj.description || '',
                     requirements: obj.requirements || '',
                     deadline: obj.deadline || '',
-                    mentorId: ADMIN_ID
+                    mentorId: user?.id
                 }
                 if (!taskData.title) continue
                 await axios.post(`${API_BASE}/tasks`, taskData)
@@ -4128,6 +4129,7 @@ function GlobalTasks() {
 
 // ==================== GLOBAL PROBLEMS COMPONENT ====================
 function GlobalProblems() {
+    const user = useAuth()?.user
     const [problems, setProblems] = useState([])
     const [loading, setLoading] = useState(true)
     const [showModal, setShowModal] = useState(false)
@@ -4202,7 +4204,7 @@ function GlobalProblems() {
     }
 
     const fetchProblems = () => {
-        axios.get(`${API_BASE}/problems?mentorId=${ADMIN_ID}`)
+        axios.get(`${API_BASE}/problems?mentorId=${user?.id}`)
             .then(res => {
                 setProblems(Array.isArray(res.data) ? res.data : (res.data?.data || []))
                 setLoading(false)
@@ -4267,7 +4269,7 @@ function GlobalProblems() {
     const handleSubmit = async (e) => {
         e.preventDefault()
         try {
-            await axios.post(`${API_BASE}/problems`, { ...problem, mentorId: ADMIN_ID })
+            await axios.post(`${API_BASE}/problems`, { ...problem, mentorId: user?.id })
             setShowModal(false)
             setProblem({
                 title: '', type: 'Coding', language: 'Python', difficulty: 'Medium',
@@ -4383,7 +4385,7 @@ function GlobalProblems() {
                     expectedQueryResult: isSQL ? getExpectedQueryResult() : '',
                     maxAttempts: parseInt(obj['max_attempts'] || obj['maxattempts'] || obj['attempts']) || 0,
                     status: obj['status'] || 'live',
-                    mentorId: ADMIN_ID
+                    mentorId: user?.id
                 }
 
                 if (!probData.title || !probData.description) continue
@@ -5348,6 +5350,7 @@ const GLOBAL_SECTIONS = [
 ];
 
 function GlobalTestsAdmin() {
+    const user = useAuth()?.user
     const [tests, setTests] = useState([])
     const [loading, setLoading] = useState(true)
     const [showModal, setShowModal] = useState(false)
@@ -5458,7 +5461,7 @@ function GlobalTestsAdmin() {
             const testPayload = {
                 title: file.name.replace('.csv', '') + ' - CSV Import',
                 type: 'comprehensive', difficulty: 'Medium', duration: 180, passingScore: 60,
-                status: 'draft', createdBy: ADMIN_ID,
+                status: 'draft', createdBy: user?.id,
                 sectionConfig: {
                     sections: [
                         { id: 'aptitude', enabled: true, order: 1, questionsCount: questions.filter(q => q.section === 'aptitude').length, timeMinutes: 30 },
@@ -5751,7 +5754,7 @@ function GlobalTestsAdmin() {
                 ...newTest,
                 startTime: formattedStartTime,
                 deadline: formattedDeadline,
-                createdBy: editingId ? undefined : ADMIN_ID,
+                createdBy: editingId ? undefined : user?.id,
                 // Include enhanced proctoring settings
                 proctoring: proctoringSettings.enabled ? {
                     enabled: true,
@@ -7177,11 +7180,17 @@ function GlobalTestsAdmin() {
 
 // ==================== APTITUDE TESTS ADMIN ====================
 function AptitudeTestsAdmin() {
+    const user = useAuth()?.user
     const [tests, setTests] = useState([])
     const [loading, setLoading] = useState(true)
     const [showModal, setShowModal] = useState(false)
     const [showQuestionsModal, setShowQuestionsModal] = useState(false)
     const [selectedTest, setSelectedTest] = useState(null)
+    const [viewLoading, setViewLoading] = useState(false)
+    const [showEditModal, setShowEditModal] = useState(false)
+    const [editingTest, setEditingTest] = useState(null)
+    const [editingQuestions, setEditingQuestions] = useState([])
+    const [editSaving, setEditSaving] = useState(false)
     const [isGenerating, setIsGenerating] = useState(false)
     const [generatedQuestions, setGeneratedQuestions] = useState([])
     const [aiPrompt, setAiPrompt] = useState({ topic: '', difficulty: 'Medium', count: 5 })
@@ -7329,7 +7338,7 @@ function AptitudeTestsAdmin() {
         try {
             // Convert dates to ISO strings without timezone conversion
             // because datetime-local input is already in local time
-            const testPayload = { ...newTest, createdBy: ADMIN_ID }
+            const testPayload = { ...newTest, createdBy: user?.id }
             if (testPayload.startTime) {
                 const date = new Date(testPayload.startTime)
                 if (!isNaN(date.getTime())) testPayload.startTime = date.toISOString()
@@ -7367,19 +7376,40 @@ function AptitudeTestsAdmin() {
         setUploading(true)
         try {
             const text = await file.text()
+            // Proper CSV line parser that handles empty fields and quoted commas
+            const parseCSVLine = (line) => {
+                const result = []
+                let current = '', inQuotes = false
+                for (let i = 0; i < line.length; i++) {
+                    if (line[i] === '"') { inQuotes = !inQuotes }
+                    else if (line[i] === ',' && !inQuotes) { result.push(current.trim()); current = '' }
+                    else { current += line[i] }
+                }
+                result.push(current.trim())
+                return result
+            }
             const lines = text.split('\n').map(l => l.trim()).filter(Boolean)
             if (lines.length < 2) { alert('CSV must have header + at least one row'); return }
-            const headers = lines[0].split(',').map(h => h.trim().toLowerCase().replace(/['"]/g, ''))
+            const headers = parseCSVLine(lines[0]).map(h => h.toLowerCase().replace(/['"]/g, '').trim())
             const questions = []
             for (let i = 1; i < lines.length; i++) {
-                const vals = lines[i].match(/(".*?"|[^,]+)/g)?.map(v => v.trim().replace(/^"|"$/g, '')) || []
+                const vals = parseCSVLine(lines[i])
                 const row = {}
-                headers.forEach((h, idx) => row[h] = vals[idx] || '')
+                headers.forEach((h, idx) => row[h] = (vals[idx] || '').replace(/^"|"$/g, '').trim())
                 if (!row.question) continue
+                // Support many header naming styles for options
+                const opt1 = row.option1 || row.option_1 || row['option 1'] || row['option a'] || row.a || row.opt1 || row.choice1 || ''
+                const opt2 = row.option2 || row.option_2 || row['option 2'] || row['option b'] || row.b || row.opt2 || row.choice2 || ''
+                const opt3 = row.option3 || row.option_3 || row['option 3'] || row['option c'] || row.c || row.opt3 || row.choice3 || ''
+                const opt4 = row.option4 || row.option_4 || row['option 4'] || row['option d'] || row.d || row.opt4 || row.choice4 || ''
+                // Support letter-based correct answer (A→0, B→1, C→2, D→3) or numeric index
+                const rawAnswer = (row.correctanswer || row.correct_answer || row.answer || row.correctoption || '').trim().toUpperCase()
+                const letterMap = { A: 0, B: 1, C: 2, D: 3 }
+                const correctAnswer = rawAnswer in letterMap ? letterMap[rawAnswer] : (parseInt(rawAnswer) || 0)
                 questions.push({
                     question: row.question,
-                    options: [row.option1 || row.option_1 || '', row.option2 || row.option_2 || '', row.option3 || row.option_3 || '', row.option4 || row.option_4 || ''],
-                    correctAnswer: parseInt(row.correctanswer || row.correct_answer || row.answer || '0'),
+                    options: [opt1, opt2, opt3, opt4],
+                    correctAnswer,
                     category: row.category || 'general',
                     explanation: row.explanation || ''
                 })
@@ -7389,7 +7419,7 @@ function AptitudeTestsAdmin() {
                 title: file.name.replace('.csv', '') + ' - CSV Import',
                 difficulty: 'Medium', duration: Math.max(30, questions.length * 2),
                 passingScore: 60, maxTabSwitches: 3, maxAttempts: 1,
-                status: 'draft', createdBy: ADMIN_ID, questions
+                status: 'draft', createdBy: user?.id, questions
             }
             await axios.post(`${API_BASE}/aptitude`, payload)
             alert(`Created aptitude test with ${questions.length} questions from CSV!`)
@@ -7624,9 +7654,17 @@ function AptitudeTestsAdmin() {
                                     <td>
                                         <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
                                             <button
-                                                onClick={() => {
-                                                    setSelectedTest(test)
-                                                    setShowQuestionsModal(true)
+                                                onClick={async () => {
+                                                    setViewLoading(true)
+                                                    try {
+                                                        const res = await axios.get(`${API_BASE}/aptitude/${test.id}`)
+                                                        setSelectedTest(res.data)
+                                                        setShowQuestionsModal(true)
+                                                    } catch (e) {
+                                                        alert('Failed to load test questions')
+                                                    } finally {
+                                                        setViewLoading(false)
+                                                    }
                                                 }}
                                                 style={{
                                                     padding: '0.4rem 0.8rem',
@@ -7639,6 +7677,42 @@ function AptitudeTestsAdmin() {
                                                 }}
                                             >
                                                 View
+                                            </button>
+                                            <button
+                                                onClick={async () => {
+                                                    try {
+                                                        const res = await axios.get(`${API_BASE}/aptitude/${test.id}`)
+                                                        const t = res.data
+                                                        setEditingTest({
+                                                            id: t.id,
+                                                            title: t.title,
+                                                            difficulty: t.difficulty,
+                                                            duration: t.duration,
+                                                            passingScore: t.passingScore,
+                                                            maxTabSwitches: t.maxTabSwitches || 3,
+                                                            maxAttempts: t.maxAttempts || 1,
+                                                            startTime: t.startTime ? t.startTime.slice(0, 16) : '',
+                                                            deadline: t.deadline ? t.deadline.slice(0, 16) : '',
+                                                            description: t.description || '',
+                                                            status: t.status
+                                                        })
+                                                        setEditingQuestions((t.questions || []).map(q => ({ ...q })))
+                                                        setShowEditModal(true)
+                                                    } catch (e) {
+                                                        alert('Failed to load test for editing')
+                                                    }
+                                                }}
+                                                style={{
+                                                    padding: '0.4rem 0.8rem',
+                                                    background: 'rgba(245, 158, 11, 0.1)',
+                                                    border: '1px solid rgba(245, 158, 11, 0.3)',
+                                                    borderRadius: '6px',
+                                                    color: '#f59e0b',
+                                                    cursor: 'pointer',
+                                                    fontSize: '0.8rem'
+                                                }}
+                                            >
+                                                Edit
                                             </button>
                                             <button
                                                 onClick={() => openStudentAllocationModal(test.id)}
@@ -8271,88 +8345,256 @@ function AptitudeTestsAdmin() {
                     <div
                         className="modal-content"
                         onClick={e => e.stopPropagation()}
-                        style={{ maxWidth: '700px', maxHeight: '80vh', overflowY: 'auto' }}
+                        style={{ maxWidth: '780px', maxHeight: '88vh', display: 'flex', flexDirection: 'column' }}
                     >
-                        <div className="modal-header">
+                        <div className="modal-header" style={{ flexShrink: 0 }}>
                             <div className="modal-title-with-icon">
                                 <div style={{
-                                    width: '40px',
-                                    height: '40px',
-                                    borderRadius: '10px',
+                                    width: '40px', height: '40px', borderRadius: '10px',
                                     background: 'linear-gradient(135deg, #8b5cf6, #6366f1)',
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    justifyContent: 'center'
+                                    display: 'flex', alignItems: 'center', justifyContent: 'center'
                                 }}>
                                     <Target size={20} color="white" />
                                 </div>
-                                <h2>{selectedTest.title}</h2>
+                                <div>
+                                    <h2 style={{ margin: 0 }}>{selectedTest.title}</h2>
+                                    <p style={{ margin: 0, fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+                                        {selectedTest.questions?.length || selectedTest.totalQuestions} Questions &bull; {selectedTest.duration} min &bull; Pass: {selectedTest.passingScore}% &bull; <span style={{ color: selectedTest.difficulty === 'Hard' ? '#ef4444' : selectedTest.difficulty === 'Easy' ? '#10b981' : '#f59e0b' }}>{selectedTest.difficulty}</span>
+                                    </p>
+                                </div>
                             </div>
                             <button onClick={() => setShowQuestionsModal(false)} className="modal-close">
                                 <X size={20} />
                             </button>
                         </div>
-                        <div className="modal-body">
-                            <p style={{ color: 'var(--text-muted)', marginBottom: '1.5rem' }}>
-                                {selectedTest.questionCount || selectedTest.totalQuestions} Questions • {selectedTest.duration} minutes • Pass: {selectedTest.passingScore}%
-                            </p>
-                            <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-                                {selectedTest.questions?.map((q, idx) => (
-                                    <div
-                                        key={idx}
-                                        style={{
+
+                        {/* Legend */}
+                        <div style={{ padding: '0.75rem 1.5rem', background: 'var(--bg-secondary)', borderBottom: '1px solid var(--border-color)', display: 'flex', gap: '1.5rem', flexShrink: 0 }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.82rem', color: 'var(--text-muted)' }}>
+                                <div style={{ width: 14, height: 14, borderRadius: 4, background: 'rgba(16,185,129,0.25)', border: '1px solid #10b981' }} /> Correct Answer
+                            </div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.82rem', color: 'var(--text-muted)' }}>
+                                <div style={{ width: 14, height: 14, borderRadius: 4, background: 'rgba(71,85,105,0.3)', border: '1px solid transparent' }} /> Other Options
+                            </div>
+                        </div>
+
+                        <div className="modal-body" style={{ overflowY: 'auto', padding: '1.5rem' }}>
+                            {(!selectedTest.questions || selectedTest.questions.length === 0) ? (
+                                <div style={{ textAlign: 'center', padding: '3rem', opacity: 0.5 }}>
+                                    <Brain size={48} style={{ marginBottom: '1rem', opacity: 0.3 }} />
+                                    <p>No questions found for this test.</p>
+                                </div>
+                            ) : (
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+                                    {selectedTest.questions.map((q, idx) => (
+                                        <div key={idx} style={{
                                             background: 'var(--bg-tertiary)',
                                             borderRadius: '12px',
                                             padding: '1.25rem',
                                             border: '1px solid var(--border-color)'
-                                        }}
-                                    >
-                                        <div style={{
-                                            display: 'flex',
-                                            alignItems: 'flex-start',
-                                            gap: '0.75rem',
-                                            marginBottom: '0.75rem'
                                         }}>
-                                            <span style={{
-                                                background: 'linear-gradient(135deg, #8b5cf6, #6366f1)',
-                                                color: 'white',
-                                                padding: '0.25rem 0.5rem',
-                                                borderRadius: '6px',
-                                                fontSize: '0.8rem',
-                                                fontWeight: 600
-                                            }}>
-                                                Q{idx + 1}
-                                            </span>
-                                            <span style={{ fontWeight: 500 }}>{q.question}</span>
+                                            {/* Question header */}
+                                            <div style={{ display: 'flex', alignItems: 'flex-start', gap: '0.75rem', marginBottom: '1rem' }}>
+                                                <span style={{
+                                                    background: 'linear-gradient(135deg, #8b5cf6, #6366f1)',
+                                                    color: 'white', padding: '0.25rem 0.6rem',
+                                                    borderRadius: '6px', fontSize: '0.8rem', fontWeight: 700, flexShrink: 0
+                                                }}>Q{idx + 1}</span>
+                                                <div style={{ flex: 1 }}>
+                                                    <span style={{ fontWeight: 500, lineHeight: 1.5 }}>{q.question}</span>
+                                                    {q.category && (
+                                                        <span style={{ marginLeft: '0.75rem', padding: '0.2rem 0.5rem', background: 'rgba(139,92,246,0.15)', borderRadius: '4px', fontSize: '0.72rem', color: '#a78bfa' }}>{q.category}</span>
+                                                    )}
+                                                </div>
+                                            </div>
+
+                                            {/* Options grid */}
+                                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.6rem', marginLeft: '2.5rem' }}>
+                                                {q.options?.map((opt, optIdx) => {
+                                                    const isCorrect = optIdx === q.correctAnswer
+                                                    return (
+                                                        <div key={optIdx} style={{
+                                                            padding: '0.6rem 0.85rem',
+                                                            background: isCorrect ? 'rgba(16,185,129,0.15)' : 'rgba(71,85,105,0.2)',
+                                                            borderRadius: '8px', fontSize: '0.85rem',
+                                                            border: isCorrect ? '1.5px solid #10b981' : '1px solid var(--border-color)',
+                                                            display: 'flex', alignItems: 'center', gap: '0.5rem'
+                                                        }}>
+                                                            <span style={{
+                                                                width: 22, height: 22, borderRadius: '50%', flexShrink: 0,
+                                                                background: isCorrect ? '#10b981' : 'rgba(71,85,105,0.4)',
+                                                                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                                                fontSize: '0.72rem', fontWeight: 700, color: 'white'
+                                                            }}>{['A','B','C','D'][optIdx]}</span>
+                                                            <span style={{ color: isCorrect ? '#10b981' : 'var(--text-main)', fontWeight: isCorrect ? 600 : 400 }}>{opt}</span>
+                                                            {isCorrect && <CheckCircle size={14} color="#10b981" style={{ marginLeft: 'auto', flexShrink: 0 }} />}
+                                                        </div>
+                                                    )
+                                                })}
+                                            </div>
+
+                                            {/* Explanation */}
+                                            {q.explanation && (
+                                                <div style={{ marginTop: '0.75rem', marginLeft: '2.5rem', padding: '0.6rem 0.85rem', background: 'rgba(59,130,246,0.08)', borderRadius: '8px', fontSize: '0.82rem', color: 'var(--text-muted)', borderLeft: '3px solid #3b82f6' }}>
+                                                    <strong style={{ color: '#60a5fa' }}>Explanation: </strong>{q.explanation}
+                                                </div>
+                                            )}
                                         </div>
-                                        <div style={{
-                                            display: 'grid',
-                                            gridTemplateColumns: '1fr 1fr',
-                                            gap: '0.5rem',
-                                            marginLeft: '2.5rem'
-                                        }}>
-                                            {q.options?.map((opt, optIdx) => (
-                                                <div
-                                                    key={optIdx}
-                                                    style={{
-                                                        padding: '0.5rem 0.75rem',
-                                                        background: opt === q.correctAnswer
-                                                            ? 'rgba(16, 185, 129, 0.2)'
-                                                            : 'rgba(71, 85, 105, 0.3)',
-                                                        borderRadius: '8px',
-                                                        fontSize: '0.85rem',
-                                                        border: opt === q.correctAnswer
-                                                            ? '1px solid #10b981'
-                                                            : '1px solid transparent'
-                                                    }}
-                                                >
-                                                    {['A', 'B', 'C', 'D'][optIdx]}. {opt}
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Edit Test Modal */}
+            {showEditModal && editingTest && (
+                <div className="modal-overlay" onClick={() => setShowEditModal(false)}>
+                    <div className="modal-content" onClick={e => e.stopPropagation()} style={{ maxWidth: '860px', maxHeight: '90vh', display: 'flex', flexDirection: 'column' }}>
+                        <div className="modal-header" style={{ flexShrink: 0 }}>
+                            <div className="modal-title-with-icon">
+                                <div style={{ width: '40px', height: '40px', borderRadius: '10px', background: 'linear-gradient(135deg, #f59e0b, #d97706)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                    <Save size={20} color="white" />
+                                </div>
+                                <h2>Edit Aptitude Test</h2>
+                            </div>
+                            <button onClick={() => setShowEditModal(false)} className="modal-close"><X size={20} /></button>
+                        </div>
+
+                        <div className="modal-body premium-form" style={{ overflowY: 'auto' }}>
+                            {/* Test Details Section */}
+                            <div style={{ marginBottom: '1.5rem', padding: '1.25rem', background: 'var(--bg-secondary)', borderRadius: '12px', border: '1px solid var(--border-color)' }}>
+                                <h3 style={{ margin: '0 0 1rem', fontSize: '1rem', color: 'var(--text-main)' }}>Test Details</h3>
+                                <div className="form-group">
+                                    <label className="form-label">Title</label>
+                                    <input type="text" value={editingTest.title} onChange={e => setEditingTest(p => ({ ...p, title: e.target.value }))} />
+                                </div>
+                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '1rem' }}>
+                                    <div className="form-group">
+                                        <label className="form-label">Difficulty</label>
+                                        <select value={editingTest.difficulty} onChange={e => setEditingTest(p => ({ ...p, difficulty: e.target.value }))}>
+                                            <option>Easy</option><option>Medium</option><option>Hard</option>
+                                        </select>
+                                    </div>
+                                    <div className="form-group">
+                                        <label className="form-label">Duration (min)</label>
+                                        <input type="number" min="5" value={editingTest.duration} onChange={e => setEditingTest(p => ({ ...p, duration: parseInt(e.target.value) || 30 }))} />
+                                    </div>
+                                    <div className="form-group">
+                                        <label className="form-label">Pass Score (%)</label>
+                                        <input type="number" min="0" max="100" value={editingTest.passingScore} onChange={e => setEditingTest(p => ({ ...p, passingScore: parseInt(e.target.value) || 60 }))} />
+                                    </div>
+                                    <div className="form-group">
+                                        <label className="form-label">Max Tab Switches</label>
+                                        <input type="number" min="0" value={editingTest.maxTabSwitches} onChange={e => setEditingTest(p => ({ ...p, maxTabSwitches: parseInt(e.target.value) || 3 }))} />
+                                    </div>
+                                    <div className="form-group">
+                                        <label className="form-label">Max Attempts</label>
+                                        <input type="number" min="1" value={editingTest.maxAttempts} onChange={e => setEditingTest(p => ({ ...p, maxAttempts: parseInt(e.target.value) || 1 }))} />
+                                    </div>
+                                    <div className="form-group">
+                                        <label className="form-label">Status</label>
+                                        <select value={editingTest.status} onChange={e => setEditingTest(p => ({ ...p, status: e.target.value }))}>
+                                            <option value="draft">Draft</option><option value="live">Live</option><option value="ended">Ended</option>
+                                        </select>
+                                    </div>
+                                </div>
+                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+                                    <div className="form-group">
+                                        <label className="form-label">Start Time (optional)</label>
+                                        <input type="datetime-local" value={editingTest.startTime} onChange={e => setEditingTest(p => ({ ...p, startTime: e.target.value }))} />
+                                    </div>
+                                    <div className="form-group">
+                                        <label className="form-label">Deadline (optional)</label>
+                                        <input type="datetime-local" value={editingTest.deadline} onChange={e => setEditingTest(p => ({ ...p, deadline: e.target.value }))} />
+                                    </div>
+                                </div>
+                                <div className="form-group">
+                                    <label className="form-label">Description</label>
+                                    <textarea rows="2" value={editingTest.description} onChange={e => setEditingTest(p => ({ ...p, description: e.target.value }))} />
+                                </div>
+                            </div>
+
+                            {/* Questions Section */}
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+                                <h3 style={{ margin: 0, fontSize: '1rem' }}>Questions ({editingQuestions.length})</h3>
+                                <button
+                                    type="button"
+                                    onClick={() => setEditingQuestions(p => [...p, { id: `new-${Date.now()}`, question: '', options: ['', '', '', ''], correctAnswer: 0, category: 'general', explanation: '' }])}
+                                    style={{ padding: '0.4rem 0.9rem', background: 'var(--primary)', border: 'none', borderRadius: '8px', color: 'white', fontSize: '0.85rem', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.4rem' }}
+                                >
+                                    <Plus size={15} /> Add Question
+                                </button>
+                            </div>
+
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                                {editingQuestions.map((q, idx) => (
+                                    <div key={q.id || idx} style={{ background: 'var(--bg-secondary)', borderRadius: '12px', padding: '1.25rem', border: '1px solid var(--border-color)' }}>
+                                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem' }}>
+                                            <span style={{ background: 'linear-gradient(135deg, #8b5cf6, #6366f1)', color: 'white', padding: '0.2rem 0.55rem', borderRadius: '6px', fontSize: '0.78rem', fontWeight: 700 }}>Q{idx + 1}</span>
+                                            <button type="button" onClick={() => setEditingQuestions(p => p.filter((_, i) => i !== idx))}
+                                                style={{ background: 'rgba(239,68,68,0.1)', border: 'none', color: '#ef4444', padding: '0.3rem 0.6rem', borderRadius: '6px', cursor: 'pointer', fontSize: '0.8rem' }}>
+                                                <Trash2 size={13} />
+                                            </button>
+                                        </div>
+                                        <div className="form-group" style={{ marginBottom: '0.75rem' }}>
+                                            <label className="form-label" style={{ fontSize: '0.8rem' }}>Question</label>
+                                            <textarea rows="2" value={q.question} onChange={e => setEditingQuestions(p => p.map((qu, i) => i === idx ? { ...qu, question: e.target.value } : qu))} />
+                                        </div>
+                                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.6rem', marginBottom: '0.75rem' }}>
+                                            {q.options.map((opt, oIdx) => (
+                                                <div key={oIdx} style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                                                    <input type="radio" name={`correct-${idx}`} checked={q.correctAnswer === oIdx}
+                                                        onChange={() => setEditingQuestions(p => p.map((qu, i) => i === idx ? { ...qu, correctAnswer: oIdx } : qu))}
+                                                        title="Mark as correct answer"
+                                                        style={{ accentColor: '#10b981', flexShrink: 0 }} />
+                                                    <input type="text" placeholder={`Option ${['A','B','C','D'][oIdx]}`} value={opt}
+                                                        onChange={e => setEditingQuestions(p => p.map((qu, i) => i === idx ? { ...qu, options: qu.options.map((o, oi) => oi === oIdx ? e.target.value : o) } : qu))}
+                                                        style={{ flex: 1, padding: '0.45rem 0.65rem', borderRadius: '6px', background: q.correctAnswer === oIdx ? 'rgba(16,185,129,0.1)' : 'var(--bg-card)', border: q.correctAnswer === oIdx ? '1px solid #10b981' : '1px solid var(--border-color)', color: 'var(--text-main)', fontSize: '0.85rem' }} />
                                                 </div>
                                             ))}
+                                        </div>
+                                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.6rem' }}>
+                                            <div className="form-group" style={{ margin: 0 }}>
+                                                <label className="form-label" style={{ fontSize: '0.78rem' }}>Category</label>
+                                                <input type="text" value={q.category} onChange={e => setEditingQuestions(p => p.map((qu, i) => i === idx ? { ...qu, category: e.target.value } : qu))} style={{ fontSize: '0.85rem' }} />
+                                            </div>
+                                            <div className="form-group" style={{ margin: 0 }}>
+                                                <label className="form-label" style={{ fontSize: '0.78rem' }}>Explanation (optional)</label>
+                                                <input type="text" value={q.explanation} onChange={e => setEditingQuestions(p => p.map((qu, i) => i === idx ? { ...qu, explanation: e.target.value } : qu))} style={{ fontSize: '0.85rem' }} />
+                                            </div>
                                         </div>
                                     </div>
                                 ))}
                             </div>
+                        </div>
+
+                        <div className="modal-footer" style={{ padding: '1rem 1.5rem', borderTop: '1px solid var(--border-color)', display: 'flex', justifyContent: 'flex-end', gap: '1rem', flexShrink: 0 }}>
+                            <button className="btn-reset" onClick={() => setShowEditModal(false)}>Cancel</button>
+                            <button
+                                className="btn-create-new"
+                                disabled={editSaving}
+                                onClick={async () => {
+                                    setEditSaving(true)
+                                    try {
+                                        await axios.put(`${API_BASE}/aptitude/${editingTest.id}`, {
+                                            ...editingTest,
+                                            questions: editingQuestions
+                                        })
+                                        alert('Test updated successfully!')
+                                        setShowEditModal(false)
+                                        fetchTests()
+                                    } catch (err) {
+                                        alert('Failed to save: ' + (err.response?.data?.error || err.message))
+                                    } finally {
+                                        setEditSaving(false)
+                                    }
+                                }}
+                                style={{ background: 'linear-gradient(135deg, #f59e0b, #d97706)', opacity: editSaving ? 0.7 : 1 }}
+                            >
+                                <Save size={16} /> {editSaving ? 'Saving...' : 'Save Changes'}
+                            </button>
                         </div>
                     </div>
                 </div>
