@@ -657,8 +657,9 @@ module.exports = function communicationRoutes(pool, authenticate, cerebrasChat) 
             if (excluded.length > 0) questions = questions.filter(q => !excluded.includes(q.id));
             if (questions.length === 0) return res.status(404).json({ success: false, error: 'No questions available for this module' });
 
+            const total = questions.length + excluded.length;
             const pick = questions[Math.floor(Math.random() * questions.length)];
-            res.json({ success: true, question: pick });
+            res.json({ success: true, question: pick, total });
         } catch (err) {
             res.status(500).json({ success: false, error: err.message });
         }
@@ -674,9 +675,10 @@ module.exports = function communicationRoutes(pool, authenticate, cerebrasChat) 
                 [testId, String(req.user.id)]
             );
             if (!assignment) return res.status(403).json({ success: false, error: 'Not assigned to this test' });
+            const moduleType = req.query.module_type || 'grammar-quiz';
             const [questions] = await pool.query(
                 'SELECT id, content, category FROM comm_test_questions WHERE test_id = ? AND module_type = ?',
-                [testId, 'grammar-quiz']
+                [testId, moduleType]
             );
             const shuffled = questions.sort(() => Math.random() - 0.5).slice(0, count);
             res.json({ success: true, questions: shuffled.map(q => ({ id: q.id, sentence: q.content, category: q.category })), quizId: uuidv4() });
@@ -851,14 +853,14 @@ Respond ONLY with valid JSON, no markdown:
     // POST /submit/grammar-quiz
     router.post('/comm-test/submit/grammar-quiz', authenticate, async (req, res) => {
         try {
-            const { sessionId, answers } = req.body;
+            const { sessionId, answers, moduleType: submittedModuleType = 'grammar-quiz' } = req.body;
             const studentId = String(req.user.id);
             if (!sessionId || !Array.isArray(answers) || answers.length === 0) {
                 return res.status(400).json({ success: false, error: 'sessionId and answers array required' });
             }
             const ids = answers.map(a => a.id).filter(Boolean);
             const [dbQuestions] = ids.length > 0
-                ? await pool.query(`SELECT id, content, answer, category FROM comm_test_questions WHERE id IN (?) AND module_type = 'grammar-quiz'`, [ids])
+                ? await pool.query(`SELECT id, content, answer, category FROM comm_test_questions WHERE id IN (?) AND module_type = ?`, [ids, submittedModuleType])
                 : [[]];
             const qMap = {};
             for (const q of dbQuestions) qMap[q.id] = q;
@@ -875,8 +877,8 @@ Respond ONLY with valid JSON, no markdown:
             const finalScore = Math.round((correct / answers.length) * 100);
             await pool.query(
                 `INSERT INTO comm_test_submissions (id, session_id, student_id, module_type, question_id, transcribed_text, expected_text, score, max_score, feedback, ai_scores)
-                 VALUES (?, ?, ?, 'grammar-quiz', 0, ?, ?, ?, 100, ?, ?)`,
-                [uuidv4(), sessionId, studentId,
+                 VALUES (?, ?, ?, ?, 0, ?, ?, ?, 100, ?, ?)`,
+                [uuidv4(), sessionId, studentId, submittedModuleType,
                  JSON.stringify(answers.map(a => a.answer)),
                  JSON.stringify(answers.map(a => a.id)),
                  finalScore, `${correct}/${answers.length} correct`, JSON.stringify({ review, correct, total: answers.length })]
