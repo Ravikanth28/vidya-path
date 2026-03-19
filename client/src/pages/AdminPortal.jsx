@@ -1,7 +1,7 @@
 ﻿import { useState, useEffect, useRef, useMemo } from 'react'
 import { Routes, Route, useLocation } from 'react-router-dom'
 import { LayoutDashboard, Users, Trophy, Award, List, Search, Send, Activity, CheckCircle, Check, TrendingUp, Clock, Globe, FileCode, Plus, X, Code, ChevronRight, Upload, AlertTriangle, Zap, Target, Sparkles, Bot, Wand2, Eye, FileText, BarChart2, RefreshCw, Calendar, HelpCircle, Trash2, Save, Brain, XCircle, Shield, Download, ClipboardList, Settings, Database, MessageSquare, Github, ExternalLink, BarChart3, Video, Building2, Filter, ChevronDown, Hash, Percent, ArrowUpDown, Link2, Layers, Mic, FlaskConical } from 'lucide-react'
-import { AIPageTransition, AIWelcomeHeader, AIStatCard, AISectionDivider, DataFlowLine, CountUp } from '../components/AIAnimations'
+import { AIPageTransition, AIWelcomeHeader, AIStatCard, AISectionDivider, DataFlowLine, CountUp, AIDeptBadge, NeuralPulseIcon, AILeaderboardHeader, AIOrbitDecor, AIProgressRing, AIBigParticles, AIStatsRow, AISectionCard } from '../components/AIAnimations'
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, BarChart, Bar, Legend } from 'recharts'
 import DashboardLayout from '../components/DashboardLayout'
 import { AIChatbot, AIFloatingButton } from '../components/AIChatbot'
@@ -706,15 +706,61 @@ function Allocations() {
     if (loading) return <div className="loading-spinner"></div>
 
     return (
-        <div className="animate-fadeIn">
-            <div style={{ marginBottom: '2rem' }}>
-                <h2 style={{ fontSize: '1.75rem', fontWeight: 800, margin: 0 }}>Mentor Allocations</h2>
-                <p style={{ color: 'var(--text-muted)', margin: '0.25rem 0 0 0' }}>Manage and view student-mentor assignments</p>
+        <AIPageTransition>
+            {/* Allocations header */}
+            <div style={{
+                background: 'linear-gradient(135deg,rgba(59,130,246,0.08),rgba(139,92,246,0.06),rgba(6,182,212,0.04))',
+                borderRadius: '18px', padding: '1.75rem 2rem', marginBottom: '1.75rem',
+                border: '1px solid rgba(59,130,246,0.15)', position: 'relative', overflow: 'hidden',
+            }}>
+                <AIBigParticles />
+                <div aria-hidden="true" style={{
+                    position: 'absolute', top: '-40%', right: '-5%',
+                    width: '260px', height: '260px',
+                    background: 'radial-gradient(circle,rgba(59,130,246,0.12) 0%,transparent 70%)',
+                    pointerEvents: 'none',
+                }} />
+                <div style={{ position: 'relative', zIndex: 1 }}>
+                    <AIDeptBadge />
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', margin: '0.75rem 0 0.3rem' }}>
+                        <NeuralPulseIcon>
+                            <div className="ai-icon-glow" style={{
+                                '--ai-glow': 'rgba(59,130,246,0.45)',
+                                width: '46px', height: '46px', borderRadius: '13px',
+                                background: 'linear-gradient(135deg,#3b82f6,#8b5cf6)',
+                                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                            }}>
+                                <Users size={22} color="white" />
+                            </div>
+                        </NeuralPulseIcon>
+                        <div>
+                            <h2 className="ai-gradient-text" style={{ margin: 0, fontSize: '1.5rem', fontWeight: 800 }}>Mentor Allocations</h2>
+                            <p style={{ margin: 0, color: 'var(--text-muted)', fontSize: '0.85rem' }}>Manage and view student-mentor assignments</p>
+                        </div>
+                    </div>
+                    <DataFlowLine />
+                    <div style={{ marginTop: '0.6rem' }}>
+                        <span className="ai-tag" style={{
+                            padding: '0.22rem 0.65rem', borderRadius: '10px', fontSize: '0.72rem', fontWeight: 700,
+                            background: 'rgba(59,130,246,0.12)', color: '#60a5fa',
+                            border: '1px solid rgba(59,130,246,0.25)', marginRight: '0.5rem',
+                        }}>
+                            {allocations.length} Mentors
+                        </span>
+                        <span className="ai-tag" style={{
+                            padding: '0.22rem 0.65rem', borderRadius: '10px', fontSize: '0.72rem', fontWeight: 700,
+                            background: 'rgba(139,92,246,0.12)', color: '#a78bfa',
+                            border: '1px solid rgba(139,92,246,0.25)',
+                        }}>
+                            {allocations.reduce((a, m) => a + m.students.length, 0)} Students
+                        </span>
+                    </div>
+                </div>
             </div>
 
-            <div style={{ display: 'grid', gap: '1rem' }}>
+            <div className="ai-stagger-20" style={{ display: 'grid', gap: '1rem' }}>
                 {allocations.map((alloc) => (
-                    <div key={alloc.mentorId} className="card" style={{ padding: 0, overflow: 'hidden' }}>
+                    <div key={alloc.mentorId} className="card ai-alloc-row" style={{ padding: 0, overflow: 'hidden' }}>
                         <div
                             style={{
                                 padding: '1.5rem 2rem',
@@ -748,7 +794,7 @@ function Allocations() {
 
                         {expandedMentor === alloc.mentorId && (
                             <div style={{ padding: '0 2rem 1.5rem', borderTop: '1px solid var(--border-color)' }}>
-                                <div className="table-container" style={{ marginTop: '1.5rem', background: 'var(--bg-tertiary)', borderRadius: '0.75rem' }}>
+                                <div className="table-container ai-rows-anim" style={{ marginTop: '1.5rem', background: 'var(--bg-tertiary)', borderRadius: '0.75rem' }}>
                                     <table style={{ margin: 0 }}>
                                         <thead>
                                             <tr>
@@ -761,9 +807,20 @@ function Allocations() {
                                         <tbody>
                                             {alloc.students.map(student => (
                                                 <tr key={student.id}>
-                                                    <td>{student.name}</td>
+                                                    <td>
+                                                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+                                                            <div className="avatar-circle" style={{ background: 'linear-gradient(135deg,#3b82f6,#8b5cf6)', width: 28, height: 28, fontSize: '0.78rem' }}>
+                                                                {student.name?.charAt(0)}
+                                                            </div>
+                                                            {student.name}
+                                                        </div>
+                                                    </td>
                                                     <td>{student.email}</td>
-                                                    <td>{student.batch}</td>
+                                                    <td>
+                                                        <span style={{ padding: '2px 8px', borderRadius: '6px', background: 'rgba(59,130,246,0.1)', color: '#60a5fa', fontSize: '0.78rem', fontWeight: 600 }}>
+                                                            {student.batch}
+                                                        </span>
+                                                    </td>
                                                     <td style={{ fontSize: '0.75rem', fontFamily: 'monospace', color: 'var(--text-muted)' }}>{student.id}</td>
                                                 </tr>
                                             ))}
@@ -775,7 +832,7 @@ function Allocations() {
                     </div>
                 ))}
             </div>
-        </div>
+        </AIPageTransition>
     )
 }
 
@@ -814,38 +871,43 @@ function StudentLeaderboard() {
     }
 
     return (
-        <div className="card animate-fadeIn" style={{ padding: '0', overflow: 'hidden' }}>
-            <div style={{ padding: '2rem' }}>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '2rem', flexWrap: 'wrap', gap: '1rem' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
-                        <Trophy size={32} className="text-primary" />
-                        <div>
-                            <h2 style={{ margin: 0 }}>Global Performance Ranking</h2>
-                            <p style={{ margin: 0, color: 'var(--text-muted)' }}>Real-time ranking of students across all mentors</p>
+        <AIPageTransition>
+            <AILeaderboardHeader
+                icon={Trophy}
+                title="Global Performance Ranking"
+                sub="Real-time ranking of students across all mentors"
+                stats={[
+                    { value: leaders.length, label: 'Students ranked', color: '#60a5fa' },
+                    { value: leaders.filter(s => (s.avgScore || 0) >= 80).length, label: 'High performers', color: '#10b981' },
+                ]}
+            />
+
+            <AISectionCard style={{ padding: 0, overflow: 'hidden' }}>
+                <div style={{ padding: '1.5rem 1.5rem 0.75rem' }}>
+                    <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                        <div style={{ position: 'relative' }}>
+                            <Search size={16} style={{ position: 'absolute', left: '0.9rem', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
+                            <input
+                                type="text"
+                                placeholder="Search students..."
+                                value={searchTerm}
+                                onChange={(e) => setSearchTerm(e.target.value)}
+                                style={{
+                                    padding: '0.65rem 1rem 0.65rem 2.5rem',
+                                    borderRadius: '10px',
+                                    border: '1px solid var(--border-color)',
+                                    background: 'var(--bg-secondary)',
+                                    color: 'var(--text-primary)',
+                                    outline: 'none',
+                                    width: '280px',
+                                    fontSize: '0.88rem'
+                                }}
+                            />
                         </div>
-                    </div>
-                    <div style={{ position: 'relative' }}>
-                        <Search size={18} style={{ position: 'absolute', left: '1rem', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
-                        <input
-                            type="text"
-                            placeholder="Search students..."
-                            value={searchTerm}
-                            onChange={(e) => setSearchTerm(e.target.value)}
-                            style={{
-                                padding: '0.75rem 1rem 0.75rem 2.75rem',
-                                borderRadius: '12px',
-                                border: '1px solid var(--border-color)',
-                                background: 'var(--bg-secondary)',
-                                color: 'var(--text-primary)',
-                                outline: 'none',
-                                width: '300px',
-                                fontSize: '0.9rem'
-                            }}
-                        />
                     </div>
                 </div>
 
-                <div className="table-container" style={{ maxHeight: '600px', overflowY: 'auto' }}>
+                <div className="table-container ai-rows-anim" style={{ maxHeight: '600px', overflowY: 'auto' }}>
                     <table>
                         <thead>
                             <tr>
@@ -960,8 +1022,16 @@ function StudentLeaderboard() {
                                             </div>
                                         </td>
                                         <td>
-                                            <div style={{ width: '100px', height: '8px', background: 'rgba(59, 130, 246, 0.1)', borderRadius: '10px', overflow: 'hidden' }}>
-                                                <div style={{ width: `${student.avgScore}%`, height: '100%', background: hasIssues ? 'var(--warning)' : 'var(--primary)' }}></div>
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                                <div style={{ width: '80px', height: '6px', background: 'rgba(59,130,246,0.1)', borderRadius: '10px', overflow: 'hidden' }}>
+                                                    <div className="ai-progress-bar" style={{
+                                                        '--bar-width': `${student.avgScore}%`,
+                                                        height: '100%',
+                                                        background: hasIssues
+                                                            ? 'linear-gradient(90deg,#f59e0b,#ef4444)'
+                                                            : 'linear-gradient(90deg,#3b82f6,#06b6d4)',
+                                                    }} />
+                                                </div>
                                             </div>
                                         </td>
                                         <td>
@@ -994,7 +1064,8 @@ function StudentLeaderboard() {
                         </tbody>
                     </table>
                 </div>
-            </div>
+
+            </AISectionCard>
 
             {/* Student Report Modal */}
             {reportStudent && (
@@ -1006,7 +1077,7 @@ function StudentLeaderboard() {
                     requestedByRole="admin"
                 />
             )}
-        </div>
+        </AIPageTransition>
     )
 }
 
@@ -1045,68 +1116,60 @@ function MentorLeaderboard() {
     }, [leaders])
 
     return (
-        <div className="animate-fadeIn">
-            <div style={{ marginBottom: '1.5rem' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginBottom: '1rem' }}>
-                    <Award size={32} style={{ color: '#8b5cf6' }} />
-                    <div>
-                        <h2 style={{ margin: 0 }}>Global Mentor Leaderboard</h2>
-                        <p style={{ margin: 0, color: 'var(--text-muted)' }}>Ranking mentors by student success and platform engagement</p>
-                    </div>
+        <AIPageTransition>
+            <AILeaderboardHeader
+                icon={Award}
+                title="Global Mentor Leaderboard"
+                sub="Ranking mentors by student success and platform engagement"
+                stats={[
+                    { value: mentorStats.totalMentors, label: 'Mentors', color: '#a78bfa' },
+                    { value: mentorStats.totalStudents, label: 'Students', color: '#60a5fa' },
+                    { value: `${mentorStats.avgScore.toFixed(1)}%`, label: 'Avg score', color: '#10b981' },
+                ]}
+            />
+
+            {error && (
+                <div style={{ marginBottom: '1rem', padding: '0.9rem 1rem', borderRadius: '12px', border: '1px solid rgba(239,68,68,0.3)', background: 'rgba(239,68,68,0.08)', color: '#fca5a5', fontSize: '0.9rem' }}>
+                    {error}
                 </div>
+            )}
 
-                {error && (
-                    <div style={{ marginBottom: '1rem', padding: '0.9rem 1rem', borderRadius: '12px', border: '1px solid rgba(239,68,68,0.3)', background: 'rgba(239,68,68,0.08)', color: '#fca5a5', fontSize: '0.9rem' }}>
-                        {error}
-                    </div>
-                )}
-
-                {/* Mentor Stats Cards */}
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '0.75rem', marginBottom: '1rem' }}>
-                    <div style={{ background: 'linear-gradient(135deg, rgba(139,92,246,0.1), rgba(139,92,246,0.05))', border: '1px solid rgba(139,92,246,0.2)', borderRadius: '12px', padding: '1rem 1.25rem' }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
-                            <span style={{ fontSize: '0.72rem', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.5px', color: '#a78bfa' }}>Total Mentors</span>
-                            <Users size={16} style={{ color: '#8b5cf6' }} />
+            {/* Mentor Stats Cards — now animated */}
+            <div className="ai-stagger" style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '0.75rem', marginBottom: '1.5rem' }}>
+                <AIStatCard icon={Users} label="Total Mentors" value={mentorStats.totalMentors}
+                    gradient="linear-gradient(135deg,#6d28d9,#8b5cf6)" glowRgb="139,92,246"
+                    footer={<div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>Active mentors</div>} />
+                <AIStatCard icon={Users} label="Total Students" value={mentorStats.totalStudents}
+                    gradient="linear-gradient(135deg,#1e40af,#3b82f6)" glowRgb="59,130,246"
+                    footer={<div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>Across all mentors</div>} />
+                <AIStatCard icon={TrendingUp} label="Avg Student Score" value={parseFloat(mentorStats.avgScore.toFixed(1))} suffix="%"
+                    gradient="linear-gradient(135deg,#047857,#10b981)" glowRgb="16,185,129"
+                    footer={
+                        <div style={{ height: '5px', background: 'rgba(16,185,129,0.15)', borderRadius: '3px', overflow: 'hidden' }}>
+                            <div className="ai-progress-bar" style={{ '--bar-width': `${mentorStats.avgScore}%`, height: '100%', background: 'linear-gradient(90deg,#10b981,#06b6d4)', borderRadius: '3px' }} />
                         </div>
-                        <div style={{ fontSize: '1.75rem', fontWeight: 800, color: '#8b5cf6' }}>{mentorStats.totalMentors}</div>
-                        <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '2px' }}>Active mentors</div>
+                    } />
+                <AIStatCard icon={ClipboardList} label="Total Submissions" value={mentorStats.totalSubs}
+                    gradient="linear-gradient(135deg,#b45309,#f59e0b)" glowRgb="245,158,11"
+                    footer={<div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>{mentorStats.totalContent} content items</div>} />
+                <div className="ai-glow-card" style={{
+                    background: 'linear-gradient(135deg,rgba(6,182,212,0.1),rgba(6,182,212,0.05))',
+                    border: '1px solid rgba(6,182,212,0.25)', borderRadius: '16px', padding: '1.25rem',
+                    position: 'relative', overflow: 'hidden',
+                }}>
+                    <div style={{ fontSize: '0.68rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px', color: '#22d3ee', marginBottom: '0.4rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        Top Mentor <Trophy size={14} style={{ color: '#06b6d4' }} />
                     </div>
-                    <div style={{ background: 'linear-gradient(135deg, rgba(59,130,246,0.1), rgba(59,130,246,0.05))', border: '1px solid rgba(59,130,246,0.2)', borderRadius: '12px', padding: '1rem 1.25rem' }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
-                            <span style={{ fontSize: '0.72rem', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.5px', color: '#60a5fa' }}>Total Students</span>
-                            <Users size={16} style={{ color: '#3b82f6' }} />
-                        </div>
-                        <div style={{ fontSize: '1.75rem', fontWeight: 800, color: '#3b82f6' }}>{mentorStats.totalStudents}</div>
-                        <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '2px' }}>Across all mentors</div>
+                    <div style={{ fontSize: '1.05rem', fontWeight: 800, color: '#06b6d4', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {mentorStats.topMentor?.name || '—'}
                     </div>
-                    <div style={{ background: 'linear-gradient(135deg, rgba(16,185,129,0.1), rgba(16,185,129,0.05))', border: '1px solid rgba(16,185,129,0.2)', borderRadius: '12px', padding: '1rem 1.25rem' }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
-                            <span style={{ fontSize: '0.72rem', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.5px', color: '#34d399' }}>Avg Student Score</span>
-                            <TrendingUp size={16} style={{ color: '#10b981' }} />
-                        </div>
-                        <div style={{ fontSize: '1.75rem', fontWeight: 800, color: '#10b981' }}>{mentorStats.avgScore.toFixed(1)}%</div>
-                        <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '2px' }}>Platform average</div>
-                    </div>
-                    <div style={{ background: 'linear-gradient(135deg, rgba(245,158,11,0.1), rgba(245,158,11,0.05))', border: '1px solid rgba(245,158,11,0.2)', borderRadius: '12px', padding: '1rem 1.25rem' }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
-                            <span style={{ fontSize: '0.72rem', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.5px', color: '#fbbf24' }}>Total Submissions</span>
-                            <ClipboardList size={16} style={{ color: '#f59e0b' }} />
-                        </div>
-                        <div style={{ fontSize: '1.75rem', fontWeight: 800, color: '#f59e0b' }}>{mentorStats.totalSubs}</div>
-                        <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '2px' }}>{mentorStats.totalContent} content items</div>
-                    </div>
-                    <div style={{ background: 'linear-gradient(135deg, rgba(6,182,212,0.1), rgba(6,182,212,0.05))', border: '1px solid rgba(6,182,212,0.2)', borderRadius: '12px', padding: '1rem 1.25rem' }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
-                            <span style={{ fontSize: '0.72rem', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.5px', color: '#22d3ee' }}>Top Mentor</span>
-                            <Trophy size={16} style={{ color: '#06b6d4' }} />
-                        </div>
-                        <div style={{ fontSize: '1.1rem', fontWeight: 800, color: '#06b6d4', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{mentorStats.topMentor?.name || '-'}</div>
-                        <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '2px' }}>{mentorStats.topMentor ? `${mentorStats.topMentor.avgStudentScore}% avg score` : ''}</div>
+                    <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '2px' }}>
+                        {mentorStats.topMentor ? `${mentorStats.topMentor.avgStudentScore}% avg score` : 'No data yet'}
                     </div>
                 </div>
             </div>
 
-            <div className="card glass" style={{ padding: '0', overflow: 'hidden', borderRadius: '12px', border: '1px solid var(--border-color, #1e293b)' }}>
+            <AISectionCard style={{ padding: 0, overflow: 'hidden' }}>
                 <div style={{ overflowY: 'auto', overflowX: 'auto', maxHeight: '500px' }}>
                     <table style={{ width: '100%', borderCollapse: 'separate', borderSpacing: 0 }}>
                         <thead style={{ position: 'sticky', top: 0, zIndex: 10 }}>
@@ -1127,11 +1190,20 @@ function MentorLeaderboard() {
                                     </td>
                                 </tr>
                             ) : leaders.map((mentor, idx) => (
-                                <tr key={mentor.mentorId} style={{ borderBottom: '1px solid var(--border-color, #1e293b)', transition: 'background 0.15s' }}
-                                    onMouseEnter={e => e.currentTarget.style.background = 'rgba(139,92,246,0.04)'}
-                                    onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
-                                    <td style={{ padding: '0.6rem 1rem', fontSize: '0.85rem', color: 'var(--text-muted)' }}>
-                                        {idx === 0 ? '🥇' : idx === 1 ? '🥈' : idx === 2 ? '🥉' : idx + 1}
+                                <tr key={mentor.mentorId}
+                                    className={idx === 0 ? 'ai-row-gold' : idx === 1 ? 'ai-row-silver' : idx === 2 ? 'ai-row-bronze' : ''}
+                                    style={{ borderBottom: '1px solid var(--border-color, #1e293b)', animation: `aiRowIn 0.35s cubic-bezier(0.16,1,0.3,1) ${idx * 0.04}s both` }}>
+                                    <td style={{ padding: '0.6rem 1rem', fontSize: '0.85rem' }}>
+                                        <span className="ai-rank-badge" style={{
+                                            background: idx === 0 ? 'linear-gradient(135deg,#fbbf24,#f59e0b)'
+                                                : idx === 1 ? 'linear-gradient(135deg,#94a3b8,#64748b)'
+                                                : idx === 2 ? 'linear-gradient(135deg,#6366f1,#4f46e5)'
+                                                : 'var(--bg-tertiary)',
+                                            color: idx < 3 ? 'white' : 'var(--text-muted)',
+                                            animationDelay: `${idx * 0.05}s`,
+                                        }}>
+                                            {idx === 0 ? '🥇' : idx === 1 ? '🥈' : idx === 2 ? '🥉' : `#${idx + 1}`}
+                                        </span>
                                     </td>
                                     <td style={{ padding: '0.6rem 1rem' }}>
                                         <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
@@ -1143,19 +1215,22 @@ function MentorLeaderboard() {
                                     </td>
                                     <td style={{ padding: '0.6rem 1rem', textAlign: 'center', fontWeight: 600 }}>{mentor.studentCount}</td>
                                     <td style={{ padding: '0.6rem 1rem', textAlign: 'center' }}>
-                                        <span style={{ fontSize: '0.78rem', padding: '3px 10px', borderRadius: '6px', background: 'rgba(59,130,246,0.1)', color: '#3b82f6', fontWeight: 600 }}>{mentor.totalContent}</span>
+                                        <span className="ai-tag" style={{ fontSize: '0.78rem', padding: '3px 10px', borderRadius: '6px', background: 'rgba(59,130,246,0.1)', color: '#3b82f6', fontWeight: 600 }}>{mentor.totalContent}</span>
                                     </td>
                                     <td style={{ padding: '0.6rem 1rem', textAlign: 'center', fontWeight: 600 }}>{mentor.totalSubmissions}</td>
                                     <td style={{ padding: '0.6rem 1rem', textAlign: 'center' }}>
-                                        <span style={{ fontWeight: 800, fontSize: '1rem', color: Number(mentor.avgStudentScore) >= 80 ? '#10b981' : Number(mentor.avgStudentScore) >= 60 ? '#f59e0b' : '#ef4444' }}>{mentor.avgStudentScore}%</span>
+                                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem' }}>
+                                            <AIProgressRing value={Number(mentor.avgStudentScore) || 0} size={46} strokeWidth={5}
+                                                color={Number(mentor.avgStudentScore) >= 80 ? '#10b981' : Number(mentor.avgStudentScore) >= 60 ? '#f59e0b' : '#ef4444'} />
+                                        </div>
                                     </td>
                                 </tr>
                             ))}
                         </tbody>
                     </table>
                 </div>
-            </div>
-        </div>
+            </AISectionCard>
+        </AIPageTransition>
     )
 }
 

@@ -47,47 +47,103 @@ function ScoreBadge({ score, size = 'md' }) {
     )
 }
 
-// ─── Speech Hook ─────────────────────────────────────────────────────────────
+// ─── Speech Hook (MediaRecorder → Groq Whisper backend) ──────────────────────
+// Replaces webkitSpeechRecognition which fails on networks that block Google.
+
+// Try Web Speech API as a last-resort fallback if Groq transcription fails
+function tryBrowserSpeechFallback(onResult, onError) {
+    const SR = window.SpeechRecognition || window.webkitSpeechRecognition
+    if (!SR) { onError('Transcription unavailable. Please try again.'); return }
+    const rec = new SR()
+    rec.lang = 'en-US'; rec.interimResults = false; rec.maxAlternatives = 1
+    rec.onresult = e => onResult(e.results[0][0].transcript)
+    rec.onerror = () => onError('Both transcription methods failed. Check your internet connection.')
+    rec.onend = () => {}
+    try { rec.start() } catch { onError('Fallback speech recognition failed.') }
+    // Auto-stop after 8 seconds to avoid hanging
+    setTimeout(() => { try { rec.stop() } catch {} }, 8000)
+}
 
 function useSpeechRecognition() {
-    const [isListening, setIsListening] = useState(false)
+    const [isListening, setIsListening] = useState(false)   // mic is actively recording
+    const [isProcessing, setIsProcessing] = useState(false) // recorder stopped, waiting for transcript
     const [transcript, setTranscript] = useState('')
     const [error, setError] = useState(null)
-    const recognitionRef = useRef(null)
-    const startTimeRef = useRef(null)
     const [durationSec, setDurationSec] = useState(0)
+    const mediaRecorderRef = useRef(null)
+    const chunksRef = useRef([])
+    const startTimeRef = useRef(null)
 
-    const supported = 'SpeechRecognition' in window || 'webkitSpeechRecognition' in window
+    const supported = !!(window.MediaRecorder && navigator.mediaDevices?.getUserMedia)
 
-    const start = useCallback(() => {
-        if (!supported) { setError('Speech recognition not supported in this browser. Please use Chrome.'); return }
-        const SR = window.SpeechRecognition || window.webkitSpeechRecognition
-        const rec = new SR()
-        rec.lang = 'en-US'
-        rec.interimResults = false
-        rec.maxAlternatives = 1
-        rec.onresult = e => {
-            setTranscript(e.results[0][0].transcript)
-            setDurationSec(Math.round((Date.now() - startTimeRef.current) / 1000))
+    const start = useCallback(async () => {
+        setTranscript(''); setError(null); setDurationSec(0); setIsProcessing(false)
+        try {
+            const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+            const mimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
+                ? 'audio/webm;codecs=opus'
+                : MediaRecorder.isTypeSupported('audio/webm')
+                    ? 'audio/webm'
+                    : ''
+            const mr = new MediaRecorder(stream, mimeType ? { mimeType } : undefined)
+            chunksRef.current = []
+            mr.ondataavailable = e => { if (e.data.size > 0) chunksRef.current.push(e.data) }
+            mr.onstop = async () => {
+                stream.getTracks().forEach(t => t.stop())
+                // Immediately flip to "processing" state — Stop button disappears right away
+                setIsListening(false)
+                setDurationSec(Math.round((Date.now() - startTimeRef.current) / 1000))
+                if (chunksRef.current.length === 0) { return }
+                setIsProcessing(true)
+                try {
+                    // PRIMARY: Groq Whisper via backend
+                    const blob = new Blob(chunksRef.current, { type: mimeType || 'audio/webm' })
+                    const fd = new FormData()
+                    fd.append('audio', blob, 'speech.webm')
+                    const res = await axios.post(`${API_BASE}/comm-test/transcribe`, fd, {
+                        headers: getAuthHeaders(),
+                        timeout: 15000
+                    })
+                    if (res.data.success && res.data.transcript) {
+                        setTranscript(res.data.transcript)
+                        setIsProcessing(false)
+                    } else {
+                        // FALLBACK: browser Web Speech API
+                        tryBrowserSpeechFallback(
+                            t => { setTranscript(t); setIsProcessing(false) },
+                            msg => { setError(msg); setIsProcessing(false) }
+                        )
+                    }
+                } catch (e) {
+                    console.warn('Groq transcription failed, trying browser fallback:', e.message)
+                    tryBrowserSpeechFallback(
+                        t => { setTranscript(t); setIsProcessing(false) },
+                        msg => { setError(msg); setIsProcessing(false) }
+                    )
+                }
+            }
+            mr.start()
+            mediaRecorderRef.current = mr
+            startTimeRef.current = Date.now()
+            setIsListening(true)
+        } catch (e) {
+            setError(
+                e.name === 'NotAllowedError'
+                    ? 'Microphone access denied. Please allow microphone access in your browser settings.'
+                    : 'Could not access microphone. Please try again.'
+            )
         }
-        rec.onerror = e => { setError(`Recognition error: ${e.error}`); setIsListening(false) }
-        rec.onend = () => setIsListening(false)
-        recognitionRef.current = rec
-        setTranscript('')
-        setError(null)
-        startTimeRef.current = Date.now()
-        rec.start()
-        setIsListening(true)
-    }, [supported])
-
-    const stop = useCallback(() => {
-        recognitionRef.current?.stop()
-        setIsListening(false)
     }, [])
 
-    const reset = useCallback(() => { setTranscript(''); setError(null); setDurationSec(0) }, [])
+    const stop = useCallback(() => {
+        if (mediaRecorderRef.current?.state === 'recording') {
+            mediaRecorderRef.current.stop()
+        }
+    }, [])
 
-    return { isListening, transcript, error, durationSec, supported, start, stop, reset }
+    const reset = useCallback(() => { setTranscript(''); setError(null); setDurationSec(0); setIsProcessing(false) }, [])
+
+    return { isListening, isProcessing, transcript, error, durationSec, supported, start, stop, reset }
 }
 
 // ─── Module A: Read & Speak ───────────────────────────────────────────────────
@@ -95,38 +151,46 @@ function useSpeechRecognition() {
 function ModuleReadSpeak({ sessionId, testId, onComplete }) {
     const [sentence, setSentence] = useState(null)
     const [questionId, setQuestionId] = useState(null)
-    const [result, setResult] = useState(null)
     const [loading, setLoading] = useState(false)
     const [submitting, setSubmitting] = useState(false)
     const [completed, setCompleted] = useState([])
-    const { isListening, transcript, error, durationSec, supported, start, stop, reset } = useSpeechRecognition()
+    const [totalQ, setTotalQ] = useState(0)
+    const [allDone, setAllDone] = useState(false)
+    const { isListening, isProcessing, transcript, error, durationSec, supported, start, stop, reset } = useSpeechRecognition()
 
-    const fetchSentence = async () => {
-        setLoading(true); setResult(null); reset()
+    const fetchSentence = async (completedIds) => {
+        setLoading(true); setSentence(null); setQuestionId(null); reset()
         try {
             const { data } = await axios.get(`${API_BASE}/comm-test/tests/${testId}/questions`, {
-                params: { module_type: 'read-speak', excluded: completed.join(',') },
+                params: { module_type: 'read-speak', excluded: completedIds.join(',') },
                 headers: getAuthHeaders()
             })
-            setSentence(data.question?.content); setQuestionId(data.question?.id)
-        } catch (e) { console.error(e) }
+            setSentence(data.question?.content)
+            setQuestionId(data.question?.id)
+            if (data.total) setTotalQ(data.total)
+        } catch (e) {
+            if (e.response?.status === 404) setAllDone(true)
+        }
         setLoading(false)
     }
 
-    useEffect(() => { fetchSentence() }, [])
+    useEffect(() => { fetchSentence([]) }, [testId]) // eslint-disable-line react-hooks/exhaustive-deps
 
     const submit = async () => {
         if (!transcript) return
         setSubmitting(true)
         try {
-            const { data } = await axios.post(`${API_BASE}/comm-test/submit/read-speak`, {
+            await axios.post(`${API_BASE}/comm-test/submit/read-speak`, {
                 sessionId, questionId, transcribedText: transcript, durationSec
             }, { headers: getAuthHeaders() })
-            setResult(data)
-            setCompleted(prev => [...prev, questionId])
+            const newCompleted = [...completed, questionId]
+            setCompleted(newCompleted)
+            await fetchSentence(newCompleted)
         } catch (e) { console.error(e) }
         setSubmitting(false)
     }
+
+    const currentQ = completed.length + 1
 
     return (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
@@ -134,9 +198,25 @@ function ModuleReadSpeak({ sessionId, testId, onComplete }) {
                 <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
                     <BookOpen size={20} color="#a855f7" />
                     <span style={{ fontWeight: 800, fontSize: '1rem', color: '#a855f7', textTransform: 'uppercase' }}>Read & Speak</span>
-                    <span style={{ marginLeft: 'auto', fontSize: '0.75rem', color: '#64748b' }}>{completed.length} completed</span>
+                    <span style={{ marginLeft: 'auto', fontSize: '0.75rem', color: '#64748b' }}>
+                        {allDone ? `✅ All ${completed.length} done` : `Question ${currentQ}${totalQ ? ` / ${totalQ}` : ''}`}
+                    </span>
                 </div>
-                {loading ? (
+                {totalQ > 0 && !allDone && (
+                    <div style={{ height: 4, background: '#0f172a', borderRadius: 4, marginBottom: 20, border: '1px solid #1e293b' }}>
+                        <div style={{ height: '100%', width: `${(completed.length / totalQ) * 100}%`, background: 'linear-gradient(90deg, #7c3aed, #a855f7)', borderRadius: 4, transition: 'width 0.5s ease' }} />
+                    </div>
+                )}
+                {allDone ? (
+                    <div style={{ textAlign: 'center', padding: 32 }}>
+                        <div style={{ fontSize: '3rem', marginBottom: 12 }}>🎉</div>
+                        <div style={{ color: '#10b981', fontWeight: 800, fontSize: '1.1rem', marginBottom: 8 }}>All {completed.length} questions completed!</div>
+                        <div style={{ color: '#64748b', fontSize: '0.85rem', marginBottom: 24 }}>Your scores have been saved.</div>
+                        <button onClick={onComplete} style={{ padding: '12px 32px', background: 'linear-gradient(135deg, #7c3aed, #a855f7)', border: 'none', borderRadius: 12, color: 'white', fontWeight: 700, fontSize: '1rem', cursor: 'pointer' }}>
+                            Next Module <ArrowRight size={16} style={{ marginLeft: 6 }} />
+                        </button>
+                    </div>
+                ) : loading ? (
                     <div style={{ textAlign: 'center', padding: 32, color: '#64748b' }}>Loading sentence…</div>
                 ) : (
                     <>
@@ -146,30 +226,38 @@ function ModuleReadSpeak({ sessionId, testId, onComplete }) {
                         <p style={{ fontSize: '0.82rem', color: '#94a3b8', marginBottom: 16 }}>
                             Read this sentence aloud clearly. Press <strong style={{ color: '#a855f7' }}>Start Recording</strong>, speak, then press <strong style={{ color: '#a855f7' }}>Stop</strong>.
                         </p>
-                        {!supported && <div style={{ color: '#ef4444', fontSize: '0.85rem', marginBottom: 12 }}>⚠️ Speech recognition requires Chrome browser.</div>}
+                        {!supported && <div style={{ color: '#ef4444', fontSize: '0.85rem', marginBottom: 12 }}>⚠️ Your browser does not support audio recording. Please use Chrome, Firefox, or Edge.</div>}
                         {error && <div style={{ color: '#ef4444', fontSize: '0.85rem', marginBottom: 12 }}>⚠️ {error}</div>}
 
                         {/* Recording controls */}
                         <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 16 }}>
-                            {!isListening ? (
-                                <button onClick={start} disabled={!supported || !!result} style={{
-                                    display: 'flex', alignItems: 'center', gap: 8, padding: '10px 20px',
-                                    background: result ? '#374151' : 'linear-gradient(135deg, #7c3aed, #a855f7)',
-                                    border: 'none', borderRadius: 10, color: 'white', fontWeight: 700, cursor: result ? 'not-allowed' : 'pointer', fontSize: '0.9rem'
-                                }}>
-                                    <Mic size={16} /> Start Recording
-                                </button>
-                            ) : (
+                            {isListening ? (
                                 <button onClick={stop} style={{
                                     display: 'flex', alignItems: 'center', gap: 8, padding: '10px 20px',
                                     background: 'linear-gradient(135deg, #ef4444, #f87171)', border: 'none', borderRadius: 10, color: 'white', fontWeight: 700, cursor: 'pointer', fontSize: '0.9rem', animation: 'pulse 1s infinite'
                                 }}>
                                     <Square size={16} /> Stop Recording
                                 </button>
+                            ) : isProcessing ? (
+                                <button disabled style={{
+                                    display: 'flex', alignItems: 'center', gap: 8, padding: '10px 20px',
+                                    background: '#1e293b', border: '1px solid #7c3aed', borderRadius: 10, color: '#a855f7', fontWeight: 700, cursor: 'default', fontSize: '0.9rem'
+                                }}>
+                                    <RefreshCw size={16} style={{ animation: 'spin 1s linear infinite' }} /> Transcribing…
+                                </button>
+                            ) : (
+                                <button onClick={start} disabled={!supported} style={{
+                                    display: 'flex', alignItems: 'center', gap: 8, padding: '10px 20px',
+                                    background: 'linear-gradient(135deg, #7c3aed, #a855f7)',
+                                    border: 'none', borderRadius: 10, color: 'white', fontWeight: 700, cursor: !supported ? 'not-allowed' : 'pointer', fontSize: '0.9rem'
+                                }}>
+                                    <Mic size={16} /> Start Recording
+                                </button>
                             )}
                         </div>
 
-                        {isListening && <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: '#ef4444', fontSize: '0.85rem', marginBottom: 12 }}><div style={{ width: 8, height: 8, borderRadius: '50%', background: '#ef4444', animation: 'pulse 1s infinite' }} />Recording…</div>}
+                        {isListening && <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: '#ef4444', fontSize: '0.85rem', marginBottom: 12 }}><div style={{ width: 8, height: 8, borderRadius: '50%', background: '#ef4444', animation: 'pulse 1s infinite' }} />🔴 Recording… speak clearly</div>}
+                        {isProcessing && <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: '#a855f7', fontSize: '0.85rem', marginBottom: 12 }}><div style={{ width: 8, height: 8, borderRadius: '50%', background: '#a855f7', animation: 'pulse 1s infinite' }} />⏳ Transcribing your speech…</div>}
 
                         {transcript && (
                             <div style={{ background: '#0f172a', border: '1px solid #334155', borderRadius: 10, padding: 14, marginBottom: 16 }}>
@@ -178,34 +266,12 @@ function ModuleReadSpeak({ sessionId, testId, onComplete }) {
                             </div>
                         )}
 
-                        {result ? (
-                            <div style={{ background: '#0f172a', borderRadius: 14, padding: 20, border: '1px solid rgba(16,185,129,0.3)' }}>
-                                <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 14 }}>
-                                    <div style={{ width: 40, height: 40, borderRadius: '50%', background: 'rgba(16,185,129,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                                        <CheckCircle size={22} color="#10b981" />
-                                    </div>
-                                    <div>
-                                        <div style={{ color: '#10b981', fontWeight: 700, fontSize: '0.95rem' }}>Submission Recorded!</div>
-                                        <div style={{ color: '#64748b', fontSize: '0.8rem', marginTop: 2 }}>Your score has been saved. Full breakdown shown in the final report.</div>
-                                    </div>
-                                </div>
-                                <div style={{ display: 'flex', gap: 10 }}>
-                                    <button onClick={fetchSentence} style={{ flex: 1, padding: '10px', background: '#1e293b', border: '1px solid #334155', borderRadius: 10, color: '#a855f7', fontWeight: 700, cursor: 'pointer' }}>
-                                        <RefreshCw size={14} style={{ marginRight: 6 }} />Try Another
-                                    </button>
-                                    <button onClick={onComplete} style={{ flex: 1, padding: '10px', background: 'linear-gradient(135deg, #7c3aed, #a855f7)', border: 'none', borderRadius: 10, color: 'white', fontWeight: 700, cursor: 'pointer' }}>
-                                        Next Module <ArrowRight size={14} style={{ marginLeft: 4 }} />
-                                    </button>
-                                </div>
-                            </div>
-                        ) : (
-                            <button onClick={submit} disabled={!transcript || submitting} style={{
-                                width: '100%', padding: '12px', background: transcript && !submitting ? 'linear-gradient(135deg, #5b21b6, #7c3aed)' : '#374151',
-                                border: 'none', borderRadius: 10, color: 'white', fontWeight: 700, cursor: transcript && !submitting ? 'pointer' : 'not-allowed', fontSize: '0.9rem'
-                            }}>
-                                {submitting ? 'Scoring…' : 'Submit & Get Score'}
-                            </button>
-                        )}
+                        <button onClick={submit} disabled={!transcript || submitting} style={{
+                            width: '100%', padding: '12px', background: transcript && !submitting ? 'linear-gradient(135deg, #5b21b6, #7c3aed)' : '#374151',
+                            border: 'none', borderRadius: 10, color: 'white', fontWeight: 700, cursor: transcript && !submitting ? 'pointer' : 'not-allowed', fontSize: '0.9rem'
+                        }}>
+                            {submitting ? 'Scoring & Loading Next…' : 'Submit & Next Question →'}
+                        </button>
                     </>
                 )}
             </div>
@@ -218,25 +284,30 @@ function ModuleReadSpeak({ sessionId, testId, onComplete }) {
 function ModuleListenRepeat({ sessionId, testId, onComplete }) {
     const [sentence, setSentence] = useState(null)
     const [questionId, setQuestionId] = useState(null)
-    const [result, setResult] = useState(null)
     const [loading, setLoading] = useState(false)
     const [submitting, setSubmitting] = useState(false)
     const [played, setPlayed] = useState(false)
     const [completed, setCompleted] = useState([])
-    const { isListening, transcript, error, supported, start, stop, reset } = useSpeechRecognition()
+    const [totalQ, setTotalQ] = useState(0)
+    const [allDone, setAllDone] = useState(false)
+    const { isListening, isProcessing, transcript, error, supported, start, stop, reset } = useSpeechRecognition()
 
-    const fetchSentence = async () => {
-        setLoading(true); setResult(null); setPlayed(false); reset()
+    const fetchSentence = async (completedIds) => {
+        setLoading(true); setSentence(null); setQuestionId(null); setPlayed(false); reset()
         try {
             const { data } = await axios.get(`${API_BASE}/comm-test/tests/${testId}/questions`, {
-                params: { module_type: 'listen-repeat', excluded: completed.join(',') }, headers: getAuthHeaders()
+                params: { module_type: 'listen-repeat', excluded: completedIds.join(',') }, headers: getAuthHeaders()
             })
-            setSentence(data.question?.content); setQuestionId(data.question?.id)
-        } catch (e) { console.error(e) }
+            setSentence(data.question?.content)
+            setQuestionId(data.question?.id)
+            if (data.total) setTotalQ(data.total)
+        } catch (e) {
+            if (e.response?.status === 404) setAllDone(true)
+        }
         setLoading(false)
     }
 
-    useEffect(() => { fetchSentence() }, [])
+    useEffect(() => { fetchSentence([]) }, [testId]) // eslint-disable-line react-hooks/exhaustive-deps
 
     const playSentence = () => {
         if (!sentence) return
@@ -251,14 +322,17 @@ function ModuleListenRepeat({ sessionId, testId, onComplete }) {
         if (!transcript) return
         setSubmitting(true)
         try {
-            const { data } = await axios.post(`${API_BASE}/comm-test/submit/listen-repeat`, {
+            await axios.post(`${API_BASE}/comm-test/submit/listen-repeat`, {
                 sessionId, questionId, transcribedText: transcript
             }, { headers: getAuthHeaders() })
-            setResult(data)
-            setCompleted(prev => [...prev, questionId])
+            const newCompleted = [...completed, questionId]
+            setCompleted(newCompleted)
+            await fetchSentence(newCompleted)
         } catch (e) { console.error(e) }
         setSubmitting(false)
     }
+
+    const currentQ = completed.length + 1
 
     return (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
@@ -266,9 +340,25 @@ function ModuleListenRepeat({ sessionId, testId, onComplete }) {
                 <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
                     <Volume2 size={20} color="#5b21b6" />
                     <span style={{ fontWeight: 800, fontSize: '1rem', color: '#5b21b6', textTransform: 'uppercase' }}>Listen & Repeat</span>
-                    <span style={{ marginLeft: 'auto', fontSize: '0.75rem', color: '#64748b' }}>{completed.length} completed</span>
+                    <span style={{ marginLeft: 'auto', fontSize: '0.75rem', color: '#64748b' }}>
+                        {allDone ? `✅ All ${completed.length} done` : `Question ${currentQ}${totalQ ? ` / ${totalQ}` : ''}`}
+                    </span>
                 </div>
-                {loading ? (
+                {totalQ > 0 && !allDone && (
+                    <div style={{ height: 4, background: '#0f172a', borderRadius: 4, marginBottom: 20, border: '1px solid #1e293b' }}>
+                        <div style={{ height: '100%', width: `${(completed.length / totalQ) * 100}%`, background: 'linear-gradient(90deg, #4c1d95, #5b21b6)', borderRadius: 4, transition: 'width 0.5s ease' }} />
+                    </div>
+                )}
+                {allDone ? (
+                    <div style={{ textAlign: 'center', padding: 32 }}>
+                        <div style={{ fontSize: '3rem', marginBottom: 12 }}>🎉</div>
+                        <div style={{ color: '#10b981', fontWeight: 800, fontSize: '1.1rem', marginBottom: 8 }}>All {completed.length} questions completed!</div>
+                        <div style={{ color: '#64748b', fontSize: '0.85rem', marginBottom: 24 }}>Your scores have been saved.</div>
+                        <button onClick={onComplete} style={{ padding: '12px 32px', background: 'linear-gradient(135deg, #7c3aed, #a855f7)', border: 'none', borderRadius: 12, color: 'white', fontWeight: 700, fontSize: '1rem', cursor: 'pointer' }}>
+                            Next Module <ArrowRight size={16} style={{ marginLeft: 6 }} />
+                        </button>
+                    </div>
+                ) : loading ? (
                     <div style={{ textAlign: 'center', padding: 32, color: '#64748b' }}>Loading…</div>
                 ) : (
                     <>
@@ -290,55 +380,43 @@ function ModuleListenRepeat({ sessionId, testId, onComplete }) {
                                 <div style={{ fontSize: '0.75rem', fontWeight: 700, color: '#64748b', textTransform: 'uppercase', marginBottom: 10 }}>Step 2 — Repeat Aloud</div>
                                 {error && <div style={{ color: '#ef4444', fontSize: '0.85rem', marginBottom: 10 }}>⚠️ {error}</div>}
                                 <div style={{ display: 'flex', gap: 10 }}>
-                                    {!isListening ? (
-                                        <button onClick={start} disabled={!!result} style={{
-                                            display: 'flex', alignItems: 'center', gap: 8, padding: '10px 18px',
-                                            background: result ? '#374151' : 'linear-gradient(135deg, #7c3aed, #a855f7)', border: 'none', borderRadius: 10, color: 'white', fontWeight: 700, cursor: result ? 'not-allowed' : 'pointer'
-                                        }}>
-                                            <Mic size={16} /> Record
-                                        </button>
-                                    ) : (
+                                    {isListening ? (
                                         <button onClick={stop} style={{
                                             display: 'flex', alignItems: 'center', gap: 8, padding: '10px 18px',
                                             background: 'linear-gradient(135deg, #ef4444, #f87171)', border: 'none', borderRadius: 10, color: 'white', fontWeight: 700, cursor: 'pointer'
                                         }}>
                                             <Square size={16} /> Stop
                                         </button>
+                                    ) : isProcessing ? (
+                                        <button disabled style={{
+                                            display: 'flex', alignItems: 'center', gap: 8, padding: '10px 18px',
+                                            background: '#1e293b', border: '1px solid #7c3aed', borderRadius: 10, color: '#a855f7', fontWeight: 700, cursor: 'default'
+                                        }}>
+                                            <RefreshCw size={16} style={{ animation: 'spin 1s linear infinite' }} /> Transcribing…
+                                        </button>
+                                    ) : (
+                                        <button onClick={start} style={{
+                                            display: 'flex', alignItems: 'center', gap: 8, padding: '10px 18px',
+                                            background: 'linear-gradient(135deg, #7c3aed, #a855f7)', border: 'none', borderRadius: 10, color: 'white', fontWeight: 700, cursor: 'pointer'
+                                        }}>
+                                            <Mic size={16} /> Record
+                                        </button>
                                     )}
                                 </div>
-                                {isListening && <div style={{ marginTop: 10, color: '#ef4444', fontSize: '0.82rem' }}>🔴 Listening…</div>}
+                                {isListening && <div style={{ marginTop: 10, color: '#ef4444', fontSize: '0.82rem' }}>🔴 Recording… speak clearly</div>}
+                                {isProcessing && <div style={{ marginTop: 10, color: '#a855f7', fontSize: '0.82rem' }}>⏳ Transcribing your speech…</div>}
                                 {transcript && (
                                     <div style={{ marginTop: 12, color: '#f1f5f9', fontStyle: 'italic', fontSize: '0.9rem' }}>"{transcript}"</div>
                                 )}
                             </div>
                         )}
 
-                        {result ? (
-                            <div style={{ background: '#0f172a', borderRadius: 14, padding: 20, border: '1px solid rgba(16,185,129,0.3)' }}>
-                                <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 14 }}>
-                                    <div style={{ width: 40, height: 40, borderRadius: '50%', background: 'rgba(16,185,129,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                                        <CheckCircle size={22} color="#10b981" />
-                                    </div>
-                                    <div>
-                                        <div style={{ color: '#10b981', fontWeight: 700, fontSize: '0.95rem' }}>Submission Recorded!</div>
-                                        <div style={{ color: '#64748b', fontSize: '0.8rem', marginTop: 2 }}>Your score has been saved. Full breakdown shown in the final report.</div>
-                                    </div>
-                                </div>
-                                <div style={{ display: 'flex', gap: 10 }}>
-                                    <button onClick={fetchSentence} style={{ flex: 1, padding: 10, background: '#1e293b', border: '1px solid #334155', borderRadius: 10, color: '#a855f7', fontWeight: 700, cursor: 'pointer' }}>
-                                        Try Another
-                                    </button>
-                                    <button onClick={onComplete} style={{ flex: 1, padding: 10, background: 'linear-gradient(135deg, #7c3aed, #a855f7)', border: 'none', borderRadius: 10, color: 'white', fontWeight: 700, cursor: 'pointer' }}>
-                                        Next Module <ArrowRight size={14} style={{ marginLeft: 4 }} />
-                                    </button>
-                                </div>
-                            </div>
-                        ) : played && transcript && (
+                        {played && transcript && (
                             <button onClick={submit} disabled={submitting} style={{
                                 width: '100%', padding: 12, background: submitting ? '#374151' : 'linear-gradient(135deg, #5b21b6, #7c3aed)',
                                 border: 'none', borderRadius: 10, color: 'white', fontWeight: 700, cursor: submitting ? 'not-allowed' : 'pointer'
                             }}>
-                                {submitting ? 'Scoring…' : 'Submit & Get Score'}
+                                {submitting ? 'Scoring & Loading Next…' : 'Submit & Next Question →'}
                             </button>
                         )}
                     </>
@@ -357,7 +435,7 @@ function ModuleTopicSpeak({ sessionId, testId, onComplete }) {
     const [loading, setLoading] = useState(false)
     const [submitting, setSubmitting] = useState(false)
     const [completed, setCompleted] = useState([])
-    const { isListening, transcript, error, supported, start, stop, reset } = useSpeechRecognition()
+    const { isListening, isProcessing, transcript, error, supported, start, stop, reset } = useSpeechRecognition()
     const cancelBrowserSpeech = useCallback(() => {
         try { window.speechSynthesis?.cancel() } catch {}
     }, [])
@@ -426,28 +504,36 @@ function ModuleTopicSpeak({ sessionId, testId, onComplete }) {
                             Speak about this topic for 30–60 seconds. Your response will be evaluated by AI on relevance, grammar, vocabulary, and coherence.
                         </p>
 
-                        {!supported && <div style={{ color: '#ef4444', fontSize: '0.85rem', marginBottom: 10 }}>⚠️ Speech recognition requires Chrome browser.</div>}
+                        {!supported && <div style={{ color: '#ef4444', fontSize: '0.85rem', marginBottom: 10 }}>⚠️ Your browser does not support audio recording. Please use Chrome, Firefox, or Edge.</div>}
                         {error && <div style={{ color: '#ef4444', fontSize: '0.85rem', marginBottom: 10 }}>⚠️ {error}</div>}
 
                         <div style={{ display: 'flex', gap: 10, marginBottom: 16 }}>
-                            {!isListening ? (
-                                <button onClick={start} disabled={!supported || !!result} style={{
-                                    display: 'flex', alignItems: 'center', gap: 8, padding: '10px 20px',
-                                    background: result ? '#374151' : 'linear-gradient(135deg, #7c3aed, #a855f7)', border: 'none', borderRadius: 10, color: 'white', fontWeight: 700, cursor: result ? 'not-allowed' : 'pointer'
-                                }}>
-                                    <Mic size={16} /> Start Speaking
-                                </button>
-                            ) : (
+                            {isListening ? (
                                 <button onClick={stop} style={{
                                     display: 'flex', alignItems: 'center', gap: 8, padding: '10px 20px',
                                     background: 'linear-gradient(135deg, #ef4444, #f87171)', border: 'none', borderRadius: 10, color: 'white', fontWeight: 700, cursor: 'pointer'
                                 }}>
                                     <Square size={16} /> Done Speaking
                                 </button>
+                            ) : isProcessing ? (
+                                <button disabled style={{
+                                    display: 'flex', alignItems: 'center', gap: 8, padding: '10px 20px',
+                                    background: '#1e293b', border: '1px solid #7c3aed', borderRadius: 10, color: '#a855f7', fontWeight: 700, cursor: 'default'
+                                }}>
+                                    <RefreshCw size={16} style={{ animation: 'spin 1s linear infinite' }} /> Transcribing…
+                                </button>
+                            ) : (
+                                <button onClick={start} disabled={!supported || !!result} style={{
+                                    display: 'flex', alignItems: 'center', gap: 8, padding: '10px 20px',
+                                    background: result ? '#374151' : 'linear-gradient(135deg, #7c3aed, #a855f7)', border: 'none', borderRadius: 10, color: 'white', fontWeight: 700, cursor: result ? 'not-allowed' : 'pointer'
+                                }}>
+                                    <Mic size={16} /> Start Speaking
+                                </button>
                             )}
                         </div>
 
-                        {isListening && <div style={{ color: '#ef4444', fontSize: '0.82rem', marginBottom: 10 }}>🔴 Listening… speak freely about the topic</div>}
+                        {isListening && <div style={{ color: '#ef4444', fontSize: '0.82rem', marginBottom: 10 }}>🔴 Recording… speak freely about the topic</div>}
+                        {isProcessing && <div style={{ color: '#a855f7', fontSize: '0.82rem', marginBottom: 10 }}>⏳ Transcribing your speech, please wait…</div>}
 
                         {transcript && (
                             <div style={{ background: '#0f172a', border: '1px solid #334155', borderRadius: 10, padding: 14, marginBottom: 16, maxHeight: 120, overflowY: 'auto' }}>
@@ -490,39 +576,47 @@ function ModuleTopicSpeak({ sessionId, testId, onComplete }) {
     )
 }
 
-// ─── Module D: Grammar Quiz ───────────────────────────────────────────────────
-
-function ModuleGrammarQuiz({ sessionId, testId, onComplete }) {
+function ModuleGrammarQuiz({ sessionId, testId, onComplete, moduleType = 'grammar-quiz' }) {
     const [questions, setQuestions] = useState([])
+    const [currentIdx, setCurrentIdx] = useState(0)
     const [answers, setAnswers] = useState({})
     const [result, setResult] = useState(null)
     const [loading, setLoading] = useState(false)
     const [submitting, setSubmitting] = useState(false)
-    const [completed, setCompleted] = useState([])
+
+    const MODULE_LABELS = { 'grammar-quiz': 'Grammar Quiz', 'vocabulary-test': 'Vocabulary Test', 'email-writing': 'Email Writing' }
+    const MODULE_COLORS = { 'grammar-quiz': '#c084fc', 'vocabulary-test': '#34d399', 'email-writing': '#60a5fa' }
+    const moduleLabel = MODULE_LABELS[moduleType] || 'Quiz'
+    const moduleColor = MODULE_COLORS[moduleType] || '#c084fc'
 
     const fetchQuiz = async () => {
-        setLoading(true); setResult(null); setAnswers({})
+        setLoading(true); setResult(null); setAnswers({}); setCurrentIdx(0)
         try {
             const { data } = await axios.get(`${API_BASE}/comm-test/tests/${testId}/grammar-batch`, {
-                params: { count: 5 }, headers: getAuthHeaders()
+                params: { count: 5, module_type: moduleType }, headers: getAuthHeaders()
             })
             setQuestions(data.questions || [])
         } catch (e) { console.error(e) }
         setLoading(false)
     }
 
-    useEffect(() => { fetchQuiz() }, [])
+    useEffect(() => { fetchQuiz() }, [testId, moduleType]) // eslint-disable-line react-hooks/exhaustive-deps
+
+    const currentQ = questions[currentIdx]
+    const isLast = currentIdx === questions.length - 1
+    const allAnswered = questions.length > 0 && Object.keys(answers).length >= questions.length
+
+    const goNext = () => { if (currentIdx < questions.length - 1) setCurrentIdx(prev => prev + 1) }
 
     const submit = async () => {
-        if (Object.keys(answers).length < questions.length) return
+        if (!allAnswered) return
         setSubmitting(true)
         try {
             const ans = questions.map(q => ({ id: q.id, answer: answers[q.id] || '' }))
             const { data } = await axios.post(`${API_BASE}/comm-test/submit/grammar-quiz`, {
-                sessionId, answers: ans
+                sessionId, answers: ans, moduleType
             }, { headers: getAuthHeaders() })
             setResult(data)
-            setCompleted(prev => [...prev, ...questions.map(q => q.id)])
         } catch (e) { console.error(e) }
         setSubmitting(false)
     }
@@ -533,8 +627,11 @@ function ModuleGrammarQuiz({ sessionId, testId, onComplete }) {
         <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
             <div style={{ background: 'linear-gradient(135deg, #1e293b, #0f172a)', borderRadius: 16, padding: 24, border: '1px solid #334155' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 20 }}>
-                    <Brain size={20} color="#c084fc" />
-                    <span style={{ fontWeight: 800, fontSize: '1rem', color: '#c084fc', textTransform: 'uppercase' }}>Grammar Quiz</span>
+                    <Brain size={20} color={moduleColor} />
+                    <span style={{ fontWeight: 800, fontSize: '1rem', color: moduleColor, textTransform: 'uppercase' }}>{moduleLabel}</span>
+                    {!result && questions.length > 0 && (
+                        <span style={{ marginLeft: 'auto', fontSize: '0.75rem', color: '#64748b' }}>Question {currentIdx + 1} / {questions.length}</span>
+                    )}
                 </div>
 
                 {loading ? (
@@ -554,47 +651,67 @@ function ModuleGrammarQuiz({ sessionId, testId, onComplete }) {
                                 This section is complete. The detailed answer review is hidden during the live communication test so the correct responses are not revealed before you continue.
                             </div>
                         </div>
-                        <div style={{ display: 'flex', gap: 10 }}>
-                            <button onClick={fetchQuiz} style={{ flex: 1, padding: 10, background: '#1e293b', border: '1px solid #334155', borderRadius: 10, color: '#a855f7', fontWeight: 700, cursor: 'pointer' }}>Try Again</button>
-                            <button onClick={onComplete} style={{ flex: 1, padding: 10, background: 'linear-gradient(135deg, #7c3aed, #a855f7)', border: 'none', borderRadius: 10, color: 'white', fontWeight: 700, cursor: 'pointer' }}>
-                                Next Module <ArrowRight size={14} style={{ marginLeft: 4 }} />
-                            </button>
-                        </div>
+                        <button onClick={onComplete} style={{ width: '100%', padding: 12, background: 'linear-gradient(135deg, #7c3aed, #a855f7)', border: 'none', borderRadius: 10, color: 'white', fontWeight: 700, cursor: 'pointer' }}>
+                            Next Module <ArrowRight size={14} style={{ marginLeft: 4 }} />
+                        </button>
                     </div>
+                ) : questions.length === 0 ? (
+                    <div style={{ textAlign: 'center', padding: 32, color: '#64748b' }}>No questions found for this module.</div>
                 ) : (
                     <>
-                        <p style={{ fontSize: '0.82rem', color: '#94a3b8', marginBottom: 20 }}>Fill in the blank for each sentence. Type your answer in the input box — exact match required.</p>
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: 16, marginBottom: 20 }}>
-                            {questions.map((q, i) => (
-                                <div key={q.id} style={{ background: '#0f172a', borderRadius: 12, padding: 16, border: '1px solid #334155' }}>
-                                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
-                                        <span style={{ fontSize: '0.7rem', fontWeight: 800, background: (categoryColors[q.category] || '#a855f7') + '22', color: categoryColors[q.category] || '#a855f7', padding: '2px 8px', borderRadius: 8 }}>
-                                            {q.category}
-                                        </span>
-                                        <span style={{ fontSize: '0.75rem', color: '#64748b' }}>Q{i + 1}</span>
-                                    </div>
-                                    <div style={{ fontSize: '0.95rem', color: '#f1f5f9', marginBottom: 10, lineHeight: 1.5 }}>{q.sentence}</div>
-                                    <input
-                                        type="text"
-                                        placeholder="Type your answer…"
-                                        value={answers[q.id] || ''}
-                                        onChange={e => setAnswers(prev => ({ ...prev, [q.id]: e.target.value }))}
-                                        style={{
-                                            width: '100%', padding: '8px 12px', background: '#1e293b', border: `1px solid ${answers[q.id] ? '#7c3aed' : '#334155'}`,
-                                            borderRadius: 8, color: '#f1f5f9', fontSize: '0.9rem', outline: 'none', boxSizing: 'border-box'
-                                        }}
-                                    />
-                                </div>
-                            ))}
+                        {/* Progress bar */}
+                        <div style={{ height: 4, background: '#0f172a', borderRadius: 4, marginBottom: 20, border: '1px solid #1e293b' }}>
+                            <div style={{ height: '100%', width: `${((currentIdx + (answers[currentQ?.id] ? 1 : 0)) / questions.length) * 100}%`, background: `linear-gradient(90deg, ${moduleColor}88, ${moduleColor})`, borderRadius: 4, transition: 'width 0.3s ease' }} />
                         </div>
-                        <button onClick={submit} disabled={Object.keys(answers).length < questions.length || submitting} style={{
-                            width: '100%', padding: 12,
-                            background: Object.keys(answers).length === questions.length && !submitting ? 'linear-gradient(135deg, #5b21b6, #7c3aed)' : '#374151',
-                            border: 'none', borderRadius: 10, color: 'white', fontWeight: 700,
-                            cursor: Object.keys(answers).length === questions.length ? 'pointer' : 'not-allowed'
-                        }}>
-                            {submitting ? 'Checking…' : `Submit ${Object.keys(answers).length}/${questions.length} Answers`}
-                        </button>
+                        <p style={{ fontSize: '0.82rem', color: '#94a3b8', marginBottom: 20 }}>Fill in the blank. Type your answer in the input box — exact match required.</p>
+                        {currentQ && (
+                            <div style={{ background: '#0f172a', borderRadius: 12, padding: 16, border: '1px solid #334155', marginBottom: 16 }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+                                    <span style={{ fontSize: '0.7rem', fontWeight: 800, background: (categoryColors[currentQ.category] || moduleColor) + '22', color: categoryColors[currentQ.category] || moduleColor, padding: '2px 8px', borderRadius: 8 }}>
+                                        {currentQ.category}
+                                    </span>
+                                    <span style={{ fontSize: '0.75rem', color: '#64748b' }}>Q{currentIdx + 1}</span>
+                                </div>
+                                <div style={{ fontSize: '0.95rem', color: '#f1f5f9', marginBottom: 10, lineHeight: 1.5 }}>{currentQ.sentence}</div>
+                                <input
+                                    type="text"
+                                    placeholder="Type your answer…"
+                                    value={answers[currentQ.id] || ''}
+                                    onChange={e => setAnswers(prev => ({ ...prev, [currentQ.id]: e.target.value }))}
+                                    onKeyDown={e => { if (e.key === 'Enter' && answers[currentQ.id] && !isLast) goNext() }}
+                                    style={{
+                                        width: '100%', padding: '8px 12px', background: '#1e293b', border: `1px solid ${answers[currentQ.id] ? moduleColor : '#334155'}`,
+                                        borderRadius: 8, color: '#f1f5f9', fontSize: '0.9rem', outline: 'none', boxSizing: 'border-box'
+                                    }}
+                                />
+                            </div>
+                        )}
+                        <div style={{ display: 'flex', gap: 10 }}>
+                            {currentIdx > 0 && (
+                                <button onClick={() => setCurrentIdx(prev => prev - 1)} style={{ padding: '10px 16px', background: '#1e293b', border: '1px solid #334155', borderRadius: 10, color: '#94a3b8', fontWeight: 700, cursor: 'pointer' }}>
+                                    ← Back
+                                </button>
+                            )}
+                            {isLast ? (
+                                <button onClick={submit} disabled={!allAnswered || submitting} style={{
+                                    flex: 1, padding: 12,
+                                    background: allAnswered && !submitting ? 'linear-gradient(135deg, #5b21b6, #7c3aed)' : '#374151',
+                                    border: 'none', borderRadius: 10, color: 'white', fontWeight: 700,
+                                    cursor: allAnswered ? 'pointer' : 'not-allowed'
+                                }}>
+                                    {submitting ? 'Checking…' : `Submit All ${questions.length} Answers`}
+                                </button>
+                            ) : (
+                                <button onClick={goNext} disabled={!answers[currentQ?.id]} style={{
+                                    flex: 1, padding: 12,
+                                    background: answers[currentQ?.id] ? 'linear-gradient(135deg, #5b21b6, #7c3aed)' : '#374151',
+                                    border: 'none', borderRadius: 10, color: 'white', fontWeight: 700,
+                                    cursor: answers[currentQ?.id] ? 'pointer' : 'not-allowed'
+                                }}>
+                                    Next → ({currentIdx + 1}/{questions.length})
+                                </button>
+                            )}
+                        </div>
                     </>
                 )}
             </div>
@@ -1537,7 +1654,7 @@ export default function CommunicationTest({ user }) {
                                 {currentModule.id === 'read-speak'                                           && <ModuleReadSpeak    sessionId={sessionId} testId={selectedTest?.id} onComplete={nextModule} />}
                                 {currentModule.id === 'listen-repeat'                                        && <ModuleListenRepeat sessionId={sessionId} testId={selectedTest?.id} onComplete={nextModule} />}
                                 {['topic-speak','situational-response','interview-qa'].includes(currentModule.id) && <ModuleTopicSpeak   sessionId={sessionId} testId={selectedTest?.id} onComplete={nextModule} />}
-                                {['grammar-quiz','vocabulary-test','email-writing'].includes(currentModule.id)   && <ModuleGrammarQuiz  sessionId={sessionId} testId={selectedTest?.id} onComplete={nextModule} />}
+                                {['grammar-quiz','vocabulary-test','email-writing'].includes(currentModule.id)   && <ModuleGrammarQuiz  moduleType={currentModule.id} sessionId={sessionId} testId={selectedTest?.id} onComplete={nextModule} />}
                             </div>
                         </div>
                     )}

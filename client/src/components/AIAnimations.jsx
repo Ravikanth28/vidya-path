@@ -1,9 +1,9 @@
 /**
- * AIAnimations.jsx — Reusable AI & Data Science themed animation components
+ * AIAnimations.jsx — Reusable AI & Data Science themed animation components v2
  * Department of Artificial Intelligence & Data Science | Mentor Hub
  */
-import { useState, useEffect, useRef } from 'react'
-import { Sparkles, Activity, Brain, Database, BarChart3, Network, Cpu, Zap } from 'lucide-react'
+import { useState, useEffect, useRef, useMemo } from 'react'
+import { Sparkles, Activity, Brain, Database, BarChart3, Network, Cpu, Zap, TrendingUp, Trophy, CheckCircle } from 'lucide-react'
 import './AIAnimations.css'
 
 // ─── useCountUp ────────────────────────────────────────────────────────────────
@@ -385,6 +385,320 @@ export function AIWelcomeHeader({ icon: Icon = Brain, title, sub, badges = [] })
                     </div>
                 )}
             </div>
+        </div>
+    )
+}
+
+// ─── AIOrbitDecor ─────────────────────────────────────────────────────────────
+/**
+ * Three concentric spinning orbit rings — purely decorative background.
+ * Place inside a position:relative container.
+ */
+export function AIOrbitDecor({ size = 120 }) {
+    return (
+        <div className="ai-orbit-wrap" aria-hidden="true"
+            style={{ width: size, height: size, position: 'absolute', pointerEvents: 'none' }}>
+            <div className="ai-orbit-r" style={{ width: size * 0.55, height: size * 0.55 }} />
+            <div className="ai-orbit-r r2" style={{ width: size * 0.78, height: size * 0.78 }} />
+            <div className="ai-orbit-r r3" style={{ width: size * 1, height: size * 1 }} />
+        </div>
+    )
+}
+
+// ─── AIProgressRing ───────────────────────────────────────────────────────────
+/**
+ * Circular SVG progress ring that animates in on mount.
+ * Props: value (0-100), size, strokeWidth, color, label
+ */
+export function AIProgressRing({ value = 75, size = 80, strokeWidth = 7, color = '#3b82f6', label = '' }) {
+    const [started, setStarted] = useState(false)
+    const ref = useRef(null)
+    const r = (size - strokeWidth) / 2
+    const circ = 2 * Math.PI * r
+    const offset = circ - (circ * (started ? value : 0)) / 100
+
+    useEffect(() => {
+        const el = ref.current
+        if (!el) return
+        const obs = new IntersectionObserver(([e]) => { if (e.isIntersecting) setStarted(true) }, { threshold: 0.2 })
+        obs.observe(el)
+        return () => obs.disconnect()
+    }, [])
+
+    return (
+        <div ref={ref} style={{ position: 'relative', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
+            <svg width={size} height={size} className="ai-progress-ring">
+                <circle className="track" cx={size/2} cy={size/2} r={r} strokeWidth={strokeWidth}
+                    style={{ stroke: 'rgba(59,130,246,0.1)' }} />
+                <circle className="fill" cx={size/2} cy={size/2} r={r} strokeWidth={strokeWidth}
+                    style={{
+                        stroke: color,
+                        fill: 'none',
+                        strokeLinecap: 'round',
+                        strokeDasharray: circ,
+                        strokeDashoffset: offset,
+                        transform: 'rotate(-90deg)',
+                        transformOrigin: 'center',
+                        transition: 'stroke-dashoffset 1.4s cubic-bezier(0.16,1,0.3,1)',
+                    }}
+                />
+            </svg>
+            <div style={{
+                position: 'absolute',
+                textAlign: 'center',
+                fontSize: size < 70 ? '0.75rem' : '0.9rem',
+                fontWeight: 800,
+                color,
+                lineHeight: 1.1,
+            }}>
+                <div>{value}%</div>
+                {label && <div style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 600 }}>{label}</div>}
+            </div>
+        </div>
+    )
+}
+
+// ─── AIFloatCard ──────────────────────────────────────────────────────────────
+/**
+ * A wrapper that makes a card gently float up and down.
+ */
+export function AIFloatCard({ children, delay = '0s', style = {} }) {
+    return (
+        <div className="ai-float" style={{ animationDelay: delay, ...style }}>
+            {children}
+        </div>
+    )
+}
+
+// ─── AITypingText ─────────────────────────────────────────────────────────────
+/**
+ * Cycles through an array of texts with a typewriter + fade effect.
+ */
+export function AITypingText({ texts = ['AI Analytics', 'Data Intelligence', 'Neural Networks'], interval = 3000 }) {
+    const [idx, setIdx] = useState(0)
+    const [visible, setVisible] = useState(true)
+
+    useEffect(() => {
+        const timer = setInterval(() => {
+            setVisible(false)
+            setTimeout(() => {
+                setIdx(i => (i + 1) % texts.length)
+                setVisible(true)
+            }, 350)
+        }, interval)
+        return () => clearInterval(timer)
+    }, [texts, interval])
+
+    return (
+        <span style={{
+            display: 'inline-block',
+            transition: 'opacity 0.35s ease',
+            opacity: visible ? 1 : 0,
+            color: '#60a5fa',
+            fontWeight: 700,
+        }}>
+            {texts[idx]}
+        </span>
+    )
+}
+
+// ─── AIGlowButton ─────────────────────────────────────────────────────────────
+/**
+ * A button with ripple + glow effect on click/hover.
+ */
+export function AIGlowButton({ children, onClick, style = {}, disabled = false, color = '#3b82f6' }) {
+    const [ripples, setRipples] = useState([])
+
+    const addRipple = (e) => {
+        const rect = e.currentTarget.getBoundingClientRect()
+        const x = e.clientX - rect.left
+        const y = e.clientY - rect.top
+        const id = Date.now()
+        setRipples(r => [...r, { id, x, y }])
+        setTimeout(() => setRipples(r => r.filter(rp => rp.id !== id)), 700)
+    }
+
+    return (
+        <button
+            className="ai-glow-btn"
+            onClick={(e) => { addRipple(e); onClick?.(e) }}
+            disabled={disabled}
+            style={{
+                background: `linear-gradient(135deg, ${color}, ${color}cc)`,
+                color: 'white',
+                border: 'none',
+                borderRadius: '10px',
+                padding: '0.6rem 1.2rem',
+                fontWeight: 700,
+                cursor: disabled ? 'not-allowed' : 'pointer',
+                fontSize: '0.85rem',
+                position: 'relative',
+                overflow: 'hidden',
+                ...style,
+            }}
+        >
+            {ripples.map(r => (
+                <span key={r.id} aria-hidden="true" style={{
+                    position: 'absolute',
+                    left: r.x, top: r.y,
+                    width: '8px', height: '8px',
+                    marginLeft: '-4px', marginTop: '-4px',
+                    borderRadius: '50%',
+                    background: 'rgba(255,255,255,0.4)',
+                    animation: 'aiRipple 0.7s ease-out forwards',
+                    pointerEvents: 'none',
+                }} />
+            ))}
+            {children}
+        </button>
+    )
+}
+
+// ─── AIBigParticles ───────────────────────────────────────────────────────────
+/**
+ * 10-particle enhanced version with varied sizes and paths.
+ */
+export function AIBigParticles() {
+    const particles = useMemo(() => [
+        { left: '3%',  top: '85%', color: 'rgba(59,130,246,0.55)',  delay: '0s',    dur: '4.2s', size: 4 },
+        { left: '12%', top: '90%', color: 'rgba(139,92,246,0.45)',  delay: '0.8s',  dur: '5.5s', size: 3 },
+        { left: '24%', top: '82%', color: 'rgba(59,130,246,0.40)',  delay: '1.6s',  dur: '3.8s', size: 5 },
+        { left: '36%', top: '88%', color: 'rgba(6,182,212,0.50)',   delay: '0.4s',  dur: '4.9s', size: 3 },
+        { left: '48%', top: '84%', color: 'rgba(139,92,246,0.45)',  delay: '2.1s',  dur: '5.2s', size: 4 },
+        { left: '58%', top: '89%', color: 'rgba(59,130,246,0.50)',  delay: '1.0s',  dur: '4.4s', size: 3 },
+        { left: '68%', top: '83%', color: 'rgba(16,185,129,0.40)',  delay: '1.8s',  dur: '3.6s', size: 5 },
+        { left: '76%', top: '87%', color: 'rgba(245,158,11,0.35)',  delay: '0.6s',  dur: '5.8s', size: 3 },
+        { left: '86%', top: '91%', color: 'rgba(139,92,246,0.50)',  delay: '2.4s',  dur: '4.1s', size: 4 },
+        { left: '94%', top: '85%', color: 'rgba(59,130,246,0.45)',  delay: '1.3s',  dur: '5.0s', size: 3 },
+    ], [])
+
+    return (
+        <div className="ai-particles-host" aria-hidden="true">
+            {particles.map((p, i) => (
+                <div key={i} className="ai-ptcl" style={{
+                    left: p.left, top: p.top,
+                    width: p.size, height: p.size,
+                    background: p.color,
+                    animationDelay: p.delay,
+                    animationDuration: p.dur,
+                }} />
+            ))}
+        </div>
+    )
+}
+
+// ─── AILeaderboardHeader ──────────────────────────────────────────────────────
+/**
+ * Specialised header for leaderboard/ranking sections.
+ */
+export function AILeaderboardHeader({ icon: Icon = Trophy, title, sub, stats = [] }) {
+    return (
+        <div style={{
+            background: 'linear-gradient(135deg,rgba(245,158,11,0.08) 0%,rgba(251,191,36,0.06) 40%,rgba(59,130,246,0.06) 100%)',
+            borderRadius: '18px',
+            padding: '1.75rem 2rem',
+            marginBottom: '1.5rem',
+            border: '1px solid rgba(245,158,11,0.18)',
+            position: 'relative',
+            overflow: 'hidden',
+        }}>
+            <AIParticles />
+            <div aria-hidden="true" style={{
+                position: 'absolute', top: '-40%', right: '-5%',
+                width: '280px', height: '280px',
+                background: 'radial-gradient(circle,rgba(245,158,11,0.12) 0%,transparent 70%)',
+                pointerEvents: 'none',
+            }} />
+            <div style={{ position: 'relative', zIndex: 1 }}>
+                <AIDeptBadge />
+                <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', margin: '0.75rem 0 0.25rem' }}>
+                    <NeuralPulseIcon>
+                        <div className="ai-icon-glow" style={{
+                            '--ai-glow': 'rgba(245,158,11,0.45)',
+                            width: '46px', height: '46px', borderRadius: '13px',
+                            background: 'linear-gradient(135deg,#f59e0b,#fbbf24)',
+                            display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        }}>
+                            <Icon size={22} color="white" />
+                        </div>
+                    </NeuralPulseIcon>
+                    <div>
+                        <h2 className="ai-gradient-text" style={{ margin: 0, fontSize: '1.5rem', fontWeight: 800 }}>{title}</h2>
+                        <p style={{ margin: 0, color: 'var(--text-muted)', fontSize: '0.85rem' }}>{sub}</p>
+                    </div>
+                </div>
+                <DataFlowLine />
+                {stats.length > 0 && (
+                    <div style={{ display: 'flex', gap: '1.5rem', marginTop: '0.75rem', flexWrap: 'wrap' }}>
+                        {stats.map((s, i) => (
+                            <div key={i} style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+                                <span style={{ fontWeight: 800, fontSize: '1rem', color: s.color || '#f59e0b' }}>{s.value}</span>
+                                {' '}{s.label}
+                            </div>
+                        ))}
+                    </div>
+                )}
+            </div>
+        </div>
+    )
+}
+
+// ─── AISectionCard ────────────────────────────────────────────────────────────
+/**
+ * A glass-morphism panel with animated gradient border accent at top.
+ */
+export function AISectionCard({ children, style = {}, className = '' }) {
+    return (
+        <div
+            className={`ai-glass ai-pulse-card ${className}`}
+            style={{
+                borderRadius: '18px',
+                padding: '1.5rem',
+                ...style,
+            }}
+        >
+            {children}
+        </div>
+    )
+}
+
+// ─── AIStatsRow ───────────────────────────────────────────────────────────────
+/**
+ * A quick horizontal row of mini stat pills — ideal for leaderboard summaries.
+ * stats: [{ label, value, color, icon: LucideComponent }]
+ */
+export function AIStatsRow({ stats = [] }) {
+    return (
+        <div className="ai-stagger-20" style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap', marginBottom: '1rem' }}>
+            {stats.map((s, i) => (
+                <div key={i} className="ai-stat-mini" style={{
+                    animationDelay: `${i * 0.07}s`,
+                    background: 'var(--bg-card)',
+                    border: `1px solid ${s.color ? `${s.color}30` : 'var(--border-color)'}`,
+                    borderRadius: '12px',
+                    padding: '0.75rem 1.1rem',
+                    display: 'flex', alignItems: 'center', gap: '0.6rem',
+                    minWidth: '110px',
+                }}>
+                    {s.icon && (
+                        <div style={{
+                            width: '30px', height: '30px', borderRadius: '8px',
+                            background: s.color ? `${s.color}18` : 'rgba(59,130,246,0.1)',
+                            display: 'flex', alignItems: 'center', justifyContent: 'center',
+                            flexShrink: 0,
+                        }}>
+                            <s.icon size={15} color={s.color || '#60a5fa'} />
+                        </div>
+                    )}
+                    <div>
+                        <div style={{ fontSize: '1.1rem', fontWeight: 800, color: s.color || '#60a5fa', lineHeight: 1 }}>
+                            <CountUp value={typeof s.value === 'number' ? s.value : 0} suffix={s.suffix || ''} />
+                            {typeof s.value !== 'number' && s.value}
+                        </div>
+                        <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)', marginTop: '2px' }}>{s.label}</div>
+                    </div>
+                </div>
+            ))}
         </div>
     )
 }
