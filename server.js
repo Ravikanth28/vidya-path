@@ -3831,7 +3831,7 @@ app.get('/api/aptitude/:id', async (req, res) => {
             id: q.question_id,
             question: q.question,
             options: [q.option_1, q.option_2, q.option_3, q.option_4].filter(opt => opt !== null && opt !== undefined && opt !== ''),
-            correctAnswer: q.correct_answer,
+            correctAnswer: parseInt(q.correct_answer) || 0,
             explanation: q.explanation,
             category: q.category
         }));
@@ -3946,7 +3946,7 @@ app.post('/api/aptitude/:id/submit', validate(aptitudeSubmitSchema), async (req,
             // Get all options for this question
             const options = [q.option_1, q.option_2, q.option_3, q.option_4].filter(opt => opt !== null && opt !== undefined && opt !== '');
             // Get the correct option text using the index
-            const correctOptionText = options[q.correct_answer];
+            const correctOptionText = options[parseInt(q.correct_answer) || 0];
             // Compare user's answer (option text) with correct option text
             const isCorrect = userAnswer === correctOptionText;
             if (isCorrect) correctCount++;
