@@ -5,8 +5,14 @@
  */
 
 const express = require('express');
+const fs = require('fs');
+const path = require('path');
 const { v4: uuidv4 } = require('uuid');
 const multer = require('multer');
+
+const MAX_SYNC_TRANSCRIPTION_CONCURRENCY = Math.max(1, Number(process.env.COMM_TEST_SYNC_STT_CONCURRENCY) || 4);
+const MAX_BACKGROUND_TRANSCRIPTION_CONCURRENCY = Math.max(1, Number(process.env.COMM_TEST_BG_STT_CONCURRENCY) || 2);
+const PENDING_TRANSCRIPTION_SCAN_MS = Math.max(5000, Number(process.env.COMM_TEST_PENDING_SCAN_MS) || 15000);
 
 // --- WER Scoring ---------------------------------------------------------------
 
@@ -46,10 +52,29 @@ function tryParse(val) {
     try { return JSON.parse(val || 'null'); } catch { return null; }
 }
 
+function isPendingTranscription(submission) {
+    const aiScores = tryParse(submission?.ai_scores);
+    return aiScores?.pendingTranscription === true || aiScores?.transcriptionStatus === 'pending';
+}
+
+function buildPendingAiScores(previousAiScores, patch) {
+    return {
+        ...(tryParse(previousAiScores) || {}),
+        ...patch,
+    };
+}
+
 // --- Router Factory -----------------------------------------------------------
 
 module.exports = function communicationRoutes(pool, authenticate, cerebrasChat) {
     const router = express.Router();
+    const commTestAudioDir = path.join(process.cwd(), 'uploads', 'comm-test-audio');
+    if (!fs.existsSync(commTestAudioDir)) fs.mkdirSync(commTestAudioDir, { recursive: true });
+    const pendingSubmissionQueue = [];
+    const queuedPendingSubmissionIds = new Set();
+    let activeSyncTranscriptions = 0;
+    let activeBackgroundTranscriptions = 0;
+    let pendingScanTimer = null;
 
     // Multer memory storage for audio uploads (no temp files needed)
     const audioUpload = multer({
@@ -61,37 +86,375 @@ module.exports = function communicationRoutes(pool, authenticate, cerebrasChat) 
         }
     });
 
+    function buildAudioFormData(file) {
+        const formData = new FormData();
+        const audioBlob = new Blob([file.buffer], { type: file.mimetype || 'audio/webm' });
+        formData.append('file', audioBlob, file.originalname || 'speech.webm');
+        formData.append('language', 'en');
+        formData.append('response_format', 'json');
+        return formData;
+    }
+
+    async function waitForCapacity(getCount, limit) {
+        while (getCount() >= limit) {
+            await new Promise(resolve => setTimeout(resolve, 150));
+        }
+    }
+
+    async function runBoundedSyncTranscription(task) {
+        await waitForCapacity(() => activeSyncTranscriptions, MAX_SYNC_TRANSCRIPTION_CONCURRENCY);
+        activeSyncTranscriptions += 1;
+        try {
+            return await task();
+        } finally {
+            activeSyncTranscriptions = Math.max(0, activeSyncTranscriptions - 1);
+        }
+    }
+
+    async function transcribeWithGroq(file) {
+        const apiKey = process.env.GROQ_API_KEY;
+        if (!apiKey) throw new Error('Groq transcription service not configured');
+        const formData = buildAudioFormData(file);
+        formData.append('model', 'whisper-large-v3-turbo');
+
+        const response = await fetch('https://api.groq.com/openai/v1/audio/transcriptions', {
+            method: 'POST',
+            headers: { Authorization: `Bearer ${apiKey}` },
+            body: formData,
+        });
+
+        if (!response.ok) {
+            throw new Error(`Groq STT failed with status ${response.status}: ${await response.text()}`);
+        }
+        const data = await response.json();
+        return { transcript: data.text || '', provider: 'groq' };
+    }
+
+    async function transcribeWithOpenAI(file) {
+        const apiKey = process.env.OPENAI_API_KEY;
+        if (!apiKey) throw new Error('OpenAI transcription service not configured');
+        const formData = buildAudioFormData(file);
+        formData.append('model', 'whisper-1');
+
+        const response = await fetch('https://api.openai.com/v1/audio/transcriptions', {
+            method: 'POST',
+            headers: { Authorization: `Bearer ${apiKey}` },
+            body: formData,
+        });
+
+        if (!response.ok) {
+            throw new Error(`OpenAI STT failed with status ${response.status}: ${await response.text()}`);
+        }
+        const data = await response.json();
+        return { transcript: data.text || '', provider: 'openai' };
+    }
+
+    async function transcribeAudioWithFallbacks(file) {
+        const attempts = [];
+        for (const provider of [transcribeWithGroq, transcribeWithOpenAI]) {
+            try {
+                const result = await provider(file);
+                if (result.transcript && result.transcript.trim()) return { ...result, attempts };
+                attempts.push({ ok: false, provider: result.provider, error: 'Empty transcript' });
+            } catch (error) {
+                attempts.push({ ok: false, provider: provider === transcribeWithGroq ? 'groq' : 'openai', error: error.message });
+            }
+        }
+        throw new Error(attempts.map(a => `${a.provider}: ${a.error}`).join(' | '));
+    }
+
+    function computeReadSpeakResult(expectedText, transcribedText, durationSec) {
+        const { pronunciationScore, feedback } = scoreSpeech(expectedText || '', transcribedText || '');
+        const words = (transcribedText || '').trim().split(/\s+/).filter(Boolean).length;
+        const wps = words / Math.max(Number(durationSec) || 1, 0.01);
+        let fluencyScore = 0;
+        if (wps < 1) fluencyScore = wps * 50;
+        else if (wps <= 3) fluencyScore = 80 + (((wps - 1) / 2) * 20);
+        else fluencyScore = Math.max(0, 100 - ((wps - 3) * 20));
+        fluencyScore = Math.round(Math.min(100, fluencyScore));
+        const finalScore = Math.round((pronunciationScore * 0.7) + (fluencyScore * 0.3));
+        return {
+            score: finalScore,
+            feedback,
+            ai_scores: { pronunciationScore, fluencyScore, wps: Math.round(wps * 100) / 100 }
+        };
+    }
+
+    function computeListenRepeatResult(expectedText, transcribedText) {
+        const { pronunciationScore, feedback } = scoreSpeech(expectedText || '', transcribedText || '');
+        return {
+            score: pronunciationScore,
+            feedback,
+            ai_scores: { pronunciationScore }
+        };
+    }
+
+    async function evaluateTopicSpeakResponse(topic, transcribedText) {
+        const prompt = `You are an English communication evaluator. A student was asked to speak on the topic: "${topic}"
+
+Student's response: "${(transcribedText || '').trim()}"
+
+Evaluate on these 4 criteria (0-25 points each):
+1. Relevance to topic (0-25)
+2. Grammar and sentence structure (0-25)
+3. Vocabulary richness (0-25)
+4. Coherence and organization (0-25)
+
+Respond ONLY with valid JSON, no markdown:
+{"relevanceScore":<0-25>,"grammarScore":<0-25>,"vocabularyScore":<0-25>,"coherenceScore":<0-25>,"totalScore":<0-100>,"feedback":"<feedback>","strengths":["s1"],"improvements":["i1"]}`;
+
+        const aiResponse = await cerebrasChat(
+            [{ role: 'user', content: prompt }],
+            { model: 'llama3.1-8b', temperature: 0.4, max_tokens: 512 }
+        );
+
+        let evaluation;
+        try {
+            let raw = aiResponse.choices[0]?.message?.content || '{}';
+            raw = raw.replace(/```json\s*|\s*```/g, '').trim();
+            evaluation = JSON.parse(raw);
+        } catch {
+            evaluation = { relevanceScore: 15, grammarScore: 15, vocabularyScore: 15, coherenceScore: 15, totalScore: 60, feedback: 'AI evaluation completed.', strengths: [], improvements: [] };
+        }
+
+        return {
+            score: Math.min(100, Math.max(0, evaluation.totalScore || 0)),
+            feedback: evaluation.feedback,
+            ai_scores: evaluation
+        };
+    }
+
+    function persistPendingAudio(file, { sessionId, studentId, moduleType, questionId }) {
+        const sessionDir = path.join(commTestAudioDir, String(sessionId));
+        if (!fs.existsSync(sessionDir)) fs.mkdirSync(sessionDir, { recursive: true });
+        const ext = (file.originalname && path.extname(file.originalname)) || '.webm';
+        const fileName = `${moduleType}-${questionId || '0'}-${studentId}-${Date.now()}-${uuidv4()}${ext}`;
+        const fullPath = path.join(sessionDir, fileName);
+        fs.writeFileSync(fullPath, file.buffer);
+        return {
+            relativePath: path.relative(process.cwd(), fullPath).replace(/\\/g, '/'),
+            filename: fileName,
+        };
+    }
+
+    async function createPendingSpeechSubmission({ sessionId, studentId, moduleType, questionId, file, durationSec }) {
+        const supportedModules = new Set(['read-speak', 'listen-repeat', 'topic-speak']);
+        if (!supportedModules.has(moduleType)) {
+            throw new Error('Pending audio fallback is only supported for speech modules.');
+        }
+
+        let expectedText = null;
+        if (questionId) {
+            const [[question]] = await pool.query(
+                'SELECT content FROM comm_test_questions WHERE id = ? AND module_type = ?',
+                [questionId, moduleType]
+            );
+            expectedText = question?.content || null;
+        }
+
+        const storedAudio = persistPendingAudio(file, { sessionId, studentId, moduleType, questionId });
+        const feedback = moduleType === 'topic-speak'
+            ? 'Audio saved. Topic speaking evaluation is pending transcription.'
+            : 'Audio saved. Pronunciation evaluation is pending transcription.';
+
+        const aiScores = {
+            pendingTranscription: true,
+            transcriptionStatus: 'pending',
+            audioPath: storedAudio.relativePath,
+            originalFilename: file.originalname || storedAudio.filename,
+            mimeType: file.mimetype || 'audio/webm',
+            durationSec: Number(durationSec) || 0,
+            retryCount: 0,
+            storedAt: new Date().toISOString(),
+        };
+
+        const submissionId = uuidv4();
+        await pool.query(
+            `INSERT INTO comm_test_submissions (id, session_id, student_id, module_type, question_id, transcribed_text, expected_text, score, max_score, feedback, ai_scores)
+             VALUES (?, ?, ?, ?, ?, NULL, ?, 0, 100, ?, ?)`,
+            [submissionId, sessionId, studentId, moduleType, questionId || 0, expectedText, feedback, JSON.stringify(aiScores)]
+        );
+
+        return { success: true, pending: true, submissionId, feedback, expectedText, audioPath: storedAudio.relativePath };
+    }
+
+    async function recalculateSessionOverallScore(sessionId, studentId) {
+        const [submissions] = await pool.query(
+            'SELECT score, ai_scores FROM comm_test_submissions WHERE session_id = ? AND student_id = ?',
+            [sessionId, studentId]
+        );
+        const evaluated = submissions.filter(sub => !isPendingTranscription(sub));
+        const overallScore = evaluated.length
+            ? Math.max(0, Math.min(100, Math.round(evaluated.reduce((sum, sub) => sum + (Number(sub.score) || 0), 0) / evaluated.length)))
+            : 0;
+        await pool.query(
+            'UPDATE comm_test_sessions SET overall_score = ? WHERE id = ? AND student_id = ?',
+            [overallScore, sessionId, studentId]
+        );
+        return overallScore;
+    }
+
+    async function processPendingSpeechSubmission(submissionId) {
+        const [[submission]] = await pool.query(
+            `SELECT id, session_id, student_id, module_type, question_id, expected_text, ai_scores
+             FROM comm_test_submissions WHERE id = ?`,
+            [submissionId]
+        );
+        if (!submission || !isPendingTranscription(submission)) return;
+
+        const aiScores = tryParse(submission.ai_scores) || {};
+        const audioPath = aiScores.audioPath ? path.join(process.cwd(), aiScores.audioPath) : null;
+        if (!audioPath || !fs.existsSync(audioPath)) {
+            const failedScores = buildPendingAiScores(aiScores, {
+                transcriptionStatus: 'failed',
+                pendingTranscription: false,
+                lastError: 'Saved audio file is missing',
+                processedAt: new Date().toISOString(),
+            });
+            await pool.query(
+                'UPDATE comm_test_submissions SET feedback = ?, ai_scores = ? WHERE id = ?',
+                ['Audio processing failed because the saved recording could not be found.', JSON.stringify(failedScores), submission.id]
+            );
+            return;
+        }
+
+        const fileBuffer = fs.readFileSync(audioPath);
+        const file = {
+            buffer: fileBuffer,
+            mimetype: aiScores.mimeType || 'audio/webm',
+            originalname: aiScores.originalFilename || path.basename(audioPath),
+        };
+
+        let transcriptionResult;
+        try {
+            transcriptionResult = await runBoundedSyncTranscription(() => transcribeAudioWithFallbacks(file));
+        } catch (error) {
+            const retryCount = Number(aiScores.retryCount) || 0;
+            const updatedScores = buildPendingAiScores(aiScores, {
+                retryCount: retryCount + 1,
+                transcriptionStatus: 'pending',
+                pendingTranscription: true,
+                lastError: error.message,
+                lastAttemptAt: new Date().toISOString(),
+            });
+            await pool.query(
+                'UPDATE comm_test_submissions SET ai_scores = ? WHERE id = ?',
+                [JSON.stringify(updatedScores), submission.id]
+            );
+            throw error;
+        }
+
+        let processed;
+        if (submission.module_type === 'read-speak') {
+            processed = computeReadSpeakResult(submission.expected_text, transcriptionResult.transcript, aiScores.durationSec);
+        } else if (submission.module_type === 'listen-repeat') {
+            processed = computeListenRepeatResult(submission.expected_text, transcriptionResult.transcript);
+        } else if (submission.module_type === 'topic-speak') {
+            processed = await evaluateTopicSpeakResponse(submission.expected_text || 'General Topic', transcriptionResult.transcript);
+        } else {
+            throw new Error(`Unsupported pending speech module: ${submission.module_type}`);
+        }
+
+        const completedScores = buildPendingAiScores(aiScores, {
+            ...processed.ai_scores,
+            transcriptionStatus: 'completed',
+            pendingTranscription: false,
+            provider: transcriptionResult.provider,
+            transcribedAt: new Date().toISOString(),
+            lastError: null,
+        });
+
+        await pool.query(
+            `UPDATE comm_test_submissions
+             SET transcribed_text = ?, score = ?, feedback = ?, ai_scores = ?
+             WHERE id = ?`,
+            [transcriptionResult.transcript, processed.score, processed.feedback, JSON.stringify(completedScores), submission.id]
+        );
+
+        await recalculateSessionOverallScore(submission.session_id, submission.student_id);
+    }
+
+    function kickPendingSubmissionProcessor() {
+        while (activeBackgroundTranscriptions < MAX_BACKGROUND_TRANSCRIPTION_CONCURRENCY && pendingSubmissionQueue.length > 0) {
+            const submissionId = pendingSubmissionQueue.shift();
+            if (!submissionId) continue;
+            activeBackgroundTranscriptions += 1;
+            processPendingSpeechSubmission(submissionId)
+                .catch(error => {
+                    console.error('[comm-test] pending transcription worker error:', error.message);
+                })
+                .finally(() => {
+                    queuedPendingSubmissionIds.delete(submissionId);
+                    activeBackgroundTranscriptions = Math.max(0, activeBackgroundTranscriptions - 1);
+                    kickPendingSubmissionProcessor();
+                });
+        }
+    }
+
+    function enqueuePendingSpeechSubmission(submissionId) {
+        if (!submissionId || queuedPendingSubmissionIds.has(submissionId)) return;
+        queuedPendingSubmissionIds.add(submissionId);
+        pendingSubmissionQueue.push(submissionId);
+        kickPendingSubmissionProcessor();
+    }
+
+    async function scanAndEnqueuePendingSpeechSubmissions() {
+        try {
+            const [rows] = await pool.query(
+                `SELECT id
+                 FROM comm_test_submissions
+                 WHERE JSON_EXTRACT(ai_scores, '$.pendingTranscription') = true
+                    OR JSON_UNQUOTE(JSON_EXTRACT(ai_scores, '$.transcriptionStatus')) = 'pending'
+                 ORDER BY submitted_at ASC
+                 LIMIT 50`
+            );
+            rows.forEach(row => enqueuePendingSpeechSubmission(row.id));
+        } catch (error) {
+            console.error('[comm-test] pending scan error:', error.message);
+        }
+    }
+
+    if (!pendingScanTimer) {
+        pendingScanTimer = setInterval(() => {
+            scanAndEnqueuePendingSpeechSubmissions().catch(() => {});
+        }, PENDING_TRANSCRIPTION_SCAN_MS);
+        if (typeof pendingScanTimer.unref === 'function') pendingScanTimer.unref();
+        scanAndEnqueuePendingSpeechSubmissions().catch(() => {});
+    }
+
     // POST /comm-test/transcribe — Groq Whisper audio transcription
     router.post('/comm-test/transcribe', authenticate, audioUpload.single('audio'), async (req, res) => {
         try {
             if (!req.file) return res.status(400).json({ success: false, error: 'No audio file uploaded' });
-            const apiKey = process.env.GROQ_API_KEY;
-            if (!apiKey) return res.status(500).json({ success: false, error: 'Transcription service not configured' });
-
-            // Use native FormData + Blob (Node 18+)
-            const formData = new FormData();
-            const audioBlob = new Blob([req.file.buffer], { type: req.file.mimetype || 'audio/webm' });
-            formData.append('file', audioBlob, 'speech.webm');
-            formData.append('model', 'whisper-large-v3-turbo');
-            formData.append('language', 'en');
-            formData.append('response_format', 'json');
-
-            const response = await fetch('https://api.groq.com/openai/v1/audio/transcriptions', {
-                method: 'POST',
-                headers: { Authorization: `Bearer ${apiKey}` },
-                body: formData,
-            });
-
-            if (!response.ok) {
-                const errText = await response.text();
-                console.error('Groq Whisper error:', errText);
-                return res.status(502).json({ success: false, error: 'Transcription service error' });
-            }
-            const data = await response.json();
-            res.json({ success: true, transcript: data.text || '' });
+            const result = await transcribeAudioWithFallbacks(req.file);
+            res.json({ success: true, transcript: result.transcript, provider: result.provider });
         } catch (e) {
             console.error('Transcription error:', e);
-            res.status(500).json({ success: false, error: 'Transcription failed: ' + e.message });
+            res.status(503).json({ success: false, error: 'Transcription failed across all configured providers', details: e.message });
+        }
+    });
+
+    router.post('/comm-test/submit/pending-audio', authenticate, audioUpload.single('audio'), async (req, res) => {
+        try {
+            const { sessionId, questionId, moduleType, durationSec } = req.body;
+            const studentId = String(req.user.id);
+            if (!req.file) return res.status(400).json({ success: false, error: 'No audio file uploaded' });
+            if (!sessionId || !moduleType) return res.status(400).json({ success: false, error: 'sessionId and moduleType are required' });
+
+            const result = await createPendingSpeechSubmission({
+                sessionId,
+                studentId,
+                moduleType,
+                questionId: Number(questionId) || 0,
+                file: req.file,
+                durationSec
+            });
+            enqueuePendingSpeechSubmission(result.submissionId);
+
+            res.json(result);
+        } catch (err) {
+            console.error('[comm-test] pending-audio error:', err);
+            res.status(500).json({ success: false, error: err.message });
         }
     });
 
@@ -730,16 +1093,20 @@ module.exports = function communicationRoutes(pool, authenticate, cerebrasChat) 
         try {
             const { sessionId } = req.body;
             const studentId = String(req.user.id);
-            const [[agg]] = await pool.query(
-                'SELECT AVG(score) as avg_score FROM comm_test_submissions WHERE session_id = ? AND student_id = ?',
+            const [submissions] = await pool.query(
+                'SELECT score, ai_scores FROM comm_test_submissions WHERE session_id = ? AND student_id = ?',
                 [sessionId, studentId]
             );
-            const overallScore = Math.max(0, Math.min(100, Math.round(Number(agg?.avg_score) || 0)));
+            const evaluated = submissions.filter(sub => !isPendingTranscription(sub));
+            const pendingCount = submissions.length - evaluated.length;
+            const overallScore = evaluated.length
+                ? Math.max(0, Math.min(100, Math.round(evaluated.reduce((sum, sub) => sum + (Number(sub.score) || 0), 0) / evaluated.length)))
+                : 0;
             await pool.query(
                 'UPDATE comm_test_sessions SET completed_at = NOW(), overall_score = ? WHERE id = ? AND student_id = ?',
                 [overallScore, sessionId, studentId]
             );
-            res.json({ success: true, overallScore });
+            res.json({ success: true, overallScore, pendingCount });
         } catch (err) {
             res.status(500).json({ success: false, error: err.message });
         }
@@ -912,15 +1279,26 @@ Respond ONLY with valid JSON, no markdown:
                 if (!byModule[sub.module_type]) byModule[sub.module_type] = [];
                 byModule[sub.module_type].push({ ...sub, ai_scores: tryParse(sub.ai_scores) });
             }
-            const moduleStats = Object.entries(byModule).map(([type, subs]) => ({
-                module: type,
-                avgScore: Math.max(0, Math.min(100, Math.round(subs.reduce((s, x) => s + (Number(x.score) || 0), 0) / subs.length))),
-                attempts: subs.length, submissions: subs,
-                allocatedMinutes: sectionTimes[type] || null
-            }));
-            const computedOverallScore = moduleStats.length
-                ? Math.round(moduleStats.reduce((s, m) => s + m.avgScore, 0) / moduleStats.length)
+            const moduleStats = Object.entries(byModule).map(([type, subs]) => {
+                const evaluatedSubs = subs.filter(sub => !isPendingTranscription(sub));
+                const pendingCount = subs.length - evaluatedSubs.length;
+                return {
+                    module: type,
+                    avgScore: evaluatedSubs.length
+                        ? Math.max(0, Math.min(100, Math.round(evaluatedSubs.reduce((s, x) => s + (Number(x.score) || 0), 0) / evaluatedSubs.length)))
+                        : null,
+                    attempts: subs.length,
+                    evaluatedAttempts: evaluatedSubs.length,
+                    pendingAttempts: pendingCount,
+                    submissions: subs,
+                    allocatedMinutes: sectionTimes[type] || null
+                }
+            });
+            const scoredModules = moduleStats.filter(m => m.avgScore != null);
+            const computedOverallScore = scoredModules.length
+                ? Math.round(scoredModules.reduce((s, m) => s + m.avgScore, 0) / scoredModules.length)
                 : 0;
+            const pendingEvaluations = moduleStats.reduce((sum, m) => sum + (m.pendingAttempts || 0), 0);
             const overallScore = Math.max(
                 0,
                 Math.min(
@@ -928,7 +1306,7 @@ Respond ONLY with valid JSON, no markdown:
                     Number(sessionInfo?.overall_score ?? computedOverallScore) || 0
                 )
             );
-            res.json({ success: true, sessionId, overallScore, modules: moduleStats, sectionTimes,
+            res.json({ success: true, sessionId, overallScore, pendingEvaluations, modules: moduleStats, sectionTimes,
                 session: { started_at: sessionInfo?.started_at, completed_at: sessionInfo?.completed_at, overall_score: sessionInfo?.overall_score } });
         } catch (err) {
             res.status(500).json({ success: false, error: err.message });

@@ -35,6 +35,22 @@ function getAuthHeaders() {
     return token ? { Authorization: `Bearer ${token}` } : {}
 }
 
+async function submitPendingSpeechAudio({ sessionId, questionId, moduleType, audioBlob, durationSec = 0 }) {
+    const fd = new FormData()
+    fd.append('audio', audioBlob, 'speech.webm')
+    fd.append('sessionId', sessionId)
+    fd.append('questionId', questionId || 0)
+    fd.append('moduleType', moduleType)
+    fd.append('durationSec', durationSec || 0)
+
+    const { data } = await axios.post(`${API_BASE}/comm-test/submit/pending-audio`, fd, {
+        headers: getAuthHeaders(),
+        timeout: 20000
+    })
+
+    return data
+}
+
 function ScoreBadge({ score, size = 'md' }) {
     const color = score >= 80 ? '#10b981' : score >= 60 ? '#a855f7' : score >= 40 ? '#f59e0b' : '#ef4444'
     const label = score >= 80 ? 'Excellent' : score >= 60 ? 'Good' : score >= 40 ? 'Fair' : 'Needs Work'
@@ -209,6 +225,7 @@ function usePrimaryBrowserSpeechRecognition() {
     const [error, setError] = useState(null)
     const [durationSec, setDurationSec] = useState(0)
     const [transcriptSource, setTranscriptSource] = useState(null)
+    const [audioBlob, setAudioBlob] = useState(null)
     const mediaRecorderRef = useRef(null)
     const chunksRef = useRef([])
     const startTimeRef = useRef(null)
@@ -256,6 +273,7 @@ function usePrimaryBrowserSpeechRecognition() {
         setDurationSec(0)
         setIsProcessing(false)
         setTranscriptSource(null)
+        setAudioBlob(null)
         browserErrorRef.current = null
         browserTranscriptRef.current = ''
         resetTranscript()
@@ -280,6 +298,8 @@ function usePrimaryBrowserSpeechRecognition() {
                 setIsListening(false)
                 setDurationSec(Math.round((Date.now() - startTimeRef.current) / 1000))
                 if (chunksRef.current.length === 0) return
+                const recordedBlob = new Blob(chunksRef.current, { type: mimeType || 'audio/webm' })
+                setAudioBlob(recordedBlob)
 
                 setIsProcessing(true)
                 try {
@@ -303,7 +323,7 @@ function usePrimaryBrowserSpeechRecognition() {
                     }
                 } catch (e) {
                     console.warn('Speech transcription failed:', e.message)
-                    setError('Speech recognition failed in the JS library, Whisper fallback, and native browser fallback. Please try again.')
+                    setError('Live transcription failed. Your recording is still available and can be submitted for later evaluation.')
                 } finally {
                     setIsProcessing(false)
                 }
@@ -358,12 +378,13 @@ function usePrimaryBrowserSpeechRecognition() {
         setDurationSec(0)
         setIsProcessing(false)
         setTranscriptSource(null)
+        setAudioBlob(null)
         browserErrorRef.current = null
         browserTranscriptRef.current = ''
         resetTranscript()
     }, [resetTranscript])
 
-    return { isListening, isProcessing, transcript, transcriptSource, error, durationSec, supported, start, stop, reset }
+    return { isListening, isProcessing, transcript, transcriptSource, error, durationSec, supported, audioBlob, start, stop, reset }
 }
 
 // ─── Module A: Read & Speak ───────────────────────────────────────────────────
@@ -376,7 +397,7 @@ function ModuleReadSpeak({ sessionId, testId, onComplete }) {
     const [completed, setCompleted] = useState([])
     const [totalQ, setTotalQ] = useState(0)
     const [allDone, setAllDone] = useState(false)
-    const { isListening, isProcessing, transcript, transcriptSource, error, durationSec, supported, start, stop, reset } = usePrimaryBrowserSpeechRecognition()
+    const { isListening, isProcessing, transcript, transcriptSource, error, durationSec, supported, audioBlob, start, stop, reset } = usePrimaryBrowserSpeechRecognition()
 
     const fetchSentence = async (completedIds) => {
         setLoading(true); setSentence(null); setQuestionId(null); reset()
@@ -397,12 +418,16 @@ function ModuleReadSpeak({ sessionId, testId, onComplete }) {
     useEffect(() => { fetchSentence([]) }, [testId]) // eslint-disable-line react-hooks/exhaustive-deps
 
     const submit = async () => {
-        if (!transcript) return
+        if (!transcript && !audioBlob) return
         setSubmitting(true)
         try {
-            await axios.post(`${API_BASE}/comm-test/submit/read-speak`, {
-                sessionId, questionId, transcribedText: transcript, durationSec
-            }, { headers: getAuthHeaders() })
+            if (transcript) {
+                await axios.post(`${API_BASE}/comm-test/submit/read-speak`, {
+                    sessionId, questionId, transcribedText: transcript, durationSec
+                }, { headers: getAuthHeaders() })
+            } else {
+                await submitPendingSpeechAudio({ sessionId, questionId, moduleType: 'read-speak', audioBlob, durationSec })
+            }
             const newCompleted = [...completed, questionId]
             setCompleted(newCompleted)
             await fetchSentence(newCompleted)
@@ -489,11 +514,17 @@ function ModuleReadSpeak({ sessionId, testId, onComplete }) {
                             </div>
                         )}
 
-                        <button onClick={submit} disabled={!transcript || submitting} style={{
-                            width: '100%', padding: '12px', background: transcript && !submitting ? 'linear-gradient(135deg, #5b21b6, #7c3aed)' : '#374151',
-                            border: 'none', borderRadius: 10, color: 'white', fontWeight: 700, cursor: transcript && !submitting ? 'pointer' : 'not-allowed', fontSize: '0.9rem'
+                        {!transcript && audioBlob && (
+                            <div style={{ color: '#f59e0b', fontSize: '0.82rem', marginBottom: 12 }}>
+                                Live transcription failed. You can still submit this recording for later evaluation.
+                            </div>
+                        )}
+
+                        <button onClick={submit} disabled={(!transcript && !audioBlob) || submitting} style={{
+                            width: '100%', padding: '12px', background: (transcript || audioBlob) && !submitting ? 'linear-gradient(135deg, #5b21b6, #7c3aed)' : '#374151',
+                            border: 'none', borderRadius: 10, color: 'white', fontWeight: 700, cursor: (transcript || audioBlob) && !submitting ? 'pointer' : 'not-allowed', fontSize: '0.9rem'
                         }}>
-                            {submitting ? 'Scoring & Loading Next…' : 'Submit & Next Question →'}
+                            {submitting ? 'Saving & Loading Next…' : transcript ? 'Submit & Next Question →' : 'Submit Recording & Next Question →'}
                         </button>
                     </>
                 )}
@@ -513,7 +544,7 @@ function ModuleListenRepeat({ sessionId, testId, onComplete }) {
     const [completed, setCompleted] = useState([])
     const [totalQ, setTotalQ] = useState(0)
     const [allDone, setAllDone] = useState(false)
-    const { isListening, isProcessing, transcript, transcriptSource, error, supported, start, stop, reset } = usePrimaryBrowserSpeechRecognition()
+    const { isListening, isProcessing, transcript, transcriptSource, error, supported, audioBlob, start, stop, reset } = usePrimaryBrowserSpeechRecognition()
 
     const fetchSentence = async (completedIds) => {
         setLoading(true); setSentence(null); setQuestionId(null); setPlayed(false); reset()
@@ -542,12 +573,16 @@ function ModuleListenRepeat({ sessionId, testId, onComplete }) {
     }
 
     const submit = async () => {
-        if (!transcript) return
+        if (!transcript && !audioBlob) return
         setSubmitting(true)
         try {
-            await axios.post(`${API_BASE}/comm-test/submit/listen-repeat`, {
-                sessionId, questionId, transcribedText: transcript
-            }, { headers: getAuthHeaders() })
+            if (transcript) {
+                await axios.post(`${API_BASE}/comm-test/submit/listen-repeat`, {
+                    sessionId, questionId, transcribedText: transcript
+                }, { headers: getAuthHeaders() })
+            } else {
+                await submitPendingSpeechAudio({ sessionId, questionId, moduleType: 'listen-repeat', audioBlob })
+            }
             const newCompleted = [...completed, questionId]
             setCompleted(newCompleted)
             await fetchSentence(newCompleted)
@@ -639,12 +674,18 @@ function ModuleListenRepeat({ sessionId, testId, onComplete }) {
                             </div>
                         )}
 
-                        {played && transcript && (
+                        {played && !transcript && audioBlob && (
+                            <div style={{ color: '#f59e0b', fontSize: '0.82rem', marginBottom: 12 }}>
+                                Live transcription failed. Submit this recording and we will evaluate it later.
+                            </div>
+                        )}
+
+                        {played && (transcript || audioBlob) && (
                             <button onClick={submit} disabled={submitting} style={{
                                 width: '100%', padding: 12, background: submitting ? '#374151' : 'linear-gradient(135deg, #5b21b6, #7c3aed)',
                                 border: 'none', borderRadius: 10, color: 'white', fontWeight: 700, cursor: submitting ? 'not-allowed' : 'pointer'
                             }}>
-                                {submitting ? 'Scoring & Loading Next…' : 'Submit & Next Question →'}
+                                {submitting ? 'Saving & Loading Next…' : transcript ? 'Submit & Next Question →' : 'Submit Recording & Next Question →'}
                             </button>
                         )}
                     </>
@@ -659,10 +700,11 @@ function ModuleListenRepeat({ sessionId, testId, onComplete }) {
 function ModuleTopicSpeak({ sessionId, testId, onComplete }) {
     const [topic, setTopic] = useState(null)
     const [questionId, setQuestionId] = useState(null)
+    const [result, setResult] = useState(null)
     const [loading, setLoading] = useState(false)
     const [submitting, setSubmitting] = useState(false)
     const [completed, setCompleted] = useState([])
-    const { isListening, isProcessing, transcript, transcriptSource, error, supported, start, stop, reset } = usePrimaryBrowserSpeechRecognition()
+    const { isListening, isProcessing, transcript, transcriptSource, error, supported, audioBlob, start, stop, reset } = usePrimaryBrowserSpeechRecognition()
     const cancelBrowserSpeech = useCallback(() => {
         try { window.speechSynthesis?.cancel() } catch {}
     }, [])
@@ -688,21 +730,29 @@ function ModuleTopicSpeak({ sessionId, testId, onComplete }) {
     }, [cancelBrowserSpeech, stop])
 
     const submit = async () => {
-        if (!transcript || transcript.trim().length < 5) return
+        if ((!transcript || transcript.trim().length < 5) && !audioBlob) return
         stop()
         cancelBrowserSpeech()
         setSubmitting(true)
         try {
-            const { data } = await axios.post(`${API_BASE}/comm-test/submit/topic-speak`, {
-                sessionId, questionId, transcribedText: transcript
-            }, { headers: getAuthHeaders() })
-            setResult(data)
+            if (transcript && transcript.trim().length >= 5) {
+                const { data } = await axios.post(`${API_BASE}/comm-test/submit/topic-speak`, {
+                    sessionId, questionId, transcribedText: transcript
+                }, { headers: getAuthHeaders() })
+                setResult(data)
+            } else {
+                await submitPendingSpeechAudio({ sessionId, questionId, moduleType: 'topic-speak', audioBlob })
+                setResult({
+                    pending: true,
+                    feedback: 'Audio saved. Topic speaking evaluation is pending transcription.'
+                })
+            }
             setCompleted(prev => [...prev, questionId])
         } catch (e) { console.error(e) }
         setSubmitting(false)
     }
 
-    const aiCriteria = result ? [
+    const aiCriteria = result && !result.pending ? [
         { label: 'Relevance', score: result.relevanceScore, max: 25 },
         { label: 'Grammar', score: result.grammarScore, max: 25 },
         { label: 'Vocabulary', score: result.vocabularyScore, max: 25 },
@@ -779,10 +829,20 @@ function ModuleTopicSpeak({ sessionId, testId, onComplete }) {
                                         <CheckCircle size={22} color="#10b981" />
                                     </div>
                                     <div>
-                                        <div style={{ color: '#10b981', fontWeight: 700, fontSize: '0.95rem' }}>AI Evaluation Complete!</div>
-                                        <div style={{ color: '#64748b', fontSize: '0.8rem', marginTop: 2 }}>Your score has been saved. Full breakdown shown in the final report.</div>
+                                        <div style={{ color: '#10b981', fontWeight: 700, fontSize: '0.95rem' }}>{result.pending ? 'Recording Saved' : 'AI Evaluation Complete!'}</div>
+                                        <div style={{ color: '#64748b', fontSize: '0.8rem', marginTop: 2 }}>{result.pending ? 'Your answer was saved for later transcription and evaluation.' : 'Your score has been saved. Full breakdown shown in the final report.'}</div>
                                     </div>
                                 </div>
+                                {!result.pending && aiCriteria.length > 0 && (
+                                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 8, marginBottom: 14 }}>
+                                        {aiCriteria.map(item => (
+                                            <div key={item.label} style={{ background: '#1e293b', borderRadius: 10, padding: '10px 8px', textAlign: 'center' }}>
+                                                <div style={{ color: '#f1f5f9', fontWeight: 800 }}>{item.score}/{item.max}</div>
+                                                <div style={{ color: '#94a3b8', fontSize: '0.72rem' }}>{item.label}</div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
                                 <div style={{ display: 'flex', gap: 10 }}>
                                     <button onClick={fetchTopic} style={{ flex: 1, padding: 10, background: '#1e293b', border: '1px solid #334155', borderRadius: 10, color: '#a855f7', fontWeight: 700, cursor: 'pointer' }}>Try Another Topic</button>
                                     <button onClick={() => { stop(); cancelBrowserSpeech(); onComplete() }} style={{ flex: 1, padding: 10, background: 'linear-gradient(135deg, #7c3aed, #a855f7)', border: 'none', borderRadius: 10, color: 'white', fontWeight: 700, cursor: 'pointer' }}>
@@ -790,14 +850,21 @@ function ModuleTopicSpeak({ sessionId, testId, onComplete }) {
                                     </button>
                                 </div>
                             </div>
-                        ) : transcript && (
-                            <button onClick={submit} disabled={submitting} style={{
-                                width: '100%', padding: 12,
-                                background: submitting ? '#374151' : 'linear-gradient(135deg, #5b21b6, #7c3aed)',
-                                border: 'none', borderRadius: 10, color: 'white', fontWeight: 700, cursor: submitting ? 'not-allowed' : 'pointer'
-                            }}>
-                                {submitting ? 'AI is evaluating…' : 'Submit for AI Evaluation'}
-                            </button>
+                        ) : (transcript || audioBlob) && (
+                            <>
+                                {!transcript && audioBlob && (
+                                    <div style={{ color: '#f59e0b', fontSize: '0.82rem', marginBottom: 12 }}>
+                                        Live transcription failed. Submit this recording and we will evaluate it later.
+                                    </div>
+                                )}
+                                <button onClick={submit} disabled={submitting} style={{
+                                    width: '100%', padding: 12,
+                                    background: submitting ? '#374151' : 'linear-gradient(135deg, #5b21b6, #7c3aed)',
+                                    border: 'none', borderRadius: 10, color: 'white', fontWeight: 700, cursor: submitting ? 'not-allowed' : 'pointer'
+                                }}>
+                                    {submitting ? 'Saving…' : transcript ? 'Submit for AI Evaluation' : 'Submit Recording for Later Evaluation'}
+                                </button>
+                            </>
                         )}
                     </>
                 )}
@@ -959,6 +1026,8 @@ function SessionReport({ sessionId, onRestart }) {
 
     const rawScore = Number.isFinite(Number(report?.overallScore)) ? Number(report.overallScore) : 0
     const score = Math.max(0, Math.min(100, Math.round(rawScore)))
+    const pendingEvaluations = Number(report?.pendingEvaluations) || 0
+    const hasPendingEvaluations = pendingEvaluations > 0
 
     function renderModuleDetail(module, submissions) {
         if (module === 'gd-round') {
@@ -1116,10 +1185,12 @@ function SessionReport({ sessionId, onRestart }) {
     }
 
     const modules = report.modules || []
+    const scoredModules = modules.filter(m => m.avgScore != null)
     const totalAttempts = modules.reduce((s, m) => s + (Number(m.attempts) || 0), 0)
     const passing = score >= 60
     const grade = score >= 90 ? 'A+' : score >= 80 ? 'A' : score >= 70 ? 'B+' : score >= 60 ? 'B' : 'C'
     const moduleTrunc = modules.map(m => (MODULE_META_REPORT[m.module]?.label || m.module)).join(', ')
+    const scoreLabel = hasPendingEvaluations && scoredModules.length === 0 ? '—' : score
     const truncLabel = moduleTrunc.length > 30 ? moduleTrunc.slice(0, 30) + '…' : moduleTrunc
 
     return (
@@ -1147,7 +1218,7 @@ function SessionReport({ sessionId, onRestart }) {
                                 style={{ transition: 'stroke-dasharray 1.5s ease' }} />
                         </svg>
                         <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column' }}>
-                            <div style={{ fontSize: '2.4rem', fontWeight: 900, lineHeight: 1 }}>{score}</div>
+                            <div style={{ fontSize: '2.4rem', fontWeight: 900, lineHeight: 1 }}>{scoreLabel}</div>
                             <div style={{ width: 28, height: 2, background: 'rgba(255,255,255,0.4)', margin: '4px 0' }} />
                             <div style={{ fontSize: '1rem', fontWeight: 700, opacity: 0.8 }}>100</div>
                         </div>
