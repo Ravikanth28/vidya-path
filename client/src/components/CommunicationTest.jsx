@@ -47,42 +47,96 @@ function ScoreBadge({ score, size = 'md' }) {
     )
 }
 
-// ─── Speech Hook ─────────────────────────────────────────────────────────────
+// ─── Speech Hook (MediaRecorder → Groq Whisper backend) ──────────────────────
+// Replaces webkitSpeechRecognition which fails on networks that block Google.
+
+// Try Web Speech API as a last-resort fallback if Groq transcription fails
+function tryBrowserSpeechFallback(onResult, onError) {
+    const SR = window.SpeechRecognition || window.webkitSpeechRecognition
+    if (!SR) { onError('Transcription unavailable. Please try again.'); return }
+    const rec = new SR()
+    rec.lang = 'en-US'; rec.interimResults = false; rec.maxAlternatives = 1
+    rec.onresult = e => onResult(e.results[0][0].transcript)
+    rec.onerror = () => onError('Both transcription methods failed. Check your internet connection.')
+    rec.onend = () => {}
+    try { rec.start() } catch { onError('Fallback speech recognition failed.') }
+    // Auto-stop after 8 seconds to avoid hanging
+    setTimeout(() => { try { rec.stop() } catch {} }, 8000)
+}
 
 function useSpeechRecognition() {
     const [isListening, setIsListening] = useState(false)
     const [transcript, setTranscript] = useState('')
     const [error, setError] = useState(null)
-    const recognitionRef = useRef(null)
-    const startTimeRef = useRef(null)
     const [durationSec, setDurationSec] = useState(0)
+    const mediaRecorderRef = useRef(null)
+    const chunksRef = useRef([])
+    const startTimeRef = useRef(null)
 
-    const supported = 'SpeechRecognition' in window || 'webkitSpeechRecognition' in window
+    // Supported if browser has MediaRecorder + getUserMedia
+    const supported = !!(window.MediaRecorder && navigator.mediaDevices?.getUserMedia)
 
-    const start = useCallback(() => {
-        if (!supported) { setError('Speech recognition not supported in this browser. Please use Chrome.'); return }
-        const SR = window.SpeechRecognition || window.webkitSpeechRecognition
-        const rec = new SR()
-        rec.lang = 'en-US'
-        rec.interimResults = false
-        rec.maxAlternatives = 1
-        rec.onresult = e => {
-            setTranscript(e.results[0][0].transcript)
-            setDurationSec(Math.round((Date.now() - startTimeRef.current) / 1000))
+    const start = useCallback(async () => {
+        setTranscript(''); setError(null); setDurationSec(0)
+        try {
+            const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+            const mimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
+                ? 'audio/webm;codecs=opus'
+                : MediaRecorder.isTypeSupported('audio/webm')
+                    ? 'audio/webm'
+                    : ''
+            const mr = new MediaRecorder(stream, mimeType ? { mimeType } : undefined)
+            chunksRef.current = []
+            mr.ondataavailable = e => { if (e.data.size > 0) chunksRef.current.push(e.data) }
+            mr.onstop = async () => {
+                stream.getTracks().forEach(t => t.stop())
+                setDurationSec(Math.round((Date.now() - startTimeRef.current) / 1000))
+                if (chunksRef.current.length === 0) { setIsListening(false); return }
+                try {
+                    // PRIMARY: Groq Whisper via backend
+                    const blob = new Blob(chunksRef.current, { type: mimeType || 'audio/webm' })
+                    const fd = new FormData()
+                    fd.append('audio', blob, 'speech.webm')
+                    const res = await axios.post(`${API_BASE}/comm-test/transcribe`, fd, {
+                        headers: getAuthHeaders(),
+                        timeout: 15000  // 15 s timeout — if Groq is slow, fall back
+                    })
+                    if (res.data.success && res.data.transcript) {
+                        setTranscript(res.data.transcript)
+                        setIsListening(false)
+                    } else {
+                        // FALLBACK: browser Web Speech API (may fail on restricted networks)
+                        tryBrowserSpeechFallback(
+                            t => { setTranscript(t); setIsListening(false) },
+                            msg => { setError(msg); setIsListening(false) }
+                        )
+                    }
+                } catch (e) {
+                    console.warn('Groq transcription failed, trying browser fallback:', e.message)
+                    // FALLBACK: browser Web Speech API
+                    tryBrowserSpeechFallback(
+                        t => { setTranscript(t); setIsListening(false) },
+                        msg => { setError(msg); setIsListening(false) }
+                    )
+                }
+            }
+            mr.start()
+            mediaRecorderRef.current = mr
+            startTimeRef.current = Date.now()
+            setIsListening(true)
+        } catch (e) {
+            setError(
+                e.name === 'NotAllowedError'
+                    ? 'Microphone access denied. Please allow microphone access in your browser settings.'
+                    : 'Could not access microphone. Please try again.'
+            )
         }
-        rec.onerror = e => { setError(`Recognition error: ${e.error}`); setIsListening(false) }
-        rec.onend = () => setIsListening(false)
-        recognitionRef.current = rec
-        setTranscript('')
-        setError(null)
-        startTimeRef.current = Date.now()
-        rec.start()
-        setIsListening(true)
-    }, [supported])
+    }, [])
 
     const stop = useCallback(() => {
-        recognitionRef.current?.stop()
-        setIsListening(false)
+        if (mediaRecorderRef.current?.state === 'recording') {
+            mediaRecorderRef.current.stop()
+        }
     }, [])
 
     const reset = useCallback(() => { setTranscript(''); setError(null); setDurationSec(0) }, [])
@@ -146,7 +200,7 @@ function ModuleReadSpeak({ sessionId, testId, onComplete }) {
                         <p style={{ fontSize: '0.82rem', color: '#94a3b8', marginBottom: 16 }}>
                             Read this sentence aloud clearly. Press <strong style={{ color: '#a855f7' }}>Start Recording</strong>, speak, then press <strong style={{ color: '#a855f7' }}>Stop</strong>.
                         </p>
-                        {!supported && <div style={{ color: '#ef4444', fontSize: '0.85rem', marginBottom: 12 }}>⚠️ Speech recognition requires Chrome browser.</div>}
+                        {!supported && <div style={{ color: '#ef4444', fontSize: '0.85rem', marginBottom: 12 }}>⚠️ Your browser does not support audio recording. Please use Chrome, Firefox, or Edge.</div>}
                         {error && <div style={{ color: '#ef4444', fontSize: '0.85rem', marginBottom: 12 }}>⚠️ {error}</div>}
 
                         {/* Recording controls */}
@@ -426,7 +480,7 @@ function ModuleTopicSpeak({ sessionId, testId, onComplete }) {
                             Speak about this topic for 30–60 seconds. Your response will be evaluated by AI on relevance, grammar, vocabulary, and coherence.
                         </p>
 
-                        {!supported && <div style={{ color: '#ef4444', fontSize: '0.85rem', marginBottom: 10 }}>⚠️ Speech recognition requires Chrome browser.</div>}
+                        {!supported && <div style={{ color: '#ef4444', fontSize: '0.85rem', marginBottom: 10 }}>⚠️ Your browser does not support audio recording. Please use Chrome, Firefox, or Edge.</div>}
                         {error && <div style={{ color: '#ef4444', fontSize: '0.85rem', marginBottom: 10 }}>⚠️ {error}</div>}
 
                         <div style={{ display: 'flex', gap: 10, marginBottom: 16 }}>

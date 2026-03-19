@@ -6,6 +6,7 @@
 
 const express = require('express');
 const { v4: uuidv4 } = require('uuid');
+const multer = require('multer');
 
 // --- WER Scoring ---------------------------------------------------------------
 
@@ -49,6 +50,50 @@ function tryParse(val) {
 
 module.exports = function communicationRoutes(pool, authenticate, cerebrasChat) {
     const router = express.Router();
+
+    // Multer memory storage for audio uploads (no temp files needed)
+    const audioUpload = multer({
+        storage: multer.memoryStorage(),
+        limits: { fileSize: 15 * 1024 * 1024 }, // 15 MB max
+        fileFilter: (req, file, cb) => {
+            if (file.mimetype.startsWith('audio/')) cb(null, true);
+            else cb(new Error('Only audio files are accepted'));
+        }
+    });
+
+    // POST /comm-test/transcribe — Groq Whisper audio transcription
+    router.post('/comm-test/transcribe', authenticate, audioUpload.single('audio'), async (req, res) => {
+        try {
+            if (!req.file) return res.status(400).json({ success: false, error: 'No audio file uploaded' });
+            const apiKey = process.env.GROQ_API_KEY;
+            if (!apiKey) return res.status(500).json({ success: false, error: 'Transcription service not configured' });
+
+            // Use native FormData + Blob (Node 18+)
+            const formData = new FormData();
+            const audioBlob = new Blob([req.file.buffer], { type: req.file.mimetype || 'audio/webm' });
+            formData.append('file', audioBlob, 'speech.webm');
+            formData.append('model', 'whisper-large-v3-turbo');
+            formData.append('language', 'en');
+            formData.append('response_format', 'json');
+
+            const response = await fetch('https://api.groq.com/openai/v1/audio/transcriptions', {
+                method: 'POST',
+                headers: { Authorization: `Bearer ${apiKey}` },
+                body: formData,
+            });
+
+            if (!response.ok) {
+                const errText = await response.text();
+                console.error('Groq Whisper error:', errText);
+                return res.status(502).json({ success: false, error: 'Transcription service error' });
+            }
+            const data = await response.json();
+            res.json({ success: true, transcript: data.text || '' });
+        } catch (e) {
+            console.error('Transcription error:', e);
+            res.status(500).json({ success: false, error: 'Transcription failed: ' + e.message });
+        }
+    });
 
     function requireAdmin(req, res, next) {
         if (!req.user || req.user.role !== 'admin') {
