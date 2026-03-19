@@ -2,6 +2,7 @@
 import { Routes, Route, useLocation } from 'react-router-dom'
 import { LayoutDashboard, ClipboardList, Code, Send, Trophy, Clock, CheckCircle, XCircle, ChevronRight, Play, Upload, FileText, Trash2, Eye, AlertTriangle, Download, Lightbulb, HelpCircle, Sparkles, Target, Zap, BookOpen, Brain, Award, X, Video, Shield, Search, BarChart2, BarChart3, Flame, Layers, Database, RefreshCw, TrendingUp, Radar, Users, ArrowUpRight, ArrowDownRight, Minus, PieChart, MessageSquare, Github, ExternalLink, Link2, Calendar, Map, Building2, Mic, FlaskConical } from 'lucide-react'
 import DashboardLayout from '@/components/DashboardLayout'
+import { AIPageTransition, AIWelcomeHeader, AISectionDivider, CountUp, DataFlowLine } from '@/components/AIAnimations'
 import AptitudeTestInterface from '@/components/AptitudeTestInterface'
 import GlobalTestInterface from '@/components/GlobalTestInterface'
 import AptitudeReportModal from '@/components/AptitudeReportModal'
@@ -380,7 +381,20 @@ function Dashboard({ user }) {
     const scoreColors = ['#3b82f6', '#10b981', '#a78bfa']
 
     return (
-        <div className="sdash">
+        <AIPageTransition>
+            {/* AI & Data Science Welcome Header */}
+            <AIWelcomeHeader
+                icon={Brain}
+                title={`Welcome back, ${user?.name || 'Student'}`}
+                sub="Your AI & Data Science learning journey at a glance"
+                badges={[
+                    { label: 'Data Explorer',   color: 'rgba(59,130,246,0.12)',  text: '#60a5fa', border: 'rgba(59,130,246,0.25)'  },
+                    { label: 'ML Learner',      color: 'rgba(167,139,250,0.12)', text: '#a78bfa', border: 'rgba(167,139,250,0.25)' },
+                    { label: 'AI Track',        color: 'rgba(6,182,212,0.12)',   text: '#22d3ee', border: 'rgba(6,182,212,0.25)'   },
+                ]}
+            />
+
+            <div className="sdash">
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
                 <h2 style={{ margin: 0, fontSize: '1.25rem', fontWeight: 700 }}>Overview</h2>
                 <button
@@ -406,7 +420,7 @@ function Dashboard({ user }) {
             </div>
 
             {/* Row 1: Stats Cards */}
-            <div className="sdash-stats">
+            <div className="sdash-stats ai-stagger">
                 {[
                     { label: 'Tasks', done: stats.completedTasks, total: stats.totalTasks, icon: <ClipboardList size={20} />, color: '#3b82f6', gradient: 'linear-gradient(135deg, #1e40af, #3b82f6)' },
                     { label: 'Problems', done: stats.completedProblems, total: stats.totalProblems, icon: <Code size={20} />, color: '#10b981', gradient: 'linear-gradient(135deg, #047857, #10b981)' },
@@ -425,7 +439,7 @@ function Dashboard({ user }) {
                                 </div>
                             </div>
                             <div className="sdash-stat-info">
-                                <div className="sdash-stat-val">{s.done}{s.suffix || ''}{!s.suffix && <span className="sdash-stat-dim">/{s.total}</span>}</div>
+                                <div className="sdash-stat-val"><CountUp value={s.done} suffix={s.suffix || ''} />{!s.suffix && <span className="sdash-stat-dim">/{s.total}</span>}</div>
                                 <div className="sdash-stat-lbl">{s.label}</div>
                             </div>
                         </div>
@@ -620,6 +634,7 @@ function Dashboard({ user }) {
                 </div>
             </div>
         </div>
+        </AIPageTransition>
     )
 }
 

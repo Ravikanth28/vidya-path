@@ -4,6 +4,7 @@ import { useI18n } from '../services/i18n.jsx'
 import { Sun, Moon, LogOut, Menu, X, Brain, User, Globe, Wifi, WifiOff, ChevronDown } from 'lucide-react'
 import { useState, useEffect } from 'react'
 import NotificationCenter from './NotificationCenter'
+import { AIDeptBadge, DataFlowLine } from './AIAnimations'
 import './DashboardLayout.css'
 
 function DashboardLayout({ children, navItems, title, subtitle, mentorInfo }) {
@@ -107,6 +108,12 @@ function DashboardLayout({ children, navItems, title, subtitle, mentorInfo }) {
                     >
                         <X size={24} />
                     </button>
+                </div>
+
+                {/* AI & Data Science dept badge + data flow */}
+                <div style={{ padding: '0.5rem 1rem 0.25rem' }}>
+                    <AIDeptBadge />
+                    <DataFlowLine />
                 </div>
 
                 <nav className="sidebar-nav" aria-label={t('navigation')}>
