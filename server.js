@@ -14475,12 +14475,23 @@ async function ensureFrontendEvalTables() {
     const labExerciseRouter = require('./routes/lab_exercise_routes');
     app.use('/api', labExerciseRouter(pool, authenticate, cerebrasChat));
 
+    // ── VidyaPath AI (adaptive learning) ────────────────────────────────────
+    try {
+        const vidyaPathRouter = require('./routes/vp');
+        const vpRouter = await vidyaPathRouter(pool, authenticate);
+        app.use('/api/vp', vpRouter);
+        console.log('🎓 VidyaPath AI mounted at /api/vp');
+    } catch (err) {
+        console.error('⚠️  VidyaPath mount failed:', err.message);
+    }
+
     httpServer.listen(PORT, '0.0.0.0', () => {
         console.log(`🚀 Server running on http://127.0.0.1:${PORT}`);
         console.log('🔌 WebSocket ready for real-time updates');
         console.log('📚 Student Portal: http://127.0.0.1:3000/#/student');
         console.log('👨‍🏫 Mentor Portal: http://127.0.0.1:3000/#/mentor');
         console.log('🛡️ Admin Portal: http://127.0.0.1:3000/#/admin');
+        console.log('🎓 VidyaPath: http://127.0.0.1:3000/#/student/vp');
         console.log('⏰ Message auto-cleanup: every 30 min (24hr expiry)');
     });
 })();

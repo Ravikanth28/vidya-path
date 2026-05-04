@@ -40,6 +40,7 @@ import { StudentAIReviewDashboard } from '@/components/AICodeReview'
 import { CompanyRoadmap, CompanyPrep } from '@/components/CompanyFeatures'
 import CompanyRoundInterface from '@/components/CompanyRoundInterface'
 import YouTubeRecommendations from '@/components/YouTubeRecommendations'
+import VidyaPathHome from './vp/VidyaPathHome'
 import './Portal.css'
 
 const API_BASE = (import.meta.env.VITE_API_URL || 'http://localhost:3000') + '/api'
@@ -184,6 +185,21 @@ function StudentPortal() {
     const navItems = [
         { path: '/student', label: t('dashboard'), icon: <LayoutDashboard size={20} /> },
         {
+            label: t('vp_section') || 'VidyaPath AI',
+            icon: <Sparkles size={20} />,
+            defaultExpanded: true,
+            children: [
+                { path: '/student/vp',                label: t('vp_home') || 'Home',           icon: <LayoutDashboard size={20} /> },
+                { path: '/student/vp/diagnostic',     label: t('vp_diagnostic') || 'Diagnostic', icon: <Brain size={20} /> },
+                { path: '/student/vp/lessons',        label: t('vp_lessons') || 'Lessons',     icon: <BookOpen size={20} /> },
+                { path: '/student/vp/practice',       label: t('vp_practice') || 'Practice',   icon: <Target size={20} /> },
+                { path: '/student/vp/tutor',          label: t('vp_tutor') || 'AI Tutor',      icon: <Sparkles size={20} /> },
+                { path: '/student/vp/careers',        label: t('vp_career_hub') || 'Career Hub', icon: <Building2 size={20} /> },
+                { path: '/student/vp/profile',        label: t('vp_profile') || 'My Profile',  icon: <Award size={20} /> },
+                { path: '/student/vp/notifications',  label: t('vp_notifications') || 'Notifications', icon: <HelpCircle size={20} /> }
+            ]
+        },
+        {
             label: 'Learning',
             icon: <ClipboardList size={20} />,
             defaultExpanded: false,
@@ -267,6 +283,9 @@ function StudentPortal() {
                 <Route path="/frontend-evals" element={<FrontendEvaluationPortal initialTab="tests" />} />
                 <Route path="/frontend-submissions" element={<FrontendEvaluationPortal initialTab="submissions" />} />
                 <Route path="/lab-exercises" element={<StudentLabExercise user={user} />} />
+
+                {/* VidyaPath AI — adaptive learning suite */}
+                <Route path="/vp/*" element={<VidyaPathHome />} />
             </Routes>
         </DashboardLayout>
     )
