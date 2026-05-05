@@ -119,9 +119,9 @@
     border-radius: 0.6rem;
     color: var(--text-muted);
     text-decoration: none;
-    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    transition: color 0.15s ease, background-color 0.15s ease;
     font-weight: 500;
-    font-size: 0.95rem;
+    font-size: 0.875rem;
     position: relative;
     overflow: hidden;
     white-space: nowrap;
@@ -129,13 +129,15 @@
 
 .nav-item:hover {
     color: var(--text-main);
-    background-color: rgba(59, 130, 246, 0.08);
+    background-color: rgba(148, 163, 184, 0.07);
 }
 
 .nav-item.active {
-    background: linear-gradient(90deg, rgba(59, 130, 246, 0.1), rgba(59, 130, 246, 0.05));
-    color: var(--primary);
-    border-left: 3px solid var(--primary);
+    background-color: rgba(59, 130, 246, 0.12);
+    color: #60a5fa;
+    font-weight: 600;
+    border-left: 2px solid #3b82f6;
+    padding-left: calc(1rem - 2px);
 }
 
 /* Connect Alumni – highlighted nav item */
@@ -176,23 +178,24 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 0.8rem 1rem;
+    padding: 0.6rem 1rem;
     background: none;
     border: none;
+    border-radius: 0.5rem;
     cursor: pointer;
-    color: var(--text-muted);
-    font-weight: 600;
-    font-size: 0.9rem;
-    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    color: rgba(148, 163, 184, 0.6);
+    font-weight: 700;
+    font-size: 0.7rem;
+    transition: color 0.15s ease, background-color 0.15s ease;
     text-align: left;
     width: 100%;
     text-transform: uppercase;
-    letter-spacing: 0.5px;
+    letter-spacing: 0.08em;
 }
 
 .nav-group-header:hover {
-    color: var(--text-main);
-    background-color: rgba(59, 130, 246, 0.08);
+    color: var(--text-muted);
+    background-color: rgba(148, 163, 184, 0.07);
 }
 
 .nav-group-left {
@@ -233,27 +236,29 @@
     display: flex;
     align-items: center;
     gap: 0.75rem;
-    padding: 0.65rem 1rem 0.65rem 2.5rem;
+    padding: 0.6rem 1rem 0.6rem 2.5rem;
     color: var(--text-muted);
     text-decoration: none;
-    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-    font-weight: 500;
-    font-size: 0.9rem;
+    transition: color 0.15s ease, background-color 0.15s ease;
+    font-weight: 400;
+    font-size: 0.875rem;
     position: relative;
     overflow: hidden;
     white-space: nowrap;
+    border-radius: 0.5rem;
 }
 
 .nav-sub-item:hover {
     color: var(--text-main);
-    background-color: rgba(59, 130, 246, 0.08);
+    background-color: rgba(148, 163, 184, 0.07);
 }
 
 .nav-sub-item.active {
-    background: linear-gradient(90deg, rgba(59, 130, 246, 0.12), rgba(59, 130, 246, 0.06));
-    color: var(--primary);
-    border-left: 3px solid var(--primary);
-    padding-left: calc(2.5rem - 3px);
+    background-color: rgba(59, 130, 246, 0.12);
+    color: #60a5fa;
+    font-weight: 600;
+    border-left: 2px solid #3b82f6;
+    padding-left: calc(2.5rem - 2px);
 }
 
 .sidebar-footer {

@@ -37,6 +37,8 @@ module.exports = async function vidyaPathRouter(pool, authenticate) {
     router.use('/', require('./profile')(pool, authenticate));
     router.use('/', require('./notifications')(pool, authenticate));
     router.use('/', require('./sync')(pool, authenticate));
+    router.use('/', require('./syllabus')(pool, authenticate));
+    router.use('/', require('./admin')(pool, authenticate));
 
     return router;
 };

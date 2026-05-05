@@ -162,6 +162,10 @@
     50%      { box-shadow: 0 0 0 8px rgba(239, 68, 68, 0); }
 }
 
+/* Spinner utility used by SmartStudy */
+@keyframes vp-spin { to { transform: rotate(360deg); } }
+.spin { animation: vp-spin 0.8s linear infinite; display: inline-block; }
+
 /* Floating tutor */
 .vp-floating-tutor {
     position: fixed;

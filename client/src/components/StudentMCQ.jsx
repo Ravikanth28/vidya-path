@@ -401,7 +401,7 @@ function TakeTest({ test, user, onComplete, onCancel }) {
             <div style={{ display: 'flex', gap: '0.35rem', marginBottom: '1.5rem', flexWrap: 'wrap' }}>
                 {questions.map((_, i) => (
                     <button key={i} onClick={() => setCurrentQ(i)} style={{
-                        width: 32, height: 32, borderRadius: '8px', border: 'none', cursor: 'pointer', fontWeight: 700, fontSize: '0.78rem',
+                        width: 32, height: 32, borderRadius: '8px', cursor: 'pointer', fontWeight: 700, fontSize: '0.78rem',
                         background: currentQ === i ? '#3b82f6' : answers[questions[i]?.id] ? 'rgba(16,185,129,0.15)' : 'var(--bg-card)',
                         color: currentQ === i ? '#fff' : answers[questions[i]?.id] ? '#10b981' : 'var(--text-muted)',
                         border: `1px solid ${currentQ === i ? '#3b82f6' : answers[questions[i]?.id] ? 'rgba(16,185,129,0.4)' : 'var(--border-color)'}`

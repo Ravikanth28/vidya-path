@@ -1,6 +1,6 @@
 ﻿import { useState, useEffect, useRef, useMemo } from 'react'
 import { Routes, Route, useLocation } from 'react-router-dom'
-import { LayoutDashboard, Users, Trophy, Award, List, Search, Send, Activity, CheckCircle, Check, TrendingUp, Clock, Globe, FileCode, Plus, X, Code, ChevronRight, Upload, AlertTriangle, Zap, Target, Sparkles, Bot, Wand2, Eye, FileText, BarChart2, RefreshCw, Calendar, HelpCircle, Trash2, Save, Brain, XCircle, Shield, Download, ClipboardList, Settings, Database, MessageSquare, Github, ExternalLink, BarChart3, Video, Building2, Filter, ChevronDown, Hash, Percent, ArrowUpDown, Link2, Layers, Mic, FlaskConical } from 'lucide-react'
+import { LayoutDashboard, Users, Trophy, Award, List, Search, Send, Activity, CheckCircle, Check, TrendingUp, Clock, Globe, FileCode, Plus, X, Code, ChevronRight, Upload, AlertTriangle, Zap, Target, Sparkles, Bot, Wand2, Eye, FileText, BarChart2, RefreshCw, Calendar, HelpCircle, Trash2, Save, Brain, XCircle, Shield, Download, ClipboardList, Settings, Database, MessageSquare, Github, ExternalLink, BarChart3, Video, Building2, Filter, ChevronDown, Hash, Percent, ArrowUpDown, Link2, Layers, Mic, FlaskConical, BookOpen } from 'lucide-react'
 import { AIPageTransition, AIWelcomeHeader, AIStatCard, AISectionDivider, DataFlowLine, CountUp, AIDeptBadge, NeuralPulseIcon, AILeaderboardHeader, AIOrbitDecor, AIProgressRing, AIBigParticles, AIStatsRow, AISectionCard } from '../components/AIAnimations'
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, BarChart, Bar, Legend } from 'recharts'
 import DashboardLayout from '../components/DashboardLayout'
@@ -27,9 +27,8 @@ import { AdminCertificateManager } from '../components/CertificatePortal'
 import { CompanyTestManager } from '../components/CompanyFeatures'
 import CompanyRoundManager from '../components/CompanyRoundManager'
 import AdminCommTest from '../components/AdminCommTest'
-import AdminFrontendEval from '../components/AdminFrontendEval'
+import AdminVPContent from '../components/AdminVPContent'
 import BatchManager from '../components/BatchManager'
-import AdminLabExercise from '../components/AdminLabExercise'
 import { useAuth } from '../App'
 import { useI18n } from '../services/i18n.jsx'
 import axios from 'axios'
@@ -145,25 +144,13 @@ function AdminPortal() {
                 setTitle('Communication Test')
                 setSubtitle('Manage content, view student reports & analytics')
                 break
-            case 'frontend-evals':
-                setTitle('Frontend Evaluation')
-                setSubtitle('Create frontend use cases and assign them to students')
-                break
-            case 'frontend-submissions':
-                setTitle('Frontend Submissions')
-                setSubtitle('Review uploaded frontend projects and AI reports')
+            case 'vp-content':
+                setTitle('VidyaPath Content')
+                setSubtitle('Manage lessons, quiz items and concepts for VidyaPath AI')
                 break
             case 'batch-add':
                 setTitle('Batch Manager')
                 setSubtitle('Create and manage student batches from CSV uploads')
-                break
-            case 'lab-exercises':
-                setTitle('Lab Exercises')
-                setSubtitle('Create and manage programming, ML, SQL and other coding labs')
-                break
-            case 'lab-submissions':
-                setTitle('Lab Submissions')
-                setSubtitle('Review student lab exercise submissions and AI evaluation reports')
                 break
             default:
                 setTitle(t('dashboard'))
@@ -173,6 +160,14 @@ function AdminPortal() {
 
     const navItems = [
         { path: '/admin', label: t('dashboard'), icon: <LayoutDashboard size={20} /> },
+        {
+            label: 'VidyaPath AI',
+            icon: <Sparkles size={20} />,
+            defaultExpanded: false,
+            children: [
+                { path: '/admin/vp-content', label: 'Content Manager', icon: <BookOpen size={20} /> }
+            ]
+        },
         {
             label: 'Content Management',
             icon: <FileCode size={20} />,
@@ -187,11 +182,9 @@ function AdminPortal() {
                 { path: '/admin/company-round-tests', label: 'Round Tests', icon: <Target size={20} /> },
                 { path: '/admin/resource-links', label: 'Resource Links', icon: <Link2 size={20} /> },
                 { path: '/admin/mcq', label: 'MCQ Manager', icon: <Brain size={20} /> },
-                { path: '/admin/comm-test', label: 'Comm Test', icon: <Mic size={20} /> },
-                { path: '/admin/frontend-evals', label: 'Frontend Eval', icon: <Code size={20} /> }
+                { path: '/admin/comm-test', label: 'Comm Test', icon: <Mic size={20} /> }
             ]
         },
-        { path: '/admin/lab-exercises', label: 'Lab Exercises', icon: <FlaskConical size={20} /> },
         {
             label: 'Allocations',
             icon: <Users size={20} />,
@@ -207,7 +200,6 @@ function AdminPortal() {
             children: [
                 { path: '/admin/all-submissions', label: t('all_submissions'), icon: <List size={20} /> },
                 { path: '/admin/skill-submissions', label: 'Skill Submissions', icon: <Brain size={20} /> },
-                { path: '/admin/frontend-submissions', label: 'Frontend Submissions', icon: <Code size={20} /> },
                 { path: '/admin/live-monitoring', label: t('live_monitoring'), icon: <Activity size={20} /> },
                 { path: '/admin/analytics', label: t('analytics'), icon: <TrendingUp size={20} /> },
                 { path: '/admin/plagiarism', label: 'Plagiarism Dashboard', icon: <Shield size={20} /> },
@@ -228,8 +220,7 @@ function AdminPortal() {
                 { path: '/admin/webhooks', label: 'Webhook Manager', icon: <Zap size={20} /> },
                 { path: '/admin/reports', label: 'Export Reports', icon: <Download size={20} /> }
             ]
-        },
-        { path: '/connect-alumni', label: 'Connect Alumni', icon: <Users size={20} />, highlight: true, external: true }
+        }
     ]
 
     return (
@@ -262,11 +253,8 @@ function AdminPortal() {
                 <Route path="/resource-links" element={<AdminResourceLinks />} />
                 <Route path="/mcq" element={<AdminMCQ />} />
                 <Route path="/comm-test" element={<AdminCommTest />} />
-                <Route path="/frontend-evals" element={<AdminFrontendEval initialTab="tests" />} />
-                <Route path="/frontend-submissions" element={<AdminFrontendEval initialTab="submissions" />} />
+                <Route path="/vp-content" element={<AdminVPContent />} />
                 <Route path="/batch-add" element={<BatchManager />} />
-                <Route path="/lab-exercises" element={<AdminLabExercise initialTab="questions" />} />
-                <Route path="/lab-submissions" element={<AdminLabExercise initialTab="submissions" />} />
             </Routes>
         </DashboardLayout>
     )

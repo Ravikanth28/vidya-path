@@ -12,12 +12,10 @@ import SQLValidator from '@/components/SQLValidator'
 import SQLVisualizer from '@/components/SQLVisualizer'
 import SQLDebugger from '@/components/SQLDebugger'
 import DirectMessaging from '@/components/DirectMessaging'
-import SkillTestPortal from '@/components/SkillTestPortal'
 import SkillSubmissions from '@/components/SkillSubmissions'
 import CodeReviewPanel from '@/components/CodeReviewPanel'
 import ExportReports from '@/components/ExportReports'
 import PlagiarismChecker from '@/components/PlagiarismChecker'
-import MentorAvailabilityView from '@/components/MentorAvailabilityView'
 import FeaturesShowcase from '@/components/FeaturesShowcase'
 import { useAuth } from '../App'
 import { useI18n } from '../services/i18n.jsx'
@@ -33,13 +31,9 @@ import { RiskScoreCard, RecommendationsPanel } from '@/components/AnalyticsCompo
 import StudentResourceLinks from '@/components/StudentResourceLinks'
 import StudentMCQ from '@/components/StudentMCQ'
 import CommunicationTest from '@/components/CommunicationTest'
-import FrontendEvaluationPortal from '@/components/FrontendEvaluationPortal'
-import StudentLabExercise from '@/components/StudentLabExercise'
+import VPProfile from './vp/VPProfile'
 import CertificatePortal from '@/components/CertificatePortal'
 import { StudentAIReviewDashboard } from '@/components/AICodeReview'
-import { CompanyRoadmap, CompanyPrep } from '@/components/CompanyFeatures'
-import CompanyRoundInterface from '@/components/CompanyRoundInterface'
-import YouTubeRecommendations from '@/components/YouTubeRecommendations'
 import VidyaPathHome from './vp/VidyaPathHome'
 import './Portal.css'
 
@@ -62,7 +56,6 @@ function StudentPortal() {
     const location = useLocation()
     const [title, setTitle] = useState('')
     const [subtitle, setSubtitle] = useState('')
-    const [mentorInfo, setMentorInfo] = useState(null)
     const [unreadCount, setUnreadCount] = useState(0)
 
     // Poll for unread messages
@@ -79,19 +72,6 @@ function StudentPortal() {
         const interval = setInterval(fetchUnread, 15000)
         return () => clearInterval(interval)
     }, [user])
-
-    // Fetch mentor info once
-    useEffect(() => {
-        if (user?.id) {
-            axios.get(`${API_BASE}/analytics/student/${user.id}`)
-                .then(res => {
-                    if (res.data.mentorInfo) {
-                        setMentorInfo(res.data.mentorInfo)
-                    }
-                })
-                .catch(err => console.error('Error fetching mentor info:', err))
-        }
-    }, [user?.id])
 
     useEffect(() => {
         const path = location.pathname.split('/').pop()
@@ -124,33 +104,9 @@ function StudentPortal() {
                 setTitle('Messages')
                 setSubtitle('Chat with your mentor')
                 break
-            case 'skill-tests':
-                setTitle('Skill Tests')
-                setSubtitle('AI-powered skill assessments')
-                break
             case 'skill-submissions':
                 setTitle('Skill Test Submissions')
                 setSubtitle('View your skill test results & reports')
-                break
-            case 'connect-alumni':
-                setTitle('Connect Alumni')
-                setSubtitle('Network with alumni for career growth')
-                break
-            case 'company-roadmap':
-                setTitle('Company Roadmap')
-                setSubtitle('Your personalized guide to crack top companies')
-                break
-            case 'company-prep':
-                setTitle('Company Preparation')
-                setSubtitle('AI-powered interactive interview drills')
-                break
-            case 'company-round-tests':
-                setTitle('Company Round Tests')
-                setSubtitle('Take company first round assessments')
-                break
-            case 'youtube':
-                setTitle('YouTube Learning Resources')
-                setSubtitle('AI-curated top 5 YouTube videos for any topic you ask')
                 break
             case 'resource-links':
                 setTitle('Resource Links')
@@ -164,17 +120,9 @@ function StudentPortal() {
                 setTitle('Communication Test')
                 setSubtitle('AI-powered English speaking & grammar assessment')
                 break
-            case 'frontend-evals':
-                setTitle('Frontend Evaluation')
-                setSubtitle('Complete assigned frontend use cases and upload your project')
-                break
-            case 'frontend-submissions':
-                setTitle('Frontend Submissions')
-                setSubtitle('Review your frontend evaluation reports')
-                break
-            case 'lab-exercises':
-                setTitle('Lab Exercises')
-                setSubtitle('Complete your assigned coding and data labs')
+            case 'profile':
+                setTitle('My Profile')
+                setSubtitle('View your learning profile, badges, and gamification stats')
                 break
             default:
                 setTitle(t('dashboard'))
@@ -183,20 +131,19 @@ function StudentPortal() {
     }, [location, user, t])
 
     const navItems = [
-        { path: '/student', label: t('dashboard'), icon: <LayoutDashboard size={20} /> },
+        { path: '/student', label: t('dashboard'), icon: <LayoutDashboard size={20} />, end: true },
         {
             label: t('vp_section') || 'VidyaPath AI',
             icon: <Sparkles size={20} />,
             defaultExpanded: true,
             children: [
-                { path: '/student/vp',                label: t('vp_home') || 'Home',           icon: <LayoutDashboard size={20} /> },
+                { path: '/student/vp',                label: t('vp_home') || 'Home',           icon: <LayoutDashboard size={20} />, end: true },
                 { path: '/student/vp/diagnostic',     label: t('vp_diagnostic') || 'Diagnostic', icon: <Brain size={20} /> },
-                { path: '/student/vp/lessons',        label: t('vp_lessons') || 'Lessons',     icon: <BookOpen size={20} /> },
+                { path: '/student/vp/resources',     label: 'Resources',              icon: <BookOpen size={20} /> },
                 { path: '/student/vp/practice',       label: t('vp_practice') || 'Practice',   icon: <Target size={20} /> },
                 { path: '/student/vp/tutor',          label: t('vp_tutor') || 'AI Tutor',      icon: <Sparkles size={20} /> },
                 { path: '/student/vp/careers',        label: t('vp_career_hub') || 'Career Hub', icon: <Building2 size={20} /> },
-                { path: '/student/vp/profile',        label: t('vp_profile') || 'My Profile',  icon: <Award size={20} /> },
-                { path: '/student/vp/notifications',  label: t('vp_notifications') || 'Notifications', icon: <HelpCircle size={20} /> }
+                { path: '/student/vp/smart-study',    label: 'Smart Study',                      icon: <FlaskConical size={20} /> }
             ]
         },
         {
@@ -208,18 +155,11 @@ function StudentPortal() {
                 { path: '/student/assignments', label: t('coding_problems'), icon: <Code size={20} /> },
                 { path: '/student/aptitude', label: t('aptitude_tests'), icon: <Brain size={20} /> },
                 { path: '/student/global-tests', label: t('global_complete_tests'), icon: <Layers size={20} /> },
-                { path: '/student/skill-tests', label: 'Skill Tests', icon: <Target size={20} /> },
-                { path: '/student/company-roadmap', label: 'Company Roadmap', icon: <Map size={20} /> },
-                { path: '/student/company-prep', label: 'Company Prep', icon: <Building2 size={20} /> },
-                { path: '/student/company-round-tests', label: 'Round Tests', icon: <Target size={20} /> },
-                { path: '/student/youtube', label: 'YouTube Resources', icon: <BookOpen size={20} /> },
                 { path: '/student/resource-links', label: 'Resource Links', icon: <Link2 size={20} /> },
                 { path: '/student/mcq', label: 'MCQ Tests', icon: <Brain size={20} /> },
-                { path: '/student/comm-test', label: 'Comm Test', icon: <Mic size={20} /> },
-                { path: '/student/frontend-evals', label: 'Frontend Eval', icon: <Code size={20} /> }
+                { path: '/student/comm-test', label: 'Comm Test', icon: <Mic size={20} /> }
             ]
         },
-        { path: '/student/lab-exercises', label: 'Lab Exercises', icon: <FlaskConical size={20} /> },
         {
             label: 'Progress & Analytics',
             icon: <TrendingUp size={20} />,
@@ -228,8 +168,7 @@ function StudentPortal() {
                 { path: '/student/submissions', label: t('my_submissions'), icon: <Send size={20} /> },
                 { path: '/student/skill-submissions', label: 'Skill Submissions', icon: <Target size={20} /> },
                 { path: '/student/certificates', label: 'My Certificates', icon: <Award size={20} /> },
-                { path: '/student/reports', label: 'Export Reports', icon: <Download size={20} /> },
-                { path: '/student/frontend-submissions', label: 'Frontend Submissions', icon: <Code size={20} /> }
+                { path: '/student/reports', label: 'Export Reports', icon: <Download size={20} /> }
             ]
         },
         {
@@ -242,26 +181,17 @@ function StudentPortal() {
                 { path: '/student/plagiarism', label: 'Plagiarism Check', icon: <AlertTriangle size={20} /> }
             ]
         },
-        {
-            label: 'My Mentor',
-            icon: <Calendar size={20} />,
-            defaultExpanded: false,
-            children: [
-                { path: '/student/availability', label: 'Mentor Availability', icon: <Calendar size={20} /> }
-            ]
-        },
-        { path: '/connect-alumni', label: 'Connect Alumni', icon: <Users size={20} />, highlight: true, external: true }
+        { path: '/student/profile', label: 'My Profile', icon: <Award size={20} /> }
     ]
 
     return (
-        <DashboardLayout navItems={navItems} title={title} subtitle={subtitle} mentorInfo={mentorInfo}>
+        <DashboardLayout navItems={navItems} title={title} subtitle={subtitle}>
             <Routes>
                 <Route path="/" element={<Dashboard user={user} />} />
                 <Route path="/tasks" element={<Tasks key={user?.id} user={user} />} />
                 <Route path="/assignments" element={<Assignments key={user?.id} user={user} />} />
                 <Route path="/aptitude" element={<AptitudeTests user={user} />} />
                 <Route path="/global-tests" element={<GlobalTests user={user} />} />
-                <Route path="/skill-tests" element={<SkillTestPortal user={user} />} />
                 <Route path="/skill-submissions" element={<SkillSubmissions user={user} />} />
                 <Route path="/submissions" element={<Submissions user={user} />} />
 
@@ -270,21 +200,12 @@ function StudentPortal() {
                 <Route path="/ai-reviews" element={<StudentAIReviewDashboard user={user} />} />
                 <Route path="/plagiarism" element={<PlagiarismChecker user={user} />} />
 
-                <Route path="/availability" element={<MentorAvailabilityView user={user} />} />
                 <Route path="/certificates" element={<CertificatePortal user={user} />} />
                 <Route path="/features" element={<FeaturesShowcase />} />
-                <Route path="/company-roadmap" element={<CompanyRoadmap user={user} />} />
-                <Route path="/company-prep" element={<CompanyPrep user={user} />} />
-                <Route path="/company-round-tests" element={<CompanyRoundInterface user={user} />} />
-                <Route path="/youtube" element={<YouTubeRecommendations user={user} />} />
                 <Route path="/resource-links" element={<StudentResourceLinks user={user} />} />
                 <Route path="/mcq" element={<StudentMCQ user={user} />} />
                 <Route path="/comm-test" element={<CommunicationTest user={user} />} />
-                <Route path="/frontend-evals" element={<FrontendEvaluationPortal initialTab="tests" />} />
-                <Route path="/frontend-submissions" element={<FrontendEvaluationPortal initialTab="submissions" />} />
-                <Route path="/lab-exercises" element={<StudentLabExercise user={user} />} />
-
-                {/* VidyaPath AI — adaptive learning suite */}
+                <Route path="/profile" element={<VPProfile />} />
                 <Route path="/vp/*" element={<VidyaPathHome />} />
             </Routes>
         </DashboardLayout>

@@ -14489,6 +14489,17 @@ async function ensureFrontendEvalTables() {
         console.error('⚠️  VidyaPath mount failed:', err.message);
     }
 
+    httpServer.on('error', (err) => {
+        if (err.code === 'EADDRINUSE') {
+            console.error(`\n❌  Port ${PORT} is already in use.`);
+            console.error(`   Run this to free it, then restart:\n`);
+            console.error(`   PowerShell:  Stop-Process -Id (netstat -ano | findstr ":${PORT}.*LISTEN" | ForEach-Object { ($_ -split "\\s+")[-1] }) -Force\n`);
+            process.exit(1);
+        } else {
+            throw err;
+        }
+    });
+
     httpServer.listen(PORT, '0.0.0.0', () => {
         console.log(`🚀 Server running on http://127.0.0.1:${PORT}`);
         console.log('🔌 WebSocket ready for real-time updates');

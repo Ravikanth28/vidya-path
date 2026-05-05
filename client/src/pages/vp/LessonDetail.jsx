@@ -88,7 +88,7 @@ export default function LessonDetail() {
 
     return (
         <div>
-            <Link to="/student/vp/lessons" className="vp-btn vp-btn-secondary"><ArrowLeft size={14} /> {t('back') || 'Back'}</Link>
+            <Link to="/student/vp/resources" className="vp-btn vp-btn-secondary"><ArrowLeft size={14} /> {t('back') || 'Back'}</Link>
             <h1 className="vp-h1" style={{ marginTop: 16 }}>{lesson.title}</h1>
             <p className="vp-text-sm">{lesson.subject} {offline && '· Offline'}</p>
 

@@ -7,7 +7,7 @@ import NotificationCenter from './NotificationCenter'
 import { AIDeptBadge, DataFlowLine } from './AIAnimations'
 import './DashboardLayout.css'
 
-function DashboardLayout({ children, navItems, title, subtitle, mentorInfo }) {
+function DashboardLayout({ children, navItems, title, subtitle }) {
     const { user, logout } = useAuth()
     const { theme, toggleTheme } = useTheme()
     const { t, locale, setLocale, languages } = useI18n()
@@ -120,7 +120,9 @@ function DashboardLayout({ children, navItems, title, subtitle, mentorInfo }) {
                     {navItems.map((item) => {
                         // Group with children (collapsible)
                         if (item.children && item.children.length > 0) {
-                            const isExpanded = expandedGroups[item.label] || item.defaultExpanded || false
+                            const isExpanded = item.label in expandedGroups
+                                ? expandedGroups[item.label]
+                                : (item.defaultExpanded || false)
                             return (
                                 <div key={item.label} className="nav-group">
                                     <button
@@ -146,6 +148,7 @@ function DashboardLayout({ children, navItems, title, subtitle, mentorInfo }) {
                                                 <NavLink
                                                     key={idx}
                                                     to={child.path}
+                                                    end={child.end || false}
                                                     className={({ isActive }) => `nav-item nav-sub-item ${isActive ? 'active' : ''}`}
                                                     onClick={() => setSidebarOpen(false)}
                                                     aria-current={({ isActive }) => isActive ? 'page' : undefined}
@@ -310,17 +313,6 @@ function DashboardLayout({ children, navItems, title, subtitle, mentorInfo }) {
                         </div>
                         {/* Notifications */}
                         <NotificationCenter />
-                        {mentorInfo && (
-                            <div className="mentor-badge-nav">
-                                <div className="mentor-avatar-nav" aria-hidden="true">
-                                    {mentorInfo.name.charAt(0).toUpperCase()}
-                                </div>
-                                <div className="mentor-details-nav">
-                                    <span className="mentor-label-nav">{t('my_mentor')}</span>
-                                    <span className="mentor-name-nav">{mentorInfo.name}</span>
-                                </div>
-                            </div>
-                        )}
                     </div>
                 </header>
 

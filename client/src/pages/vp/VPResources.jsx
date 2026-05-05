@@ -1,21 +1,18 @@
 import { useState } from 'react'
-import { Map, Building2, Target, Brain } from 'lucide-react'
+import { BookOpen, Youtube } from 'lucide-react'
 import { useAuth } from '../../App'
-import { CompanyRoadmap, CompanyPrep } from '@/components/CompanyFeatures'
-import CompanyRoundInterface from '@/components/CompanyRoundInterface'
-import SkillTestPortal from '@/components/SkillTestPortal'
+import LessonsList from './LessonsList'
+import YouTubeRecommendations from '@/components/YouTubeRecommendations'
 
 const TABS = [
-    { key: 'roadmap',     label: 'Company Roadmap', icon: <Map size={16} /> },
-    { key: 'prep',        label: 'Company Prep',    icon: <Building2 size={16} /> },
-    { key: 'round-tests', label: 'Round Tests',     icon: <Target size={16} /> },
-    { key: 'skill-tests', label: 'Skill Tests',     icon: <Brain size={16} /> }
+    { key: 'lessons', label: 'Lessons',           icon: <BookOpen size={16} /> },
+    { key: 'youtube', label: 'YouTube Resources',  icon: <Youtube size={16} /> }
 ]
 
-export default function CareerHub() {
+export default function VPResources() {
     const auth = useAuth()
     const user = auth?.user
-    const [tab, setTab] = useState('roadmap')
+    const [tab, setTab] = useState('lessons')
 
     return (
         <div>
@@ -45,10 +42,8 @@ export default function CareerHub() {
                 ))}
             </div>
 
-            {tab === 'roadmap'     && <CompanyRoadmap user={user} />}
-            {tab === 'prep'        && <CompanyPrep user={user} />}
-            {tab === 'round-tests' && <CompanyRoundInterface user={user} />}
-            {tab === 'skill-tests' && <SkillTestPortal user={user} />}
+            {tab === 'lessons' && <LessonsList />}
+            {tab === 'youtube' && <YouTubeRecommendations user={user} />}
         </div>
     )
 }

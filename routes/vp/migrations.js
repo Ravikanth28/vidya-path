@@ -204,6 +204,61 @@ const SQL = [
         diagnostic_done TINYINT(1) DEFAULT 0,
         xp_points INT DEFAULT 0,
         updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+    )`,
+
+    /* ── Smart Study tables ──────────────────────────────────────────────── */
+    `CREATE TABLE IF NOT EXISTS vp_syllabi (
+        id VARCHAR(48) PRIMARY KEY,
+        student_id VARCHAR(64) NOT NULL,
+        title VARCHAR(255) NOT NULL,
+        subject VARCHAR(96),
+        raw_text MEDIUMTEXT,
+        status ENUM('processing','ready','error') DEFAULT 'processing',
+        error_msg TEXT,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        INDEX idx_vp_syl_student (student_id)
+    )`,
+    `CREATE TABLE IF NOT EXISTS vp_syllabus_units (
+        id VARCHAR(48) PRIMARY KEY,
+        syllabus_id VARCHAR(48) NOT NULL,
+        unit_number INT DEFAULT 1,
+        title VARCHAR(255) NOT NULL,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        INDEX idx_vp_su_syllabus (syllabus_id)
+    )`,
+    `CREATE TABLE IF NOT EXISTS vp_syllabus_topics (
+        id VARCHAR(48) PRIMARY KEY,
+        unit_id VARCHAR(48) NOT NULL,
+        syllabus_id VARCHAR(48) NOT NULL,
+        title VARCHAR(255) NOT NULL,
+        notes MEDIUMTEXT,
+        notes_status ENUM('none','generating','ready','error') DEFAULT 'none',
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        INDEX idx_vp_st_unit (unit_id),
+        INDEX idx_vp_st_syllabus (syllabus_id)
+    )`,
+    `CREATE TABLE IF NOT EXISTS vp_smart_tests (
+        id VARCHAR(48) PRIMARY KEY,
+        syllabus_id VARCHAR(48) NOT NULL,
+        student_id VARCHAR(64) NOT NULL,
+        topic_ids JSON,
+        questions JSON,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        INDEX idx_vp_stest_student (student_id),
+        INDEX idx_vp_stest_syllabus (syllabus_id)
+    )`,
+    `CREATE TABLE IF NOT EXISTS vp_smart_attempts (
+        id VARCHAR(48) PRIMARY KEY,
+        test_id VARCHAR(48) NOT NULL,
+        student_id VARCHAR(64) NOT NULL,
+        answers JSON,
+        score INT DEFAULT 0,
+        total INT DEFAULT 0,
+        weak_topics JSON,
+        recommendations JSON,
+        completed_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        INDEX idx_vp_sa_student (student_id),
+        INDEX idx_vp_sa_test (test_id)
     )`
 ];
 
