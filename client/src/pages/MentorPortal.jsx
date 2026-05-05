@@ -118,7 +118,7 @@ function MentorPortal() {
     const navItems = [
         { path: '/mentor', label: t('dashboard'), icon: <LayoutDashboard size={20} /> },
         {
-            label: 'Content Management',
+            label: t('content_management'),
             icon: <FileCode size={20} />,
             defaultExpanded: false,
             children: [
@@ -126,12 +126,12 @@ function MentorPortal() {
                 { path: '/mentor/upload-problems', label: t('upload_problems'), icon: <FileCode size={20} /> },
                 { path: '/mentor/aptitude-tests', label: t('aptitude_tests'), icon: <Target size={20} /> },
                 { path: '/mentor/global-tests', label: t('global_complete_tests'), icon: <ClipboardList size={20} /> },
-                { path: '/mentor/skill-tests', label: 'Skill Tests', icon: <Brain size={20} /> },
-                { path: '/mentor/teacher-notes', label: "Teacher's Notes", icon: <BookOpen size={20} /> }
+                { path: '/mentor/skill-tests', label: t('skill_tests'), icon: <Brain size={20} /> },
+                { path: '/mentor/teacher-notes', label: t('teacher_notes'), icon: <BookOpen size={20} /> }
             ]
         },
         {
-            label: 'Monitoring',
+            label: t('monitoring'),
             icon: <Activity size={20} />,
             defaultExpanded: false,
             children: [
@@ -139,21 +139,21 @@ function MentorPortal() {
                 { path: '/mentor/all-submissions', label: t('all_submissions'), icon: <List size={20} /> },
                 { path: '/mentor/analytics', label: t('analytics'), icon: <TrendingUp size={20} /> },
                 { path: '/mentor/live-monitoring', label: t('live_monitoring'), icon: <Activity size={20} /> },
-                { path: '/mentor/code-reviews', label: 'Code Reviews', icon: <Code size={20} /> },
-                { path: '/mentor/ai-reviews', label: 'AI Code Reviews', icon: <Zap size={20} /> }
+                { path: '/mentor/code-reviews', label: t('code_reviews'), icon: <Code size={20} /> },
+                { path: '/mentor/ai-reviews', label: t('ai_code_reviews'), icon: <Zap size={20} /> }
             ]
         },
         {
-            label: 'Tools',
+            label: t('tools'),
             icon: <Settings size={20} />,
             defaultExpanded: false,
             children: [
-                { path: '/mentor/availability', label: 'Availability Calendar', icon: <Calendar size={20} /> },
-                { path: '/mentor/reports', label: 'Export Reports', icon: <Download size={20} /> }
+                { path: '/mentor/availability', label: t('availability_calendar'), icon: <Calendar size={20} /> },
+                { path: '/mentor/reports', label: t('export_reports'), icon: <Download size={20} /> }
             ]
         },
-        { path: '/mentor/messaging', label: 'Messaging', icon: <Mail size={20} />, badge: unreadCount },
-        { path: '/connect-alumni', label: 'Connect Alumni', icon: <Users size={20} />, highlight: true, external: true }
+        { path: '/mentor/messaging', label: t('messaging'), icon: <Mail size={20} />, badge: unreadCount },
+        { path: '/connect-alumni', label: t('connect_alumni'), icon: <Users size={20} />, highlight: true, external: true }
     ]
 
     return (

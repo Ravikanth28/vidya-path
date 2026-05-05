@@ -165,16 +165,16 @@ function AdminPortal() {
     const navItems = [
         { path: '/admin', label: t('dashboard'), icon: <LayoutDashboard size={20} /> },
         {
-            label: 'VidyaPath AI',
+            label: t('vp_section'),
             icon: <Sparkles size={20} />,
             defaultExpanded: false,
             children: [
-                { path: '/admin/vp-content', label: 'Content Manager', icon: <BookOpen size={20} /> },
-                { path: '/admin/teacher-notes', label: "Teacher's Notes", icon: <Upload size={20} /> }
+                { path: '/admin/vp-content', label: t('content_manager'), icon: <BookOpen size={20} /> },
+                { path: '/admin/teacher-notes', label: t('teacher_notes'), icon: <Upload size={20} /> }
             ]
         },
         {
-            label: 'Content Management',
+            label: t('content_management'),
             icon: <FileCode size={20} />,
             defaultExpanded: false,
             children: [
@@ -182,16 +182,16 @@ function AdminPortal() {
                 { path: '/admin/global-problems', label: t('global_problems'), icon: <FileCode size={20} /> },
                 { path: '/admin/aptitude-tests', label: t('aptitude_tests'), icon: <Target size={20} /> },
                 { path: '/admin/global-tests', label: t('global_complete_tests'), icon: <ClipboardList size={20} /> },
-                { path: '/admin/skill-tests', label: 'Skill Tests', icon: <Brain size={20} /> },
-                { path: '/admin/company-tests', label: 'Company Tests', icon: <Building2 size={20} /> },
-                { path: '/admin/company-round-tests', label: 'Round Tests', icon: <Target size={20} /> },
-                { path: '/admin/resource-links', label: 'Resource Links', icon: <Link2 size={20} /> },
-                { path: '/admin/mcq', label: 'MCQ Manager', icon: <Brain size={20} /> },
-                { path: '/admin/comm-test', label: 'Comm Test', icon: <Mic size={20} /> }
+                { path: '/admin/skill-tests', label: t('skill_tests'), icon: <Brain size={20} /> },
+                { path: '/admin/company-tests', label: t('company_tests'), icon: <Building2 size={20} /> },
+                { path: '/admin/company-round-tests', label: t('round_tests'), icon: <Target size={20} /> },
+                { path: '/admin/resource-links', label: t('resource_links'), icon: <Link2 size={20} /> },
+                { path: '/admin/mcq', label: t('mcq_manager'), icon: <Brain size={20} /> },
+                { path: '/admin/comm-test', label: t('comm_test'), icon: <Mic size={20} /> }
             ]
         },
         {
-            label: 'Allocations',
+            label: t('allocations_group'),
             icon: <Users size={20} />,
             defaultExpanded: false,
             children: [
@@ -199,31 +199,31 @@ function AdminPortal() {
             ]
         },
         {
-            label: 'Monitoring',
+            label: t('monitoring'),
             icon: <Activity size={20} />,
             defaultExpanded: false,
             children: [
                 { path: '/admin/all-submissions', label: t('all_submissions'), icon: <List size={20} /> },
-                { path: '/admin/skill-submissions', label: 'Skill Submissions', icon: <Brain size={20} /> },
+                { path: '/admin/skill-submissions', label: t('skill_submissions'), icon: <Brain size={20} /> },
                 { path: '/admin/live-monitoring', label: t('live_monitoring'), icon: <Activity size={20} /> },
                 { path: '/admin/analytics', label: t('analytics'), icon: <TrendingUp size={20} /> },
-                { path: '/admin/plagiarism', label: 'Plagiarism Dashboard', icon: <Shield size={20} /> },
-                { path: '/admin/code-reviews', label: 'Code Reviews', icon: <Github size={20} /> },
-                { path: '/admin/ai-reviews', label: 'AI Code Reviews', icon: <Bot size={20} /> }
+                { path: '/admin/plagiarism', label: t('plagiarism_dashboard'), icon: <Shield size={20} /> },
+                { path: '/admin/code-reviews', label: t('code_reviews'), icon: <Github size={20} /> },
+                { path: '/admin/ai-reviews', label: t('ai_code_reviews'), icon: <Bot size={20} /> }
             ]
         },
         {
-            label: 'System',
+            label: t('system'),
             icon: <Settings size={20} />,
             defaultExpanded: false,
             children: [
                 { path: '/admin/operations', label: t('admin_operations'), icon: <Settings size={20} /> },
-                { path: '/admin/user-management', label: 'User Management', icon: <Shield size={20} /> },
-                { path: '/admin/login-activity', label: 'Login Activity', icon: <ClipboardList size={20} /> },
-                { path: '/admin/batch-add', label: 'Batch Add', icon: <Database size={20} /> },
-                { path: '/admin/certificates', label: 'Issue Certificates', icon: <Award size={20} /> },
-                { path: '/admin/webhooks', label: 'Webhook Manager', icon: <Zap size={20} /> },
-                { path: '/admin/reports', label: 'Export Reports', icon: <Download size={20} /> }
+                { path: '/admin/user-management', label: t('user_management'), icon: <Shield size={20} /> },
+                { path: '/admin/login-activity', label: t('login_activity'), icon: <ClipboardList size={20} /> },
+                { path: '/admin/batch-add', label: t('batch_add'), icon: <Database size={20} /> },
+                { path: '/admin/certificates', label: t('issue_certificates'), icon: <Award size={20} /> },
+                { path: '/admin/webhooks', label: t('webhook_manager'), icon: <Zap size={20} /> },
+                { path: '/admin/reports', label: t('export_reports'), icon: <Download size={20} /> }
             ]
         }
     ]

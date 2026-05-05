@@ -139,15 +139,16 @@ function StudentPortal() {
             children: [
                 { path: '/student/vp',                label: t('vp_home') || 'Home',           icon: <LayoutDashboard size={20} />, end: true },
                 { path: '/student/vp/diagnostic',     label: t('vp_diagnostic') || 'Diagnostic', icon: <Brain size={20} /> },
-                { path: '/student/vp/resources',     label: 'Resources',              icon: <BookOpen size={20} /> },
+                { path: '/student/vp/resources',     label: t('resources'),              icon: <BookOpen size={20} /> },
                 { path: '/student/vp/practice',       label: t('vp_practice') || 'Practice',   icon: <Target size={20} /> },
                 { path: '/student/vp/tutor',          label: t('vp_tutor') || 'AI Tutor',      icon: <Sparkles size={20} /> },
                 { path: '/student/vp/careers',        label: t('vp_career_hub') || 'Career Hub', icon: <Building2 size={20} /> },
-                { path: '/student/vp/smart-study',    label: 'Smart Study',                      icon: <FlaskConical size={20} /> }
+                { path: '/student/vp/smart-study',    label: t('smart_study'),                   icon: <FlaskConical size={20} /> },
+                { path: '/student/vp/personalized',   label: t('personalized_study') || 'Personalized Study', icon: <Target size={20} /> }
             ]
         },
         {
-            label: 'Learning',
+            label: t('learning'),
             icon: <ClipboardList size={20} />,
             defaultExpanded: false,
             children: [
@@ -155,33 +156,33 @@ function StudentPortal() {
                 { path: '/student/assignments', label: t('coding_problems'), icon: <Code size={20} /> },
                 { path: '/student/aptitude', label: t('aptitude_tests'), icon: <Brain size={20} /> },
                 { path: '/student/global-tests', label: t('global_complete_tests'), icon: <Layers size={20} /> },
-                { path: '/student/resource-links', label: 'Resource Links', icon: <Link2 size={20} /> },
-                { path: '/student/mcq', label: 'MCQ Tests', icon: <Brain size={20} /> },
-                { path: '/student/comm-test', label: 'Comm Test', icon: <Mic size={20} /> }
+                { path: '/student/resource-links', label: t('resource_links'), icon: <Link2 size={20} /> },
+                { path: '/student/mcq', label: t('mcq_tests'), icon: <Brain size={20} /> },
+                { path: '/student/comm-test', label: t('comm_test'), icon: <Mic size={20} /> }
             ]
         },
         {
-            label: 'Progress & Analytics',
+            label: t('progress_analytics'),
             icon: <TrendingUp size={20} />,
             defaultExpanded: false,
             children: [
                 { path: '/student/submissions', label: t('my_submissions'), icon: <Send size={20} /> },
-                { path: '/student/skill-submissions', label: 'Skill Submissions', icon: <Target size={20} /> },
-                { path: '/student/certificates', label: 'My Certificates', icon: <Award size={20} /> },
-                { path: '/student/reports', label: 'Export Reports', icon: <Download size={20} /> }
+                { path: '/student/skill-submissions', label: t('skill_submissions'), icon: <Target size={20} /> },
+                { path: '/student/certificates', label: t('my_certificates'), icon: <Award size={20} /> },
+                { path: '/student/reports', label: t('export_reports'), icon: <Download size={20} /> }
             ]
         },
         {
-            label: 'Review & Collaboration',
+            label: t('review_collaboration'),
             icon: <Github size={20} />,
             defaultExpanded: false,
             children: [
-                { path: '/student/code-reviews', label: 'Code Reviews', icon: <Github size={20} /> },
-                { path: '/student/ai-reviews', label: 'AI Code Reviews', icon: <Zap size={20} /> },
-                { path: '/student/plagiarism', label: 'Plagiarism Check', icon: <AlertTriangle size={20} /> }
+                { path: '/student/code-reviews', label: t('code_reviews'), icon: <Github size={20} /> },
+                { path: '/student/ai-reviews', label: t('ai_code_reviews'), icon: <Zap size={20} /> },
+                { path: '/student/plagiarism', label: t('plagiarism_check'), icon: <AlertTriangle size={20} /> }
             ]
         },
-        { path: '/student/profile', label: 'My Profile', icon: <Award size={20} /> }
+        { path: '/student/profile', label: t('my_profile'), icon: <Award size={20} /> }
     ]
 
     return (

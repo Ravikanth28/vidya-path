@@ -1,11 +1,11 @@
-// Service Worker for AI Mentor Hub PWA
-// Features: Caching, Offline Support, Background Sync
+// Service Worker for VidyaPath AI PWA
+// Features: App shell caching, offline fallback, network-first for API
 
-const CACHE_NAME = 'mentor-hub-v1'
-const API_CACHE = 'mentor-hub-api-v1'
+const CACHE_NAME = 'vidyapath-v2'
+const API_CACHE  = 'vidyapath-api-v2'
 const OFFLINE_URL = '/offline.html'
 
-// Static assets to pre-cache
+// Static assets to pre-cache (app shell)
 const STATIC_ASSETS = [
     '/',
     '/index.html',
@@ -13,11 +13,15 @@ const STATIC_ASSETS = [
     '/manifest.json'
 ]
 
-// API routes to cache with network-first strategy
-const API_ROUTES = [
-    '/api/users',
-    '/api/problems',
-    '/api/tasks'
+// VidyaPath API prefixes — network-first, cache fallback when offline
+// (GET requests to these paths will be cached for offline use)
+const CACHEABLE_API_PREFIXES = [
+    '/api/vp/study/syllabi',
+    '/api/vp/lessons',
+    '/api/vp/profile',
+    '/api/vp/quiz',
+    '/api/users/me',
+    '/api/leaderboard'
 ]
 
 // Install: pre-cache static assets
@@ -65,9 +69,10 @@ self.addEventListener('fetch', (event) => {
         return
     }
 
-    // API requests: Network-first with cache fallback
+    // API requests: Network-first, cache GET responses for offline use
     if (url.pathname.startsWith('/api/')) {
-        event.respondWith(networkFirstStrategy(request))
+        const isCacheable = CACHEABLE_API_PREFIXES.some(p => url.pathname.startsWith(p))
+        event.respondWith(networkFirstStrategy(request, isCacheable))
         return
     }
 
@@ -88,10 +93,10 @@ self.addEventListener('fetch', (event) => {
 })
 
 // Network-first strategy (API calls, dynamic content)
-async function networkFirstStrategy(request) {
+async function networkFirstStrategy(request, shouldCache = false) {
     try {
         const response = await fetch(request)
-        if (response.ok) {
+        if (response.ok && shouldCache && request.method === 'GET') {
             const cache = await caches.open(API_CACHE)
             cache.put(request, response.clone())
         }

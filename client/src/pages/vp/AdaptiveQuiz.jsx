@@ -116,6 +116,7 @@ export default function AdaptiveQuiz() {
                 )}
                 <div className="vp-row vp-mt-24">
                     <Link to={`/student/vp/lessons/${id}`} className="vp-btn vp-btn-primary">Back to lesson</Link>
+                    <Link to="/student/vp/personalized" className="vp-btn vp-btn-primary">View your learning path</Link>
                     <Link to="/student/vp/practice" className="vp-btn">Practice more</Link>
                 </div>
             </div>

@@ -1,7 +1,7 @@
 import { NavLink, useLocation, useNavigate } from 'react-router-dom'
 import { useAuth, useTheme } from '../App'
 import { useI18n } from '../services/i18n.jsx'
-import { Sun, Moon, LogOut, Menu, X, Brain, User, Globe, Wifi, WifiOff, ChevronDown } from 'lucide-react'
+import { Sun, Moon, LogOut, Menu, X, Brain, User, Globe, Wifi, WifiOff, ChevronDown, Download } from 'lucide-react'
 import { useState, useEffect } from 'react'
 import NotificationCenter from './NotificationCenter'
 import { AIDeptBadge, DataFlowLine } from './AIAnimations'
@@ -15,6 +15,8 @@ function DashboardLayout({ children, navItems, title, subtitle }) {
     const [isOnline, setIsOnline] = useState(navigator.onLine)
     const [showLangMenu, setShowLangMenu] = useState(false)
     const [expandedGroups, setExpandedGroups] = useState({})
+    const [installPrompt, setInstallPrompt] = useState(null)
+    const [appInstalled, setAppInstalled] = useState(false)
     const location = useLocation()
     const navigateTo = useNavigate()
 
@@ -44,6 +46,21 @@ function DashboardLayout({ children, navItems, title, subtitle }) {
             window.removeEventListener('offline', goOffline)
         }
     }, [])
+
+    // PWA install prompt
+    useEffect(() => {
+        const handler = (e) => { e.preventDefault(); setInstallPrompt(e) }
+        window.addEventListener('beforeinstallprompt', handler)
+        window.addEventListener('appinstalled', () => { setAppInstalled(true); setInstallPrompt(null) })
+        return () => window.removeEventListener('beforeinstallprompt', handler)
+    }, [])
+
+    const handleInstall = async () => {
+        if (!installPrompt) return
+        installPrompt.prompt()
+        const { outcome } = await installPrompt.userChoice
+        if (outcome === 'accepted') { setAppInstalled(true); setInstallPrompt(null) }
+    }
 
     // Close sidebar on escape
     useEffect(() => {
@@ -310,6 +327,68 @@ function DashboardLayout({ children, navItems, title, subtitle }) {
                         >
                             {isOnline ? <Wifi size={14} /> : <WifiOff size={14} />}
                             <span className="sr-only">{isOnline ? 'Online' : 'Offline'}</span>
+                        </div>
+                        {/* PWA Install button */}
+                        {installPrompt && !appInstalled && (
+                            <button
+                                onClick={handleInstall}
+                                title="Install app for offline use"
+                                style={{
+                                    display: 'flex', alignItems: 'center', gap: '0.35rem',
+                                    background: 'linear-gradient(135deg,#6366f1,#8b5cf6)',
+                                    border: 'none', borderRadius: '8px',
+                                    padding: '0.3rem 0.7rem', cursor: 'pointer',
+                                    color: '#fff', fontSize: '0.78rem', fontWeight: 600
+                                }}
+                            >
+                                <Download size={13} /> Install App
+                            </button>
+                        )}
+                        {/* Header Language Switcher */}
+                        <div style={{ position: 'relative' }}>
+                            <button
+                                onClick={() => setShowLangMenu(v => !v)}
+                                aria-label="Change language"
+                                aria-expanded={showLangMenu}
+                                style={{
+                                    display: 'flex', alignItems: 'center', gap: '0.3rem',
+                                    background: 'var(--bg-card)', border: '1px solid var(--border-color)',
+                                    borderRadius: '8px', padding: '0.3rem 0.65rem', cursor: 'pointer',
+                                    color: 'var(--text)', fontSize: '0.8rem', fontWeight: 600
+                                }}
+                            >
+                                <Globe size={14} />
+                                <span>{languages.find(l => l.code === locale)?.flag}</span>
+                                <span>{locale.toUpperCase()}</span>
+                            </button>
+                            {showLangMenu && (
+                                <div style={{
+                                    position: 'absolute', top: 'calc(100% + 6px)', right: 0,
+                                    background: 'var(--bg-card)', border: '1px solid var(--border-color)',
+                                    borderRadius: '10px', overflow: 'hidden', minWidth: '140px',
+                                    boxShadow: '0 8px 24px rgba(0,0,0,0.18)', zIndex: 200
+                                }} role="listbox" aria-label="Select language">
+                                    {languages.map(lang => (
+                                        <button
+                                            key={lang.code}
+                                            role="option"
+                                            aria-selected={locale === lang.code}
+                                            onClick={() => { setLocale(lang.code); setShowLangMenu(false) }}
+                                            style={{
+                                                width: '100%', padding: '0.55rem 1rem', border: 'none',
+                                                background: locale === lang.code ? 'var(--primary-alpha)' : 'transparent',
+                                                color: 'var(--text)', cursor: 'pointer', textAlign: 'left',
+                                                display: 'flex', alignItems: 'center', gap: '0.5rem',
+                                                fontSize: '0.85rem', fontWeight: locale === lang.code ? 700 : 400,
+                                                transition: 'background 0.15s'
+                                            }}
+                                        >
+                                            <span>{lang.flag}</span>
+                                            <span>{lang.nativeName}</span>
+                                        </button>
+                                    ))}
+                                </div>
+                            )}
                         </div>
                         {/* Notifications */}
                         <NotificationCenter />

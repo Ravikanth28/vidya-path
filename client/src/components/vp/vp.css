@@ -245,3 +245,13 @@
     text-align: center;
     color: var(--text-secondary, #94a3b8);
 }
+
+/* Spinner animation for Loader2/RefreshCw icons */
+@keyframes vp-spin {
+    from { transform: rotate(0deg); }
+    to   { transform: rotate(360deg); }
+}
+.spin {
+    animation: vp-spin 1s linear infinite;
+    display: inline-block;
+}

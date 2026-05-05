@@ -27,6 +27,9 @@ export const vpApi = {
     practiceRecommended: () => axios.get(`${BASE}/practice/recommended`).then(r => r.data),
     practiceCompleted:   () => axios.get(`${BASE}/practice/completed`).then(r => r.data),
 
+    // Personalized Study
+    personalized: () => axios.get(`${BASE}/personalized`).then(r => r.data),
+
     // Voice tutor
     tutorText:     (body) => axios.post(`${BASE}/voice-tutor/text`, body).then(r => r.data),
     tutorVoice:    (formData) => axios.post(`${BASE}/voice-tutor/voice`, formData, { headers: { 'Content-Type': 'multipart/form-data' } }).then(r => r.data),

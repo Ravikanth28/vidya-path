@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { GraduationCap, BookOpen, Target, Briefcase, Sparkles, Award } from 'lucide-react'
+import { GraduationCap, BookOpen, Target, Briefcase, Sparkles, Award, Brain } from 'lucide-react'
 import vpApi from '@/services/vp/api'
 import { useI18n } from '@/services/i18n'
 
@@ -54,6 +54,10 @@ export default function VPDashboard() {
                 <StatCard icon={<Sparkles size={18} />} title="AI Tutor"
                     value="Ask anything"
                     link="/student/vp/tutor" linkLabel="Open tutor" />
+
+                <StatCard icon={<Brain size={18} />} title="Personalized Study"
+                    value="Your learning path"
+                    link="/student/vp/personalized" linkLabel="View plan" />
             </div>
 
             <h2 className="vp-h2">{t('vp_recommended') || 'Recommended for you'}</h2>

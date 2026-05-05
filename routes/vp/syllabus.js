@@ -73,6 +73,40 @@ module.exports = function syllabusRoutes(pool, authenticate) {
         'bn-IN': 'Bengali', 'gu-IN': 'Gujarati', 'mr-IN': 'Marathi'
     };
 
+    /**
+     * Split notes content into sections based on emoji section headers.
+     * Matches the same set of emojis used by the NoteRenderer on the frontend.
+     */
+    const SECTION_EMOJI_RE = /^[📌🔑📐❓💡🔬⚡🧠🔗✅📝✨🎯🔷💎⭐🌟]/u;
+    function splitNotesIntoSections(content) {
+        const lines = content.split('\n');
+        const sections = [];
+        let curTitle = null;
+        let curLines = [];
+        for (const line of lines) {
+            const trimmed = line.trim();
+            const isHeader = SECTION_EMOJI_RE.test(trimmed) || /^#{1,3}\s+\S/.test(trimmed);
+            if (isHeader) {
+                if (curTitle !== null && curLines.join('\n').trim()) {
+                    sections.push({ title: curTitle, content: curLines.join('\n').trim() });
+                }
+                // Strip leading emoji and markdown # for a clean title
+                curTitle = trimmed
+                    .replace(/^#{1,3}\s*/, '')
+                    .replace(SECTION_EMOJI_RE, '')
+                    .replace(/:$/, '')
+                    .trim() || trimmed;
+                curLines = [line];
+            } else {
+                curLines.push(line);
+            }
+        }
+        if (curTitle !== null && curLines.join('\n').trim()) {
+            sections.push({ title: curTitle, content: curLines.join('\n').trim() });
+        }
+        return sections.length ? sections : [{ title: 'Full Notes', content }];
+    }
+
     async function extractText(file) {
         const mime = file.mimetype || '';
         if (mime === 'application/pdf') {
@@ -448,11 +482,12 @@ Make it rigorous, exhaustive, and suitable for advanced competitive exam prepara
     });
 
     // ── POST /study/syllabi/:id/topics/:tid/notes/explain ────────────────────
-    // Generates a conversational audio explanation of the notes using LLM + Sarvam TTS
+    // Generates a conversational audio explanation of ONE section of the notes
     router.post('/study/syllabi/:id/topics/:tid/notes/explain', authenticate, async (req, res) => {
         const sid        = String(req.user.id);
         const difficulty = ['easy','medium','hard'].includes(req.body?.difficulty) ? req.body.difficulty : 'medium';
         const language   = req.body?.language || 'en-IN';
+        const sectionIndex = req.body?.section_index != null ? Number(req.body.section_index) : 0;
 
         try {
             const [[syl]] = await pool.query(
@@ -471,10 +506,17 @@ Make it rigorous, exhaustive, and suitable for advanced competitive exam prepara
             const noteData = map[difficulty];
             if (!noteData?.content) return res.status(400).json({ error: 'Notes not ready. Generate notes first.' });
 
-            const langName = EXPLAIN_LANG_NAMES[language] || 'English';
+            // Split notes into sections and pick the requested one
+            const sections     = splitNotesIntoSections(noteData.content);
+            const totalSections = sections.length;
+            const sectionTitles = sections.map(s => s.title);
+            const idx           = (sectionIndex >= 0 && sectionIndex < totalSections) ? sectionIndex : 0;
+            const section       = sections[idx];
+
+            const langName  = EXPLAIN_LANG_NAMES[language] || 'English';
             const diffLabel = difficulty === 'easy' ? 'beginner' : difficulty === 'medium' ? 'intermediate' : 'advanced';
 
-            // ── LLM: generate conversational explanation ───────────────────
+            // ── LLM: generate conversational explanation for this section ──
             const { text: explanationText } = await llmChat({
                 messages: [
                     {
@@ -483,14 +525,14 @@ Make it rigorous, exhaustive, and suitable for advanced competitive exam prepara
                     },
                     {
                         role: 'user',
-                        content: `Using these study notes about "${topic.title}" (${syl.subject || syl.title}):\n\n${noteData.content}\n\nCreate a natural spoken explanation that:\n- Sounds like a real teacher talking, NOT reading notes\n- Uses simple language, real-world analogies, and stories\n- Flows naturally from one idea to the next\n- Highlights the 3-4 most important concepts\n- Is 300-450 words (2-3 minutes when spoken)\n\nIMPORTANT: Write ONLY in ${langName}. No bullet points, no headers, no asterisks — only flowing paragraphs.`
+                        content: `Topic: "${topic.title}" — Section: "${section.title}"\nSubject: ${syl.subject || syl.title}\n\nSection content:\n${section.content}\n\nExplain ONLY this section naturally as a teacher speaking to a student:\n- Use simple language and real-world analogies\n- Highlight the 2-3 key points from this specific section\n- Be conversational and engaging\n- Keep it 100-180 words (45-75 seconds when spoken)\n\nIMPORTANT: Write ONLY in ${langName}. No bullet points, no headers — only flowing spoken paragraphs.`
                     }
                 ],
-                maxTokens: 700,
+                maxTokens: 350,
                 temperature: 0.72
             });
 
-            // ── TTS: split into ≤1400-char chunks, call Sarvam ────────────
+            // ── TTS: convert explanation to audio ─────────────────────────
             const sarvam = require('../../services/vp/sarvam');
             const chunks  = [];
             const sents   = explanationText.split(/(?<=[।.!?])\s+/);
@@ -510,12 +552,16 @@ Make it rigorous, exhaustive, and suitable for advanced competitive exam prepara
             const mergedAudio = mergeWavBase64(audioB64s);
 
             res.json({
-                ok: true,
+                ok:               true,
                 explanation_text: explanationText,
                 audio_b64:        mergedAudio || '',
                 audio_mime:       'audio/wav',
                 tts_available:    !!mergedAudio,
-                language
+                language,
+                section_index:    idx,
+                section_title:    section.title,
+                total_sections:   totalSections,
+                section_titles:   sectionTitles
             });
         } catch (err) { res.status(500).json({ error: err.message }); }
     });

@@ -418,21 +418,55 @@ function NotesPanel({ sylId, topic, syllabus }) {
     const [polling,      setPolling]      = useState(null)
     const [err,          setErr]          = useState(null)
     const [dlLoading,    setDlLoading]    = useState(null)
+    const [fromCache,    setFromCache]    = useState(false)  // true when notes loaded from localStorage
     // voice explain state
-    const [explainLang,  setExplainLang]  = useState('en-IN')
-    const [explaining,   setExplaining]   = useState(null) // null | 'loading' | 'playing'
-    const [explainText,  setExplainText]  = useState(null)
-    const [showText,     setShowText]     = useState(false)
-    const [showLangMenu, setShowLangMenu] = useState(false)
-    const [langMenuPos,  setLangMenuPos]  = useState({ top: 0, right: 0 })
+    const [explainLang,       setExplainLang]       = useState('en-IN')
+    const [explaining,        setExplaining]         = useState(null) // null | 'loading' | 'playing'
+    const [explainText,       setExplainText]        = useState(null)
+    const [showText,          setShowText]           = useState(false)
+    const [showLangMenu,      setShowLangMenu]       = useState(false)
+    const [langMenuPos,       setLangMenuPos]        = useState({ top: 0, right: 0 })
+    // part-by-part state
+    const [explainPartIdx,    setExplainPartIdx]     = useState(0)
+    const [explainTotalParts, setExplainTotalParts]  = useState(0)
+    const [explainPartTitles, setExplainPartTitles]  = useState([])
+    const explainPartIdxRef = useRef(0)  // ref so audio.onended closure sees current value
     const langBtnRef = useRef(null)
     const audioRef = useRef(null)
 
-    useEffect(() => { setNotesMap(parseNotesMap(topic.notes)) }, [topic.notes])
+    const CACHE_KEY = `vp_notes_${sylId}_${topic.id}`
+
+    // Save to localStorage whenever a difficulty becomes ready
+    useEffect(() => {
+        const hasReady = Object.values(notesMap).some(v => v?.status === 'ready')
+        if (hasReady) {
+            try { localStorage.setItem(CACHE_KEY, JSON.stringify(notesMap)) } catch {}
+        }
+    }, [notesMap, CACHE_KEY])
+
+    useEffect(() => {
+        const fresh = parseNotesMap(topic.notes)
+        // If we have live notes, use them and cache them
+        const hasLive = Object.values(fresh).some(v => v?.status === 'ready')
+        if (hasLive) {
+            setNotesMap(fresh); setFromCache(false)
+        } else if (!navigator.onLine) {
+            // Offline and no live notes — try localStorage
+            try {
+                const cached = localStorage.getItem(CACHE_KEY)
+                if (cached) { setNotesMap(JSON.parse(cached)); setFromCache(true) }
+                else setNotesMap(fresh)
+            } catch { setNotesMap(fresh) }
+        } else {
+            setNotesMap(fresh)
+        }
+    }, [topic.notes, CACHE_KEY])
     // Stop audio when switching difficulty
     useEffect(() => {
         if (audioRef.current) { audioRef.current.pause(); audioRef.current = null }
         setExplaining(null); setExplainText(null); setShowText(false)
+        setExplainPartIdx(0); setExplainTotalParts(0); setExplainPartTitles([])
+        explainPartIdxRef.current = 0
     }, [activeDiff])
 
     // Close lang menu on outside click
@@ -490,18 +524,23 @@ function NotesPanel({ sylId, topic, syllabus }) {
         finally { setDlLoading(null) }
     }
 
-    const handleExplain = async () => {
+    const handleExplain = async (partIdx = 0) => {
         if (explaining === 'playing') {
             if (audioRef.current) { audioRef.current.pause(); audioRef.current = null }
             setExplaining(null); return
         }
         setErr(null); setExplaining('loading')
+        explainPartIdxRef.current = partIdx
         try {
             const { data } = await axios.post(
                 `${API}/study/syllabi/${sylId}/topics/${topic.id}/notes/explain`,
-                { difficulty: activeDiff, language: explainLang },
+                { difficulty: activeDiff, language: explainLang, section_index: partIdx },
                 { headers: authH() }
             )
+            // update part metadata (use ?? 0 to guard against missing field)
+            setExplainPartIdx(data.section_index ?? 0)
+            setExplainTotalParts(data.total_sections || 1)
+            setExplainPartTitles(data.section_titles || [])
             setExplainText(data.explanation_text)
             setShowText(true)
             if (data.tts_available && data.audio_b64) {
@@ -509,7 +548,16 @@ function NotesPanel({ sylId, topic, syllabus }) {
                 const url  = URL.createObjectURL(blob)
                 const audio = new Audio(url)
                 audioRef.current = audio
-                audio.onended = () => { setExplaining(null); URL.revokeObjectURL(url) }
+                audio.onended = () => {
+                    URL.revokeObjectURL(url)
+                    const nextIdx = explainPartIdxRef.current + 1
+                    if (nextIdx < (data.total_sections || 1)) {
+                        // auto-play next part
+                        handleExplain(nextIdx)
+                    } else {
+                        setExplaining(null)
+                    }
+                }
                 audio.onerror = (e) => { console.error('Audio playback error', e); setExplaining(null) }
                 try {
                     await audio.play()
@@ -521,7 +569,7 @@ function NotesPanel({ sylId, topic, syllabus }) {
                 }
             } else {
                 setExplaining(null)
-                if (!data.tts_available) setErr('Audio unavailable — Sarvam TTS not configured on server. Showing text only.')
+                if (!data.tts_available) setErr('Audio could not be generated. Text explanation is shown below — click Explain again to retry audio.')
             }
         } catch (e) {
             setErr(e.response?.data?.error || e.message); setExplaining(null)
@@ -640,6 +688,26 @@ function NotesPanel({ sylId, topic, syllabus }) {
                                 }}>{D.label.toUpperCase()}</span>
                                 <CheckCircle2 size={13} color="#10b981" />
                                 <span style={{ color: '#475569', fontSize: '0.78rem' }}>Notes ready</span>
+                                {fromCache && (
+                                    <span style={{
+                                        background: 'rgba(245,158,11,0.15)', border: '1px solid rgba(245,158,11,0.35)',
+                                        color: '#f59e0b', borderRadius: 6, padding: '2px 8px',
+                                        fontSize: '0.72rem', fontWeight: 600
+                                    }} title="Loaded from offline cache">
+                                        📦 Cached
+                                    </span>
+                                )}
+                                {/* Part progress indicator — only show when notes have multiple sections */}
+                                {explainTotalParts > 1 && (
+                                    <span style={{
+                                        background: 'rgba(139,92,246,0.15)', border: '1px solid rgba(139,92,246,0.35)',
+                                        color: '#c4b5fd', borderRadius: 6, padding: '2px 8px',
+                                        fontSize: '0.72rem', fontWeight: 600
+                                    }}>
+                                        Part {explainPartIdx + 1}/{explainTotalParts}
+                                        {explainPartTitles[explainPartIdx] ? ` · ${explainPartTitles[explainPartIdx]}` : ''}
+                                    </span>
+                                )}
                             </div>
 
                             {/* Right: actions */}
@@ -647,9 +715,9 @@ function NotesPanel({ sylId, topic, syllabus }) {
                                 {/* Voice Explain + Lang selector */}
                                 <div style={{ display: 'flex', alignItems: 'center', gap: 0, border: `1.5px solid ${explaining === 'playing' ? D.border : 'rgba(139,92,246,.4)'}`, borderRadius: 8, overflow: 'hidden' }}>
                                     <button
-                                        onClick={handleExplain}
+                                        onClick={() => explaining === 'playing' ? handleExplain() : handleExplain(0)}
                                         disabled={explaining === 'loading'}
-                                        title={explaining === 'playing' ? 'Stop' : 'AI Voice Explanation'}
+                                        title={explaining === 'playing' ? 'Stop' : 'AI Voice Explanation — part by part'}
                                         style={{
                                             display: 'inline-flex', alignItems: 'center', gap: 5,
                                             padding: '6px 12px', cursor: 'pointer',
@@ -662,7 +730,11 @@ function NotesPanel({ sylId, topic, syllabus }) {
                                         {explaining === 'loading' ? <Loader2 size={13} className="spin" />
                                             : explaining === 'playing' ? <StopCircle size={13} />
                                             : <Volume2 size={13} />}
-                                        {explaining === 'loading' ? 'Generating…' : explaining === 'playing' ? 'Stop' : 'Explain'}
+                                        {explaining === 'loading'
+                                            ? `Generating${explainTotalParts > 0 ? ` part ${explainPartIdx + 1}/${explainTotalParts}` : ''}…`
+                                            : explaining === 'playing'
+                                                ? `Stop · Part ${explainPartIdx + 1}/${explainTotalParts || '?'}`
+                                                : 'Explain Part by Part'}
                                     </button>
                                     {/* Language selector */}
                                     <div ref={langBtnRef} style={{ position: 'relative' }}>
@@ -763,7 +835,9 @@ function NotesPanel({ sylId, topic, syllabus }) {
                                     }}
                                 >
                                     <Volume2 size={13} />
-                                    AI Explanation Script
+                                    {explainTotalParts > 1
+                                        ? `Part ${explainPartIdx + 1}/${explainTotalParts} · ${explainPartTitles[explainPartIdx] || 'AI Explanation'}`
+                                        : 'AI Explanation Script'}
                                     {showText ? <ChevronUp size={13} style={{ marginLeft: 'auto' }} /> : <ChevronDown size={13} style={{ marginLeft: 'auto' }} />}
                                 </button>
                                 {showText && (

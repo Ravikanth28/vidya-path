@@ -1,9 +1,10 @@
 import { useState, useEffect, useRef } from 'react'
 import { useAuth } from '../App'
+import { useI18n, LANGUAGES } from '../services/i18n.jsx'
 import {
     Mail, Lock, ArrowRight, Brain, X,
     Shield, GraduationCap, User,
-    Sparkles, Database, Network, Cpu, BarChart3, Code2
+    Sparkles, Database, Network, Cpu, BarChart3, Code2, Globe
 } from 'lucide-react'
 import './Login.css'
 
@@ -172,7 +173,9 @@ function Login() {
     const [error, setError] = useState('')
     const [loading, setLoading] = useState(false)
     const [showLoginPanel, setShowLoginPanel] = useState(false)
+    const [showLangMenu, setShowLangMenu] = useState(false)
     const { login } = useAuth()
+    const { locale, setLocale } = useI18n()
 
     const handleSubmit = async (e) => {
         e.preventDefault()
@@ -198,9 +201,52 @@ function Login() {
                     <Brain className="logo-icon-svg" size={28} />
                     <span className="logo-text">Mentor Hub</span>
                 </div>
-                <button className="nav-login-btn" onClick={() => setShowLoginPanel(true)}>
-                    Login <ArrowRight size={16} />
-                </button>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                    {/* Language Switcher */}
+                    <div style={{ position: 'relative' }}>
+                        <button
+                            onClick={() => setShowLangMenu(v => !v)}
+                            style={{
+                                display: 'flex', alignItems: 'center', gap: '0.35rem',
+                                background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.15)',
+                                borderRadius: '8px', padding: '0.4rem 0.75rem', cursor: 'pointer',
+                                color: '#fff', fontSize: '0.8rem', fontWeight: 600, backdropFilter: 'blur(8px)'
+                            }}
+                        >
+                            <Globe size={14} />
+                            <span>{LANGUAGES.find(l => l.code === locale)?.flag}</span>
+                            <span>{locale.toUpperCase()}</span>
+                        </button>
+                        {showLangMenu && (
+                            <div style={{
+                                position: 'absolute', top: 'calc(100% + 6px)', right: 0,
+                                background: 'rgba(15,20,40,0.96)', border: '1px solid rgba(255,255,255,0.12)',
+                                borderRadius: '10px', overflow: 'hidden', minWidth: '140px',
+                                boxShadow: '0 8px 24px rgba(0,0,0,0.4)', zIndex: 200, backdropFilter: 'blur(12px)'
+                            }}>
+                                {LANGUAGES.map(lang => (
+                                    <button
+                                        key={lang.code}
+                                        onClick={() => { setLocale(lang.code); setShowLangMenu(false) }}
+                                        style={{
+                                            width: '100%', padding: '0.55rem 1rem', border: 'none',
+                                            background: locale === lang.code ? 'rgba(99,102,241,0.25)' : 'transparent',
+                                            color: '#fff', cursor: 'pointer', textAlign: 'left',
+                                            display: 'flex', alignItems: 'center', gap: '0.5rem',
+                                            fontSize: '0.85rem', fontWeight: locale === lang.code ? 700 : 400
+                                        }}
+                                    >
+                                        <span>{lang.flag}</span>
+                                        <span>{lang.nativeName}</span>
+                                    </button>
+                                ))}
+                            </div>
+                        )}
+                    </div>
+                    <button className="nav-login-btn" onClick={() => setShowLoginPanel(true)}>
+                        Login <ArrowRight size={16} />
+                    </button>
+                </div>
             </nav>
 
             {/* Main Content */}

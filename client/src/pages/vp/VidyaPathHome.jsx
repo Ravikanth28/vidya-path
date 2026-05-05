@@ -18,6 +18,7 @@ import CareerHub        from './CareerHub'
 import VPProfile        from './VPProfile'
 import VPVoiceTutorPage from './VPVoiceTutorPage'
 import SmartStudy from './SmartStudy'
+import PersonalizedStudy from './PersonalizedStudy'
 
 import '@/components/vp/vp.css'
 
@@ -60,6 +61,7 @@ export default function VidyaPathHome() {
                     <Route path="careers"      element={<CareerHub />} />
                     <Route path="profile"      element={<VPProfile />} />
                     <Route path="smart-study"  element={<SmartStudy />} />
+                    <Route path="personalized" element={<PersonalizedStudy />} />
                 </Routes>
             </div>
             <FloatingTutor />
