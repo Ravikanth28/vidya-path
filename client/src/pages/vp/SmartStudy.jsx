@@ -8,7 +8,8 @@ import {
     Upload, FileText, BookOpen, ChevronRight, ChevronDown, Download,
     Loader2, CheckCircle2, XCircle, Youtube, RefreshCw,
     Target, Trash2, AlertTriangle, ArrowLeft,
-    Award, NotebookPen, FlaskConical, Sparkles, PlusCircle
+    Award, NotebookPen, FlaskConical, Sparkles, PlusCircle,
+    Volume2, StopCircle, Globe, ChevronUp
 } from 'lucide-react'
 
 const API = (import.meta.env.VITE_API_URL || 'http://localhost:3000') + '/api/vp'
@@ -152,6 +153,24 @@ const DIFFICULTIES = [
     { key: 'medium', label: 'Medium', color: '#f59e0b', bg: 'rgba(245,158,11,.14)',  border: 'rgba(245,158,11,.4)' },
     { key: 'hard',   label: 'Hard',   color: '#ef4444', bg: 'rgba(239,68,68,.14)',   border: 'rgba(239,68,68,.4)'  },
 ]
+
+const EXPLAIN_LANGS = [
+    { code: 'en-IN', name: 'English',    native: 'English' },
+    { code: 'hi-IN', name: 'Hindi',      native: 'हिन्दी' },
+    { code: 'ta-IN', name: 'Tamil',      native: 'தமிழ்' },
+    { code: 'te-IN', name: 'Telugu',     native: 'తెలుగు' },
+    { code: 'kn-IN', name: 'Kannada',    native: 'ಕನ್ನಡ' },
+    { code: 'ml-IN', name: 'Malayalam',  native: 'മലയാളം' },
+    { code: 'bn-IN', name: 'Bengali',    native: 'বাংলা' },
+    { code: 'gu-IN', name: 'Gujarati',   native: 'ગુજરાતી' },
+    { code: 'mr-IN', name: 'Marathi',    native: 'मराठी' },
+]
+
+function base64ToBlob(b64, mime) {
+    const bin = atob(b64); const bytes = new Uint8Array(bin.length)
+    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i)
+    return new Blob([bytes], { type: mime })
+}
 
 function parseNotesMap(raw) {
     if (!raw) return {}
@@ -335,35 +354,113 @@ async function downloadDOCX(content, topicTitle, difficulty, subject) {
     URL.revokeObjectURL(url)
 }
 
-/* ─── Notes Panel (difficulty selector + download) ───────────────────────── */
+/* ─── Note Renderer — styled section display ─────────────────────────────── */
+function NoteRenderer({ content, diffColor }) {
+    const lines = content.split('\n')
+    return (
+        <div style={{ display: 'flex', flexDirection: 'column' }}>
+            {lines.map((line, i) => {
+                const t = line.trim()
+                if (!t) return <div key={i} style={{ height: 8 }} />
+
+                const isSection = /^[📌🔑📐❓💡🔬⚡🧠🔗✅📝✨🎯🔷💎⭐🌟]/.test(t)
+                const isBullet  = /^[•\-*→·]\s/.test(t)
+                const isNum     = /^\d+[.)]\s/.test(t)
+
+                if (isSection) return (
+                    <div key={i} style={{
+                        marginTop: 22, marginBottom: 10,
+                        paddingBottom: 8, borderBottom: `1.5px solid ${diffColor}30`
+                    }}>
+                        <span style={{ fontSize: '0.95rem', fontWeight: 700, color: diffColor, letterSpacing: '0.01em' }}>
+                            {t}
+                        </span>
+                    </div>
+                )
+
+                if (isBullet) {
+                    const text = t.replace(/^[•\-*→·]\s*/, '')
+                    return (
+                        <div key={i} style={{ display: 'flex', gap: 10, paddingLeft: 6, marginBottom: 6, alignItems: 'flex-start' }}>
+                            <span style={{ color: diffColor, flexShrink: 0, marginTop: 5, fontSize: '0.55rem', opacity: 0.9 }}>◆</span>
+                            <span style={{ color: '#e2e8f0', lineHeight: 1.8, fontSize: '0.875rem' }}>{text}</span>
+                        </div>
+                    )
+                }
+
+                if (isNum) {
+                    const m = t.match(/^(\d+[.)]\s*)(.*)/)
+                    return (
+                        <div key={i} style={{ display: 'flex', gap: 10, paddingLeft: 6, marginBottom: 6, alignItems: 'flex-start' }}>
+                            <span style={{ color: diffColor, flexShrink: 0, fontWeight: 700, fontSize: '0.8rem', minWidth: 24, paddingTop: 2 }}>
+                                {m[1].trim()}
+                            </span>
+                            <span style={{ color: '#e2e8f0', lineHeight: 1.8, fontSize: '0.875rem' }}>{m[2]}</span>
+                        </div>
+                    )
+                }
+
+                return (
+                    <p key={i} style={{
+                        color: '#94a3b8', lineHeight: 1.85, fontSize: '0.875rem',
+                        margin: '0 0 4px', paddingLeft: 6
+                    }}>{t}</p>
+                )
+            })}
+        </div>
+    )
+}
+
+/* ─── Notes Panel (difficulty selector + voice explain + download) ────────── */
 function NotesPanel({ sylId, topic, syllabus }) {
-    const [activeDiff, setActiveDiff] = useState('medium')
-    const [notesMap,   setNotesMap]   = useState(() => parseNotesMap(topic.notes))
-    const [polling,    setPolling]    = useState(null)  // diff key currently being generated
-    const [err,        setErr]        = useState(null)
-    const [dlLoading,  setDlLoading]  = useState(null) // 'pdf'|'docx'
+    const [activeDiff,   setActiveDiff]   = useState('medium')
+    const [notesMap,     setNotesMap]     = useState(() => parseNotesMap(topic.notes))
+    const [polling,      setPolling]      = useState(null)
+    const [err,          setErr]          = useState(null)
+    const [dlLoading,    setDlLoading]    = useState(null)
+    // voice explain state
+    const [explainLang,  setExplainLang]  = useState('en-IN')
+    const [explaining,   setExplaining]   = useState(null) // null | 'loading' | 'playing'
+    const [explainText,  setExplainText]  = useState(null)
+    const [showText,     setShowText]     = useState(false)
+    const [showLangMenu, setShowLangMenu] = useState(false)
+    const [langMenuPos,  setLangMenuPos]  = useState({ top: 0, right: 0 })
+    const langBtnRef = useRef(null)
+    const audioRef = useRef(null)
 
     useEffect(() => { setNotesMap(parseNotesMap(topic.notes)) }, [topic.notes])
+    // Stop audio when switching difficulty
+    useEffect(() => {
+        if (audioRef.current) { audioRef.current.pause(); audioRef.current = null }
+        setExplaining(null); setExplainText(null); setShowText(false)
+    }, [activeDiff])
 
-    const D = DIFFICULTIES.find(d => d.key === activeDiff)
+    // Close lang menu on outside click
+    useEffect(() => {
+        if (!showLangMenu) return
+        const handler = (e) => {
+            if (langBtnRef.current && !langBtnRef.current.contains(e.target)) setShowLangMenu(false)
+        }
+        document.addEventListener('mousedown', handler)
+        return () => document.removeEventListener('mousedown', handler)
+    }, [showLangMenu])
+
+    const D       = DIFFICULTIES.find(d => d.key === activeDiff)
     const current = notesMap[activeDiff] || { status: 'none' }
 
-    const generate = async (diff) => {
+    const generate = async (diff, force = false) => {
         if (polling === diff) return
-        setErr(null)
-        setPolling(diff)
+        setErr(null); setPolling(diff)
         setNotesMap(prev => ({ ...prev, [diff]: { status: 'generating' } }))
         try {
             await axios.post(
                 `${API}/study/syllabi/${sylId}/topics/${topic.id}/notes`,
-                { difficulty: diff },
+                { difficulty: diff, force },
                 { headers: authH() }
             )
         } catch (e) {
-            setErr(e.response?.data?.error || e.message)
-            setPolling(null)
-            setNotesMap(prev => ({ ...prev, [diff]: { status: 'error' } }))
-            return
+            setErr(e.response?.data?.error || e.message); setPolling(null)
+            setNotesMap(prev => ({ ...prev, [diff]: { status: 'error' } })); return
         }
         let tries = 0
         const timer = setInterval(async () => {
@@ -393,40 +490,74 @@ function NotesPanel({ sylId, topic, syllabus }) {
         finally { setDlLoading(null) }
     }
 
+    const handleExplain = async () => {
+        if (explaining === 'playing') {
+            if (audioRef.current) { audioRef.current.pause(); audioRef.current = null }
+            setExplaining(null); return
+        }
+        setErr(null); setExplaining('loading')
+        try {
+            const { data } = await axios.post(
+                `${API}/study/syllabi/${sylId}/topics/${topic.id}/notes/explain`,
+                { difficulty: activeDiff, language: explainLang },
+                { headers: authH() }
+            )
+            setExplainText(data.explanation_text)
+            setShowText(true)
+            if (data.tts_available && data.audio_b64) {
+                const blob = base64ToBlob(data.audio_b64, 'audio/wav')
+                const url  = URL.createObjectURL(blob)
+                const audio = new Audio(url)
+                audioRef.current = audio
+                audio.onended = () => { setExplaining(null); URL.revokeObjectURL(url) }
+                audio.onerror = (e) => { console.error('Audio playback error', e); setExplaining(null) }
+                try {
+                    await audio.play()
+                    setExplaining('playing')
+                } catch (playErr) {
+                    console.error('audio.play() failed:', playErr)
+                    setExplaining(null)
+                    setErr('Audio playback blocked by browser. Check if audio is muted or allow autoplay.')
+                }
+            } else {
+                setExplaining(null)
+                if (!data.tts_available) setErr('Audio unavailable — Sarvam TTS not configured on server. Showing text only.')
+            }
+        } catch (e) {
+            setErr(e.response?.data?.error || e.message); setExplaining(null)
+        }
+    }
+
+    const curLang = EXPLAIN_LANGS.find(l => l.code === explainLang) || EXPLAIN_LANGS[0]
+
     return (
         <div style={{
-            marginTop: 10, borderRadius: 12, overflow: 'hidden',
-            border: `1px solid ${D.border}`, boxShadow: `0 0 0 1px rgba(0,0,0,.2)`
+            marginTop: 10, borderRadius: 14,
+            border: `1px solid ${D.border}`, boxShadow: `0 4px 24px rgba(0,0,0,0.25)`
         }}>
             {/* ── Difficulty tab strip ── */}
-            <div style={{ display: 'flex', background: 'rgba(2,6,23,0.7)' }}>
+            <div style={{ display: 'flex', background: 'rgba(2,6,23,0.85)', borderBottom: '1px solid rgba(148,163,184,0.07)', borderRadius: '14px 14px 0 0', overflow: 'hidden' }}>
                 {DIFFICULTIES.map((d, i) => {
-                    const isActive  = activeDiff === d.key
-                    const st        = notesMap[d.key]?.status || 'none'
+                    const isActive   = activeDiff === d.key
+                    const st         = notesMap[d.key]?.status || 'none'
                     const isSpinning = polling === d.key
                     return (
                         <button key={d.key} onClick={() => setActiveDiff(d.key)} style={{
                             flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
-                            padding: '11px 8px', border: 'none', cursor: 'pointer',
+                            padding: '12px 8px', border: 'none', cursor: 'pointer',
                             background: isActive ? d.bg : 'transparent',
-                            borderBottom: `2px solid ${isActive ? d.color : 'transparent'}`,
+                            borderBottom: `2.5px solid ${isActive ? d.color : 'transparent'}`,
                             color: isActive ? d.color : '#64748b',
                             fontWeight: isActive ? 700 : 400, fontSize: '0.85rem', transition: 'all .15s',
-                            borderRight: i < 2 ? '1px solid rgba(148,163,184,0.08)' : 'none'
+                            borderRight: i < 2 ? '1px solid rgba(148,163,184,0.07)' : 'none'
                         }}>
-                            {isSpinning
-                                ? <Loader2 size={12} className="spin" />
-                                : st === 'ready'
-                                    ? <CheckCircle2 size={12} color={d.color} />
-                                    : st === 'error'
-                                        ? <XCircle size={12} color="#ef4444" />
-                                        : <Sparkles size={12} />}
+                            {isSpinning ? <Loader2 size={12} className="spin" />
+                                : st === 'ready' ? <CheckCircle2 size={12} color={d.color} />
+                                : st === 'error' ? <XCircle size={12} color="#ef4444" />
+                                : <Sparkles size={12} />}
                             {d.label}
                             {st === 'ready' && !isActive && (
-                                <span style={{
-                                    width: 6, height: 6, borderRadius: '50%',
-                                    background: d.color, opacity: 0.7, marginLeft: 2
-                                }} />
+                                <span style={{ width: 5, height: 5, borderRadius: '50%', background: d.color, opacity: 0.8 }} />
                             )}
                         </button>
                     )
@@ -434,7 +565,7 @@ function NotesPanel({ sylId, topic, syllabus }) {
             </div>
 
             {/* ── Content pane ── */}
-            <div style={{ padding: 18, background: 'rgba(2,6,23,0.45)' }}>
+            <div style={{ padding: '18px 20px', background: 'rgba(2,6,23,0.55)', borderRadius: '0 0 14px 14px' }}>
                 {err && (
                     <div style={{ color: '#f87171', fontSize: '0.82rem', marginBottom: 12, display: 'flex', alignItems: 'center', gap: 6 }}>
                         <AlertTriangle size={13} /> {err}
@@ -442,49 +573,49 @@ function NotesPanel({ sylId, topic, syllabus }) {
                 )}
 
                 {current.status === 'none' && (
-                    <div style={{ textAlign: 'center', padding: '24px 0' }}>
+                    <div style={{ textAlign: 'center', padding: '28px 0' }}>
                         <div style={{
-                            width: 52, height: 52, borderRadius: '50%',
+                            width: 56, height: 56, borderRadius: '50%',
                             background: D.bg, border: `1.5px solid ${D.border}`,
-                            display: 'flex', alignItems: 'center', justifyContent: 'center',
-                            margin: '0 auto 14px'
+                            display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 16px'
                         }}>
-                            <Sparkles size={22} color={D.color} />
+                            <Sparkles size={24} color={D.color} />
                         </div>
-                        <div style={{ color: '#94a3b8', fontSize: '0.875rem', marginBottom: 6 }}>
+                        <div style={{ color: '#94a3b8', fontSize: '0.875rem', marginBottom: 4 }}>
                             No <strong style={{ color: D.color }}>{D.label}</strong> notes yet
                         </div>
-                        <div style={{ color: '#475569', fontSize: '0.78rem', marginBottom: 18 }}>
-                            {activeDiff === 'easy'   && 'Simple explanations with analogies — perfect for first-time learners'}
-                            {activeDiff === 'medium' && 'Comprehensive exam-ready notes with examples and revision tips'}
-                            {activeDiff === 'hard'   && 'Advanced theory, proofs, and competitive exam preparation'}
+                        <div style={{ color: '#475569', fontSize: '0.78rem', marginBottom: 20 }}>
+                            {activeDiff === 'easy'   && '1 A4 page · Simple explanations with analogies'}
+                            {activeDiff === 'medium' && '3-4 A4 pages · Comprehensive exam-ready notes'}
+                            {activeDiff === 'hard'   && '5-6 A4 pages · Advanced theory & competitive prep'}
                         </div>
-                        <button onClick={() => generate(activeDiff)} style={{
-                            ...btn(D.color), padding: '10px 22px', fontSize: '0.875rem'
-                        }}>
+                        <button onClick={() => generate(activeDiff)} style={{ ...btn(D.color), padding: '10px 24px' }}>
                             <Sparkles size={14} /> Generate {D.label} Notes
                         </button>
                     </div>
                 )}
 
                 {current.status === 'generating' && (
-                    <div style={{ textAlign: 'center', padding: '28px 0' }}>
-                        <Loader2 size={32} className="spin" style={{ color: D.color, marginBottom: 12 }} />
+                    <div style={{ textAlign: 'center', padding: '32px 0' }}>
+                        <div style={{
+                            width: 56, height: 56, borderRadius: '50%',
+                            background: D.bg, border: `1.5px solid ${D.border}`,
+                            display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 16px',
+                            animation: 'pulse 1.5s ease-in-out infinite'
+                        }}>
+                            <Loader2 size={24} className="spin" style={{ color: D.color }} />
+                        </div>
                         <div style={{ color: '#94a3b8', fontSize: '0.875rem' }}>
                             Generating <strong style={{ color: D.color }}>{D.label}</strong> notes…
                         </div>
-                        <div style={{ color: '#475569', fontSize: '0.78rem', marginTop: 6 }}>
-                            AI is writing your notes — this takes 10–25 seconds
-                        </div>
+                        <div style={{ color: '#475569', fontSize: '0.78rem', marginTop: 6 }}>This takes 15–40 seconds</div>
                     </div>
                 )}
 
                 {current.status === 'error' && (
-                    <div style={{ textAlign: 'center', padding: '20px 0' }}>
-                        <XCircle size={28} style={{ color: '#ef4444', marginBottom: 10 }} />
-                        <div style={{ color: '#f87171', fontSize: '0.875rem', marginBottom: 14 }}>
-                            Generation failed. Please try again.
-                        </div>
+                    <div style={{ textAlign: 'center', padding: '24px 0' }}>
+                        <XCircle size={30} style={{ color: '#ef4444', marginBottom: 12 }} />
+                        <div style={{ color: '#f87171', fontSize: '0.875rem', marginBottom: 16 }}>Generation failed. Please try again.</div>
                         <button onClick={() => generate(activeDiff)} style={btn('#ef4444', true)}>
                             <RefreshCw size={13} /> Retry
                         </button>
@@ -493,85 +624,164 @@ function NotesPanel({ sylId, topic, syllabus }) {
 
                 {current.status === 'ready' && current.content && (
                     <div>
-                        {/* Download toolbar */}
+                        {/* ── Toolbar ── */}
                         <div style={{
                             display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                            marginBottom: 14, paddingBottom: 14,
-                            borderBottom: '1px solid rgba(148,163,184,0.1)'
+                            flexWrap: 'wrap', gap: 10,
+                            marginBottom: 16, paddingBottom: 14,
+                            borderBottom: `1px solid rgba(148,163,184,0.1)`
                         }}>
+                            {/* Left: badge + status */}
                             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                                 <span style={{
                                     background: D.bg, border: `1px solid ${D.border}`,
                                     color: D.color, borderRadius: 6,
                                     padding: '3px 10px', fontSize: '0.72rem', fontWeight: 700, letterSpacing: '0.05em'
-                                }}>
-                                    {D.label.toUpperCase()}
-                                </span>
-                                <span style={{ color: '#475569', fontSize: '0.8rem' }}>
-                                    <CheckCircle2 size={12} style={{ verticalAlign: 'middle', marginRight: 4, color: '#10b981' }} />
-                                    Notes ready · Download below
-                                </span>
+                                }}>{D.label.toUpperCase()}</span>
+                                <CheckCircle2 size={13} color="#10b981" />
+                                <span style={{ color: '#475569', fontSize: '0.78rem' }}>Notes ready</span>
                             </div>
-                            <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-                                <button
-                                    onClick={() => handleDownload('pdf')}
-                                    disabled={dlLoading !== null}
-                                    title="Download as PDF"
-                                    style={{
-                                        display: 'inline-flex', alignItems: 'center', gap: 5,
-                                        padding: '6px 13px', borderRadius: 7, cursor: 'pointer',
-                                        border: '1.5px solid rgba(239,68,68,.45)',
-                                        background: 'rgba(239,68,68,.08)', color: '#fca5a5',
-                                        fontSize: '0.78rem', fontWeight: 500, opacity: dlLoading ? 0.6 : 1
-                                    }}
-                                >
-                                    {dlLoading === 'pdf' ? <Loader2 size={12} className="spin" /> : <Download size={12} />}
-                                    PDF
+
+                            {/* Right: actions */}
+                            <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
+                                {/* Voice Explain + Lang selector */}
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 0, border: `1.5px solid ${explaining === 'playing' ? D.border : 'rgba(139,92,246,.4)'}`, borderRadius: 8, overflow: 'hidden' }}>
+                                    <button
+                                        onClick={handleExplain}
+                                        disabled={explaining === 'loading'}
+                                        title={explaining === 'playing' ? 'Stop' : 'AI Voice Explanation'}
+                                        style={{
+                                            display: 'inline-flex', alignItems: 'center', gap: 5,
+                                            padding: '6px 12px', cursor: 'pointer',
+                                            border: 'none', borderRight: '1px solid rgba(148,163,184,0.15)',
+                                            background: explaining === 'playing' ? `${D.color}22` : 'rgba(139,92,246,0.1)',
+                                            color: explaining === 'playing' ? D.color : '#c4b5fd',
+                                            fontSize: '0.78rem', fontWeight: 600
+                                        }}
+                                    >
+                                        {explaining === 'loading' ? <Loader2 size={13} className="spin" />
+                                            : explaining === 'playing' ? <StopCircle size={13} />
+                                            : <Volume2 size={13} />}
+                                        {explaining === 'loading' ? 'Generating…' : explaining === 'playing' ? 'Stop' : 'Explain'}
+                                    </button>
+                                    {/* Language selector */}
+                                    <div ref={langBtnRef} style={{ position: 'relative' }}>
+                                        <button
+                                            onClick={() => {
+                                                if (!showLangMenu && langBtnRef.current) {
+                                                    const r = langBtnRef.current.getBoundingClientRect()
+                                                    setLangMenuPos({ top: r.bottom + 4, right: window.innerWidth - r.right })
+                                                }
+                                                setShowLangMenu(p => !p)
+                                            }}
+                                            title="Select explanation language"
+                                            style={{
+                                                display: 'inline-flex', alignItems: 'center', gap: 4,
+                                                padding: '6px 9px', cursor: 'pointer',
+                                                border: 'none', background: 'rgba(139,92,246,0.08)',
+                                                color: '#a78bfa', fontSize: '0.72rem', fontWeight: 600
+                                            }}
+                                        >
+                                            <Globe size={11} />
+                                            {curLang.native}
+                                            {showLangMenu ? <ChevronUp size={10} /> : <ChevronDown size={10} />}
+                                        </button>
+                                        {showLangMenu && (
+                                            <div style={{
+                                                position: 'fixed', top: langMenuPos.top, right: langMenuPos.right, zIndex: 9999,
+                                                background: '#0f172a', border: '1px solid rgba(139,92,246,0.35)',
+                                                borderRadius: 10, padding: 6, minWidth: 170,
+                                                boxShadow: '0 8px 32px rgba(0,0,0,0.7)'
+                                            }}>
+                                                {EXPLAIN_LANGS.map(l => (
+                                                    <button key={l.code}
+                                                        onClick={() => { setExplainLang(l.code); setShowLangMenu(false) }}
+                                                        style={{
+                                                            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                                                            width: '100%', padding: '7px 10px', borderRadius: 7, cursor: 'pointer',
+                                                            border: 'none', textAlign: 'left',
+                                                            background: explainLang === l.code ? 'rgba(139,92,246,0.2)' : 'transparent',
+                                                            color: explainLang === l.code ? '#c4b5fd' : '#94a3b8',
+                                                            fontSize: '0.8rem'
+                                                        }}
+                                                    >
+                                                        <span>{l.name}</span>
+                                                        <span style={{ color: '#64748b', fontSize: '0.72rem' }}>{l.native}</span>
+                                                    </button>
+                                                ))}
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+
+                                {/* PDF */}
+                                <button onClick={() => handleDownload('pdf')} disabled={dlLoading !== null} style={{
+                                    display: 'inline-flex', alignItems: 'center', gap: 5,
+                                    padding: '6px 13px', borderRadius: 7, cursor: 'pointer',
+                                    border: '1.5px solid rgba(239,68,68,.45)',
+                                    background: 'rgba(239,68,68,.08)', color: '#fca5a5',
+                                    fontSize: '0.78rem', fontWeight: 500, opacity: dlLoading ? 0.6 : 1
+                                }}>
+                                    {dlLoading === 'pdf' ? <Loader2 size={12} className="spin" /> : <Download size={12} />} PDF
                                 </button>
-                                <button
-                                    onClick={() => handleDownload('docx')}
-                                    disabled={dlLoading !== null}
-                                    title="Download as Word document"
-                                    style={{
-                                        display: 'inline-flex', alignItems: 'center', gap: 5,
-                                        padding: '6px 13px', borderRadius: 7, cursor: 'pointer',
-                                        border: '1.5px solid rgba(59,130,246,.45)',
-                                        background: 'rgba(59,130,246,.08)', color: '#93c5fd',
-                                        fontSize: '0.78rem', fontWeight: 500, opacity: dlLoading ? 0.6 : 1
-                                    }}
-                                >
-                                    {dlLoading === 'docx' ? <Loader2 size={12} className="spin" /> : <FileText size={12} />}
-                                    DOCX
+                                {/* DOCX */}
+                                <button onClick={() => handleDownload('docx')} disabled={dlLoading !== null} style={{
+                                    display: 'inline-flex', alignItems: 'center', gap: 5,
+                                    padding: '6px 13px', borderRadius: 7, cursor: 'pointer',
+                                    border: '1.5px solid rgba(59,130,246,.45)',
+                                    background: 'rgba(59,130,246,.08)', color: '#93c5fd',
+                                    fontSize: '0.78rem', fontWeight: 500, opacity: dlLoading ? 0.6 : 1
+                                }}>
+                                    {dlLoading === 'docx' ? <Loader2 size={12} className="spin" /> : <FileText size={12} />} DOCX
                                 </button>
-                                <button
-                                    onClick={() => generate(activeDiff)}
-                                    disabled={polling !== null}
-                                    title="Regenerate notes"
-                                    style={{
-                                        display: 'inline-flex', alignItems: 'center', gap: 5,
-                                        padding: '6px 10px', borderRadius: 7, cursor: 'pointer',
-                                        border: '1.5px solid rgba(148,163,184,.2)',
-                                        background: 'transparent', color: '#64748b',
-                                        fontSize: '0.78rem'
-                                    }}
-                                >
-                                    <RefreshCw size={12} className={polling === activeDiff ? 'spin' : ''} />
+                                {/* Regenerate */}
+                                <button onClick={() => generate(activeDiff, true)} disabled={polling !== null} title="Regenerate notes" style={{
+                                    display: 'inline-flex', alignItems: 'center', gap: 5,
+                                    padding: '6px 13px', borderRadius: 7, cursor: 'pointer',
+                                    border: '1.5px solid rgba(139,92,246,.45)',
+                                    background: 'rgba(139,92,246,.08)', color: '#c4b5fd',
+                                    fontSize: '0.78rem', fontWeight: 500, opacity: polling ? 0.6 : 1
+                                }}>
+                                    {polling === activeDiff ? <Loader2 size={12} className="spin" /> : <RefreshCw size={12} />} Regenerate
                                 </button>
                             </div>
                         </div>
 
-                        {/* Notes content */}
-                        <div style={{
-                            background: 'rgba(255,255,255,0.02)', borderRadius: 8,
-                            padding: '16px 18px', maxHeight: 500, overflowY: 'auto',
-                            border: '1px solid rgba(148,163,184,0.06)'
-                        }}>
-                            <pre style={{
-                                whiteSpace: 'pre-wrap', fontSize: '0.875rem',
-                                color: '#cbd5e1', lineHeight: 1.8, margin: 0, fontFamily: 'inherit'
+                        {/* ── AI Explanation text (if available + toggled) ── */}
+                        {explainText && (
+                            <div style={{
+                                marginBottom: 16, borderRadius: 10,
+                                border: `1px solid ${D.border}`,
+                                background: D.bg, overflow: 'hidden'
                             }}>
-                                {current.content}
-                            </pre>
+                                <button
+                                    onClick={() => setShowText(p => !p)}
+                                    style={{
+                                        display: 'flex', alignItems: 'center', gap: 8, width: '100%',
+                                        padding: '10px 14px', border: 'none', cursor: 'pointer',
+                                        background: 'transparent', color: D.color, fontSize: '0.8rem', fontWeight: 600
+                                    }}
+                                >
+                                    <Volume2 size={13} />
+                                    AI Explanation Script
+                                    {showText ? <ChevronUp size={13} style={{ marginLeft: 'auto' }} /> : <ChevronDown size={13} style={{ marginLeft: 'auto' }} />}
+                                </button>
+                                {showText && (
+                                    <div style={{ padding: '4px 14px 14px', color: '#94a3b8', fontSize: '0.85rem', lineHeight: 1.8, borderTop: `1px solid ${D.border}` }}>
+                                        {explainText}
+                                    </div>
+                                )}
+                            </div>
+                        )}
+
+                        {/* ── Notes content ── */}
+                        <div style={{
+                            background: 'rgba(15,23,42,0.6)', borderRadius: 10,
+                            padding: '20px 22px', maxHeight: 580, overflowY: 'auto',
+                            border: '1px solid rgba(148,163,184,0.08)',
+                            scrollbarWidth: 'thin', scrollbarColor: `${D.color}40 transparent`
+                        }}>
+                            <NoteRenderer content={current.content} diffColor={D.color} />
                         </div>
                     </div>
                 )}
@@ -1000,7 +1210,150 @@ function SyllabusDetail({ syllabus: initSyl, onBack }) {
     )
 }
 
-/* ─── Main Page ───────────────────────────────────────────────────────────── */
+/* ─── Teacher's Notes Section (student view) ─────────────────────────────── */
+function TeacherNotesSection() {
+    const [notes,    setNotes]    = useState([])
+    const [loading,  setLoading]  = useState(true)
+    const [open,     setOpen]     = useState(true)
+    const [dlId,     setDlId]     = useState(null)
+    const [err,      setErr]      = useState(null)
+
+    useEffect(() => {
+        axios.get(`${API}/study/teacher-notes`, { headers: authH() })
+            .then(r => setNotes(r.data.notes || []))
+            .catch(e => setErr(e.response?.data?.error || e.message))
+            .finally(() => setLoading(false))
+    }, [])
+
+    const download = async (note) => {
+        setDlId(note.id)
+        try {
+            const resp = await axios.get(`${API}/study/teacher-notes/${note.id}/download`, {
+                headers: authH(), responseType: 'blob'
+            })
+            const url = URL.createObjectURL(resp.data)
+            const a = document.createElement('a')
+            a.href = url; a.download = note.original_name; a.click()
+            URL.revokeObjectURL(url)
+        } catch (e) { alert('Download failed: ' + (e.response?.data?.error || e.message)) }
+        finally { setDlId(null) }
+    }
+
+    const fmt = (b) => b > 1048576 ? `${(b / 1048576).toFixed(1)} MB` : `${Math.round(b / 1024)} KB`
+    const ext = (n) => n?.split('.').pop()?.toUpperCase() || 'FILE'
+    const extColor = (n) => {
+        const e = n?.split('.').pop()?.toLowerCase()
+        return e === 'pdf' ? '#ef4444' : e === 'docx' || e === 'doc' ? '#3b82f6'
+             : e === 'pptx' || e === 'ppt' ? '#f59e0b' : '#8b5cf6'
+    }
+
+    if (!loading && notes.length === 0 && !err) return (
+        <div style={{
+            ...card({ background: 'rgba(139,92,246,0.03)', border: '1px solid rgba(139,92,246,0.15)' }),
+            marginBottom: 24, display: 'flex', alignItems: 'center', gap: 12, padding: '14px 18px'
+        }}>
+            <BookOpen size={18} color="#6d28d9" style={{ flexShrink: 0 }} />
+            <div>
+                <span style={{ fontWeight: 600, fontSize: '0.875rem', color: '#a78bfa' }}>Teacher's Notes</span>
+                <span style={{ fontSize: '0.8rem', color: '#475569', marginLeft: 10 }}>No notes uploaded by your teacher yet</span>
+            </div>
+        </div>
+    )
+
+    return (
+        <div style={{ ...card({ background: 'rgba(139,92,246,0.04)', border: '1px solid rgba(139,92,246,0.2)' }), marginBottom: 24 }}>
+            {/* Header */}
+            <button
+                onClick={() => setOpen(p => !p)}
+                style={{ display: 'flex', alignItems: 'center', gap: 10, background: 'none', border: 'none', cursor: 'pointer', width: '100%', padding: 0 }}
+            >
+                <BookOpen size={18} color="#a78bfa" />
+                <span style={{ fontWeight: 700, fontSize: '0.95rem', color: '#e2e8f0', flex: 1, textAlign: 'left' }}>
+                    Teacher's Notes
+                </span>
+                {!loading && (
+                    <span style={{
+                        background: 'rgba(139,92,246,0.15)', border: '1px solid rgba(139,92,246,0.35)',
+                        color: '#a78bfa', borderRadius: 20, padding: '2px 10px', fontSize: '0.72rem', fontWeight: 700
+                    }}>
+                        {notes.length} {notes.length === 1 ? 'note' : 'notes'}
+                    </span>
+                )}
+                {open ? <ChevronDown size={16} color="#64748b" /> : <ChevronRight size={16} color="#64748b" />}
+            </button>
+
+            {open && (
+                <div style={{ marginTop: 14 }}>
+                    {err && <div style={{ color: '#f87171', fontSize: '0.82rem', marginBottom: 10 }}>{err}</div>}
+                    {loading ? (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: '#64748b', fontSize: '0.85rem', padding: '8px 0' }}>
+                            <Loader2 size={14} className="spin" /> Loading teacher notes…
+                        </div>
+                    ) : (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                            {notes.map(note => (
+                                <div key={note.id} style={{
+                                    display: 'flex', alignItems: 'center', gap: 12,
+                                    background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(148,163,184,0.1)',
+                                    borderRadius: 9, padding: '12px 14px'
+                                }}>
+                                    {/* Badge */}
+                                    <div style={{
+                                        width: 40, height: 40, borderRadius: 7, flexShrink: 0,
+                                        background: `${extColor(note.original_name)}18`,
+                                        border: `1px solid ${extColor(note.original_name)}40`,
+                                        display: 'flex', alignItems: 'center', justifyContent: 'center'
+                                    }}>
+                                        <span style={{ fontSize: '0.6rem', fontWeight: 800, color: extColor(note.original_name) }}>
+                                            {ext(note.original_name)}
+                                        </span>
+                                    </div>
+                                    {/* Info */}
+                                    <div style={{ flex: 1, minWidth: 0 }}>
+                                        <div style={{ fontWeight: 600, color: '#e2e8f0', fontSize: '0.875rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                            {note.title}
+                                        </div>
+                                        <div style={{ fontSize: '0.72rem', color: '#64748b', marginTop: 2, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                                            <span style={{ color: '#a78bfa' }}>by {note.teacher_name}</span>
+                                            {note.subject && <span>· {note.subject}</span>}
+                                            <span>· {fmt(note.file_size)}</span>
+                                            <span>· {new Date(note.created_at).toLocaleDateString()}</span>
+                                        </div>
+                                        {note.description && (
+                                            <div style={{ fontSize: '0.72rem', color: '#475569', marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                                {note.description}
+                                            </div>
+                                        )}
+                                    </div>
+                                    {/* Download */}
+                                    <button
+                                        onClick={() => download(note)}
+                                        disabled={dlId === note.id}
+                                        style={{
+                                            display: 'inline-flex', alignItems: 'center', gap: 5, flexShrink: 0,
+                                            padding: '7px 14px', borderRadius: 7, cursor: 'pointer',
+                                            border: '1.5px solid rgba(139,92,246,0.4)',
+                                            background: 'rgba(139,92,246,0.1)', color: '#c4b5fd',
+                                            fontSize: '0.78rem', fontWeight: 600,
+                                            opacity: dlId === note.id ? 0.6 : 1
+                                        }}
+                                    >
+                                        {dlId === note.id
+                                            ? <Loader2 size={12} className="spin" />
+                                            : <Download size={12} />}
+                                        Download
+                                    </button>
+                                </div>
+                            ))}
+                        </div>
+                    )}
+                </div>
+            )}
+        </div>
+    )
+}
+
+
 export default function SmartStudy() {
     const [view,      setView]     = useState('list') // 'list' | 'detail'
     const [syllabi,   setSyllabi]  = useState([])
@@ -1084,6 +1437,9 @@ export default function SmartStudy() {
                     <UploadForm onUploaded={handleUploaded} />
                 </div>
             )}
+
+            {/* Teacher's notes (from mentor) */}
+            <TeacherNotesSection />
 
             {/* Syllabus list */}
             {loading ? (

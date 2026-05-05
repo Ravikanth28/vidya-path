@@ -148,6 +148,10 @@ function AdminPortal() {
                 setTitle('VidyaPath Content')
                 setSubtitle('Manage lessons, quiz items and concepts for VidyaPath AI')
                 break
+            case 'teacher-notes':
+                setTitle("Teacher's Notes")
+                setSubtitle('Upload and manage teacher notes visible to students')
+                break
             case 'batch-add':
                 setTitle('Batch Manager')
                 setSubtitle('Create and manage student batches from CSV uploads')
@@ -165,7 +169,8 @@ function AdminPortal() {
             icon: <Sparkles size={20} />,
             defaultExpanded: false,
             children: [
-                { path: '/admin/vp-content', label: 'Content Manager', icon: <BookOpen size={20} /> }
+                { path: '/admin/vp-content', label: 'Content Manager', icon: <BookOpen size={20} /> },
+                { path: '/admin/teacher-notes', label: "Teacher's Notes", icon: <Upload size={20} /> }
             ]
         },
         {
@@ -254,6 +259,7 @@ function AdminPortal() {
                 <Route path="/mcq" element={<AdminMCQ />} />
                 <Route path="/comm-test" element={<AdminCommTest />} />
                 <Route path="/vp-content" element={<AdminVPContent />} />
+                <Route path="/teacher-notes" element={<AdminTeacherNotes user={user} />} />
                 <Route path="/batch-add" element={<BatchManager />} />
             </Routes>
         </DashboardLayout>
@@ -9826,6 +9832,209 @@ function AdminCodeReviews() {
                             </div>
                         )
                     })}
+                </div>
+            )}
+        </div>
+    )
+}
+
+/* ─── Admin: Teacher's Notes Manager ─────────────────────────────────────── */
+const VP_API = (import.meta.env.VITE_API_URL || 'http://localhost:3000') + '/api/vp'
+const vpH = () => ({ Authorization: `Bearer ${localStorage.getItem('authToken')}` })
+
+function AdminTeacherNotes({ user }) {
+    const [notes,     setNotes]     = useState([])
+    const [loading,   setLoading]   = useState(true)
+    const [uploading, setUploading] = useState(false)
+    const [showForm,  setShowForm]  = useState(false)
+    const [err,       setErr]       = useState(null)
+    const [success,   setSuccess]   = useState(null)
+    const [form,      setForm]      = useState({ title: '', description: '', subject: '', batch: '' })
+    const [file,      setFile]      = useState(null)
+    const fileRef = useRef(null)
+
+    const load = async () => {
+        setLoading(true)
+        try {
+            const { data } = await axios.get(`${VP_API}/study/teacher-notes`, { headers: vpH() })
+            setNotes(data.notes || [])
+        } catch (e) { setErr(e.response?.data?.error || e.message) }
+        finally { setLoading(false) }
+    }
+    useEffect(() => { load() }, [])
+
+    const handleUpload = async (e) => {
+        e.preventDefault()
+        if (!file || !form.title.trim()) return
+        setUploading(true); setErr(null); setSuccess(null)
+        try {
+            const fd = new FormData()
+            fd.append('file', file)
+            fd.append('title', form.title.trim())
+            fd.append('description', form.description.trim())
+            fd.append('subject', form.subject.trim())
+            fd.append('batch', form.batch.trim())
+            await axios.post(`${VP_API}/study/teacher-notes`, fd, {
+                headers: { ...vpH(), 'Content-Type': 'multipart/form-data' }
+            })
+            setSuccess('Note uploaded successfully!')
+            setForm({ title: '', description: '', subject: '', batch: '' })
+            setFile(null); setShowForm(false); load()
+        } catch (e) { setErr(e.response?.data?.error || e.message) }
+        finally { setUploading(false) }
+    }
+
+    const handleDelete = async (id) => {
+        if (!confirm('Delete this note? Students will no longer be able to access it.')) return
+        try {
+            await axios.delete(`${VP_API}/study/teacher-notes/${id}`, { headers: vpH() })
+            setNotes(p => p.filter(n => n.id !== id))
+        } catch (e) { alert(e.response?.data?.error || e.message) }
+    }
+
+    const fmt = (b) => b > 1048576 ? `${(b / 1048576).toFixed(1)} MB` : `${Math.round(b / 1024)} KB`
+    const ext = (n) => n?.split('.').pop()?.toUpperCase() || 'FILE'
+
+    const card = (extra = {}) => ({
+        background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(148,163,184,0.12)',
+        borderRadius: 12, padding: 20, ...extra
+    })
+    const inputSt = {
+        width: '100%', padding: '9px 13px', borderRadius: 8, fontSize: '0.875rem',
+        background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(148,163,184,0.25)',
+        color: '#e2e8f0', outline: 'none', boxSizing: 'border-box'
+    }
+
+    return (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+            {/* Header */}
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 10 }}>
+                <p style={{ margin: 0, fontSize: '0.82rem', color: '#64748b' }}>
+                    Notes uploaded here are visible to students in their Smart Study page
+                </p>
+                <button
+                    onClick={() => { setShowForm(p => !p); setErr(null); setSuccess(null) }}
+                    style={{
+                        display: 'inline-flex', alignItems: 'center', gap: 6,
+                        padding: '9px 18px', borderRadius: 8, cursor: 'pointer',
+                        border: 'none', background: '#8b5cf6', color: '#fff',
+                        fontWeight: 600, fontSize: '0.875rem'
+                    }}
+                >
+                    <Upload size={15} /> {showForm ? 'Cancel' : 'Upload Note'}
+                </button>
+            </div>
+
+            {/* Upload form */}
+            {showForm && (
+                <div style={{ ...card({ background: 'rgba(139,92,246,0.05)', border: '1px solid rgba(139,92,246,0.25)' }) }}>
+                    <form onSubmit={handleUpload} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                            <div>
+                                <label style={{ fontSize: '0.78rem', color: '#94a3b8', display: 'block', marginBottom: 5 }}>Title *</label>
+                                <input style={inputSt} value={form.title} onChange={e => setForm(p => ({ ...p, title: e.target.value }))} placeholder="e.g. Unit 1 — Introduction" required />
+                            </div>
+                            <div>
+                                <label style={{ fontSize: '0.78rem', color: '#94a3b8', display: 'block', marginBottom: 5 }}>Subject</label>
+                                <input style={inputSt} value={form.subject} onChange={e => setForm(p => ({ ...p, subject: e.target.value }))} placeholder="e.g. AI & Data Science" />
+                            </div>
+                        </div>
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                            <div>
+                                <label style={{ fontSize: '0.78rem', color: '#94a3b8', display: 'block', marginBottom: 5 }}>Batch (blank = all students)</label>
+                                <input style={inputSt} value={form.batch} onChange={e => setForm(p => ({ ...p, batch: e.target.value }))} placeholder="e.g. Batch A" />
+                            </div>
+                            <div>
+                                <label style={{ fontSize: '0.78rem', color: '#94a3b8', display: 'block', marginBottom: 5 }}>Description</label>
+                                <input style={inputSt} value={form.description} onChange={e => setForm(p => ({ ...p, description: e.target.value }))} placeholder="Optional short description" />
+                            </div>
+                        </div>
+                        <div>
+                            <label style={{ fontSize: '0.78rem', color: '#94a3b8', display: 'block', marginBottom: 5 }}>File * — max 50 MB</label>
+                            <input ref={fileRef} type="file"
+                                accept=".pdf,.doc,.docx,.ppt,.pptx,.xls,.xlsx,.txt,.png,.jpg,.jpeg,.zip"
+                                style={{ display: 'none' }} onChange={e => setFile(e.target.files[0])} />
+                            <div onClick={() => fileRef.current.click()} style={{
+                                border: `2px dashed ${file ? 'rgba(139,92,246,0.6)' : 'rgba(148,163,184,0.25)'}`,
+                                borderRadius: 10, padding: '18px 16px', textAlign: 'center', cursor: 'pointer',
+                                background: file ? 'rgba(139,92,246,0.06)' : 'transparent'
+                            }}>
+                                {file
+                                    ? <span style={{ color: '#a78bfa', fontSize: '0.85rem' }}>📄 {file.name}</span>
+                                    : <>
+                                        <span style={{ color: '#64748b', fontSize: '0.8rem', display: 'block', marginBottom: 6 }}>Click to choose file</span>
+                                        <span style={{ fontSize: '0.72rem', color: '#475569' }}>
+                                            PDF · DOC · DOCX · PPT · PPTX · XLS · XLSX · TXT · PNG · JPG · ZIP
+                                        </span>
+                                      </>
+                                }
+                            </div>
+                        </div>
+                        {err && <div style={{ color: '#f87171', fontSize: '0.82rem' }}>{err}</div>}
+                        <button type="submit" disabled={uploading || !file || !form.title.trim()} style={{
+                            display: 'inline-flex', alignItems: 'center', gap: 6, alignSelf: 'flex-start',
+                            padding: '9px 20px', borderRadius: 8, cursor: 'pointer',
+                            border: 'none', background: '#8b5cf6', color: '#fff',
+                            fontWeight: 600, fontSize: '0.875rem', opacity: (uploading || !file || !form.title.trim()) ? 0.6 : 1
+                        }}>
+                            <Upload size={14} /> {uploading ? 'Uploading…' : 'Upload Note'}
+                        </button>
+                    </form>
+                </div>
+            )}
+
+            {success && (
+                <div style={{ background: 'rgba(16,185,129,0.1)', border: '1px solid rgba(16,185,129,0.3)', borderRadius: 8, padding: '10px 16px', color: '#34d399', fontSize: '0.875rem' }}>
+                    ✓ {success}
+                </div>
+            )}
+
+            {/* Notes list */}
+            {loading ? (
+                <div style={{ color: '#64748b', padding: 24, textAlign: 'center' }}>Loading notes…</div>
+            ) : notes.length === 0 ? (
+                <div style={{ ...card({ textAlign: 'center', padding: 48 }) }}>
+                    <BookOpen size={36} style={{ color: '#334155', marginBottom: 12 }} />
+                    <div style={{ color: '#64748b', fontWeight: 500 }}>No teacher notes yet</div>
+                    <div style={{ color: '#475569', fontSize: '0.82rem', marginTop: 6 }}>Upload notes above — students will see them in their Smart Study page</div>
+                </div>
+            ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                    {notes.map(note => (
+                        <div key={note.id} style={{
+                            ...card({ padding: '14px 18px' }),
+                            display: 'flex', alignItems: 'center', gap: 14
+                        }}>
+                            <div style={{
+                                width: 44, height: 44, borderRadius: 8, flexShrink: 0,
+                                background: 'rgba(139,92,246,0.12)', border: '1px solid rgba(139,92,246,0.25)',
+                                display: 'flex', alignItems: 'center', justifyContent: 'center'
+                            }}>
+                                <span style={{ fontSize: '0.6rem', fontWeight: 800, color: '#a78bfa' }}>{ext(note.original_name)}</span>
+                            </div>
+                            <div style={{ flex: 1, minWidth: 0 }}>
+                                <div style={{ fontWeight: 600, color: '#e2e8f0', fontSize: '0.9rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                    {note.title}
+                                </div>
+                                <div style={{ fontSize: '0.75rem', color: '#94a3b8', marginTop: 2, display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+                                    <span style={{ color: '#a78bfa' }}>by {note.teacher_name || 'Admin'}</span>
+                                    {note.subject && <span>· {note.subject}</span>}
+                                    {note.batch ? <span>· Batch: {note.batch}</span> : <span style={{ color: '#475569' }}>· All students</span>}
+                                    <span>· {fmt(note.file_size)}</span>
+                                    <span>· {new Date(note.created_at).toLocaleDateString()}</span>
+                                </div>
+                            </div>
+                            <button onClick={() => handleDelete(note.id)} style={{
+                                display: 'inline-flex', alignItems: 'center', gap: 5, flexShrink: 0,
+                                padding: '6px 12px', borderRadius: 7, cursor: 'pointer',
+                                border: '1.5px solid rgba(239,68,68,0.35)',
+                                background: 'rgba(239,68,68,0.07)', color: '#f87171',
+                                fontSize: '0.78rem', fontWeight: 500
+                            }}>
+                                <Trash2 size={13} /> Delete
+                            </button>
+                        </div>
+                    ))}
                 </div>
             )}
         </div>

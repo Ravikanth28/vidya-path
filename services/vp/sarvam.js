@@ -9,7 +9,7 @@
 const axios = require('axios');
 const FormDataNode = typeof FormData !== 'undefined' ? FormData : require('form-data');
 
-const SARVAM_KEY = process.env.SARVAM_API_KEY;
+const SARVAM_KEY = process.env.SARVAM_API_KEY || process.env.SARVAM_API_KEY_1 || process.env.SARVAM_API_KEY_2;
 const SARVAM_BASE = process.env.SARVAM_BASE_URL || 'https://api.sarvam.ai';
 const GROQ_KEY = process.env.GROQ_API_KEY;
 

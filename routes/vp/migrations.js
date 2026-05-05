@@ -259,6 +259,22 @@ const SQL = [
         completed_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         INDEX idx_vp_sa_student (student_id),
         INDEX idx_vp_sa_test (test_id)
+    )`,
+    `CREATE TABLE IF NOT EXISTS vp_teacher_notes (
+        id VARCHAR(48) PRIMARY KEY,
+        teacher_id VARCHAR(48) NOT NULL,
+        teacher_name VARCHAR(255),
+        title VARCHAR(255) NOT NULL,
+        description TEXT,
+        subject VARCHAR(255),
+        batch VARCHAR(255),
+        file_name VARCHAR(255) NOT NULL,
+        original_name VARCHAR(255) NOT NULL,
+        file_type VARCHAR(100),
+        file_size INT,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        INDEX idx_vp_tn_teacher (teacher_id),
+        INDEX idx_vp_tn_batch (batch)
     )`
 ];
 

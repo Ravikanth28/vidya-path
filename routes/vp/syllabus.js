@@ -47,6 +47,32 @@ module.exports = function syllabusRoutes(pool, authenticate) {
         return { medium: { status: 'ready', content: String(raw) } };
     }
 
+    function mergeWavBase64(b64Array) {
+        if (!b64Array || !b64Array.length) return '';
+        if (b64Array.length === 1) return b64Array[0];
+        const bufs = b64Array.map(b => Buffer.from(b, 'base64'));
+        const pcmChunks = bufs.map(buf => {
+            for (let i = 0; i < buf.length - 8; i++) {
+                if (buf.toString('ascii', i, i + 4) === 'data') return buf.slice(i + 8);
+            }
+            return buf.slice(44);
+        });
+        const totalPcm = pcmChunks.reduce((s, c) => s + c.length, 0);
+        const out = Buffer.alloc(44 + totalPcm);
+        bufs[0].copy(out, 0, 0, 44);
+        out.writeUInt32LE(36 + totalPcm, 4);
+        out.writeUInt32LE(totalPcm, 40);
+        let off = 44;
+        for (const pcm of pcmChunks) { pcm.copy(out, off); off += pcm.length; }
+        return out.toString('base64');
+    }
+
+    const EXPLAIN_LANG_NAMES = {
+        'en-IN': 'English', 'hi-IN': 'Hindi', 'ta-IN': 'Tamil',
+        'te-IN': 'Telugu', 'kn-IN': 'Kannada', 'ml-IN': 'Malayalam',
+        'bn-IN': 'Bengali', 'gu-IN': 'Gujarati', 'mr-IN': 'Marathi'
+    };
+
     async function extractText(file) {
         const mime = file.mimetype || '';
         if (mime === 'application/pdf') {
@@ -236,6 +262,7 @@ ${rawText.slice(0, 8000)}`
         const sid        = String(req.user.id);
         const difficulty = ['easy', 'medium', 'hard'].includes(req.body?.difficulty)
             ? req.body.difficulty : 'medium';
+        const force = !!req.body?.force;
 
         try {
             const [[syl]] = await pool.query(
@@ -252,8 +279,8 @@ ${rawText.slice(0, 8000)}`
 
             const map = parseNotesMap(topic.notes);
 
-            // Already generated — return immediately
-            if (map[difficulty]?.status === 'ready') {
+            // Already generated — return immediately (unless force regenerate)
+            if (map[difficulty]?.status === 'ready' && !force) {
                 return res.json({ ok: true, status: 'ready', difficulty, notes_map: map });
             }
 
@@ -269,6 +296,8 @@ ${rawText.slice(0, 8000)}`
             const PROMPTS = {
                 easy: `Generate SIMPLE, BEGINNER-FRIENDLY study notes for the topic: "${topic.title}"
 Subject / Course: ${syl.subject || syl.title}
+
+TARGET LENGTH: Exactly 1 A4 page (approximately 500-600 words total). Be concise — do not exceed this length.
 
 Write at a basic, introductory level suitable for complete beginners. Use plain language, real-world analogies, and avoid jargon.
 
@@ -289,62 +318,69 @@ Structure your notes as:
 ✅ REMEMBER THIS
 (3 short memory tips or mnemonics to help recall)
 
-Keep it short, friendly, and accessible for a beginner.`,
+Keep it short, friendly, and accessible for a beginner. Stop at 1 page.`,
 
                 medium: `Generate COMPREHENSIVE, EXAM-READY study notes for the topic: "${topic.title}"
 Subject / Course: ${syl.subject || syl.title}
 
+TARGET LENGTH: 3 to 4 A4 pages (approximately 1500-2400 words total). Be thorough and detailed to fill this length.
+
 Structure your notes as:
 
 📌 OVERVIEW
-(Clear 3-4 sentence introduction covering the full scope of the topic)
+(Clear 4-5 sentence introduction covering the full scope of the topic)
 
 🔑 KEY CONCEPTS
-(All core concepts in well-organized bullet points)
+(All core concepts in well-organized bullet points with explanations — cover thoroughly)
 
 📐 IMPORTANT FORMULAS & DEFINITIONS
-(All relevant formulas, equations, and precise definitions with context)
+(All relevant formulas, equations, and precise definitions with context and explanation)
 
 🔬 WORKED EXAMPLES
-(2-3 step-by-step solved examples showing application)
+(3-4 step-by-step solved examples showing application with detailed steps)
 
 ❓ COMMON EXAM QUESTIONS
-(5 typical exam questions students should be able to answer)
+(6-8 typical exam questions students should be able to answer)
 
 💡 QUICK REVISION TIPS
-(5 memory tricks, shortcuts, and strategies for the exam)
+(6-8 memory tricks, shortcuts, and strategies for the exam)
 
-Make it thorough, accurate, and exam-focused.`,
+Make it thorough, accurate, and exam-focused. Aim for 3-4 full pages of content.`,
 
                 hard: `Generate ADVANCED, IN-DEPTH study notes for the topic: "${topic.title}"
 Subject / Course: ${syl.subject || syl.title}
+
+TARGET LENGTH: 5 to 6 A4 pages (approximately 2500-3600 words total). Be exhaustive and comprehensive to fill this length.
 
 Write at an advanced level suitable for competitive exams and deep mastery of the subject.
 
 Structure your notes as:
 
 📌 ADVANCED OVERVIEW
-(Precise, comprehensive introduction covering the full theoretical scope)
+(Precise, comprehensive introduction covering the full theoretical scope — 5-6 sentences)
 
 🔑 CORE CONCEPTS & THEORY
-(Complete theoretical framework with derivations and proofs where applicable)
+(Complete theoretical framework with in-depth explanations, derivations and proofs where applicable — cover every sub-concept)
 
 📐 FORMULAS, THEOREMS & PROOFS
-(All formulas with derivations, edge cases, special conditions, and exceptions)
+(All formulas with full derivations, edge cases, special conditions, exceptions, and worked proofs)
 
 ⚡ ADVANCED APPLICATIONS
-(Complex real-world applications, non-trivial scenarios, and advanced use cases)
+(4-5 complex real-world applications, non-trivial scenarios, and advanced use cases with detailed explanation)
+
+🔬 DETAILED WORKED EXAMPLES
+(3-4 complex step-by-step solved examples with thorough explanation of each step)
 
 🧠 HIGHER-ORDER THINKING QUESTIONS
-(5 complex analysis, synthesis, and evaluation level questions)
+(8-10 complex analysis, synthesis, and evaluation level questions with brief answer outlines)
 
 🔗 CONNECTIONS & DEPENDENCIES
-(How this topic interconnects with other advanced topics in the subject)
+(How this topic interconnects with other advanced topics in the subject — detailed mapping)
 
 💡 EXPERT INSIGHTS & PITFALLS
-(Subtle points students often miss, common mistakes, and expert-level tips)
+(Subtle points students often miss, common mistakes, misconceptions, and expert-level tips — be comprehensive)
 
-Make it rigorous, comprehensive, and suitable for advanced competitive exam preparation.`
+Make it rigorous, exhaustive, and suitable for advanced competitive exam preparation. Aim for 5-6 full pages of content.`
             };
 
             setImmediate(async () => {
@@ -357,7 +393,7 @@ Make it rigorous, comprehensive, and suitable for advanced competitive exam prep
                             },
                             { role: 'user', content: PROMPTS[difficulty] }
                         ],
-                        maxTokens: difficulty === 'hard' ? 2000 : difficulty === 'medium' ? 1600 : 1100,
+                        maxTokens: difficulty === 'hard' ? 5000 : difficulty === 'medium' ? 3200 : 900,
                         temperature: 0.35
                     });
 
@@ -408,6 +444,79 @@ Make it rigorous, comprehensive, and suitable for advanced competitive exam prep
 
             const notes_map = parseNotesMap(topic.notes);
             res.json({ ...topic, notes_map });
+        } catch (err) { res.status(500).json({ error: err.message }); }
+    });
+
+    // ── POST /study/syllabi/:id/topics/:tid/notes/explain ────────────────────
+    // Generates a conversational audio explanation of the notes using LLM + Sarvam TTS
+    router.post('/study/syllabi/:id/topics/:tid/notes/explain', authenticate, async (req, res) => {
+        const sid        = String(req.user.id);
+        const difficulty = ['easy','medium','hard'].includes(req.body?.difficulty) ? req.body.difficulty : 'medium';
+        const language   = req.body?.language || 'en-IN';
+
+        try {
+            const [[syl]] = await pool.query(
+                'SELECT id, title, subject FROM vp_syllabi WHERE id=? AND student_id=?',
+                [req.params.id, sid]
+            );
+            if (!syl) return res.status(404).json({ error: 'Syllabus not found' });
+
+            const [[topic]] = await pool.query(
+                'SELECT id, title, notes FROM vp_syllabus_topics WHERE id=? AND syllabus_id=?',
+                [req.params.tid, req.params.id]
+            );
+            if (!topic) return res.status(404).json({ error: 'Topic not found' });
+
+            const map      = parseNotesMap(topic.notes);
+            const noteData = map[difficulty];
+            if (!noteData?.content) return res.status(400).json({ error: 'Notes not ready. Generate notes first.' });
+
+            const langName = EXPLAIN_LANG_NAMES[language] || 'English';
+            const diffLabel = difficulty === 'easy' ? 'beginner' : difficulty === 'medium' ? 'intermediate' : 'advanced';
+
+            // ── LLM: generate conversational explanation ───────────────────
+            const { text: explanationText } = await llmChat({
+                messages: [
+                    {
+                        role: 'system',
+                        content: `You are an enthusiastic, friendly tutor. Always respond ONLY in ${langName}. Speak naturally as if talking face-to-face to a ${diffLabel}-level student.`
+                    },
+                    {
+                        role: 'user',
+                        content: `Using these study notes about "${topic.title}" (${syl.subject || syl.title}):\n\n${noteData.content}\n\nCreate a natural spoken explanation that:\n- Sounds like a real teacher talking, NOT reading notes\n- Uses simple language, real-world analogies, and stories\n- Flows naturally from one idea to the next\n- Highlights the 3-4 most important concepts\n- Is 300-450 words (2-3 minutes when spoken)\n\nIMPORTANT: Write ONLY in ${langName}. No bullet points, no headers, no asterisks — only flowing paragraphs.`
+                    }
+                ],
+                maxTokens: 700,
+                temperature: 0.72
+            });
+
+            // ── TTS: split into ≤1400-char chunks, call Sarvam ────────────
+            const sarvam = require('../../services/vp/sarvam');
+            const chunks  = [];
+            const sents   = explanationText.split(/(?<=[।.!?])\s+/);
+            let   cur     = '';
+            for (const s of sents) {
+                if ((cur + ' ' + s).trim().length > 1400) { if (cur.trim()) chunks.push(cur.trim()); cur = s; }
+                else cur = cur ? cur + ' ' + s : s;
+            }
+            if (cur.trim()) chunks.push(cur.trim());
+
+            const audioB64s = [];
+            for (const chunk of chunks) {
+                const { audioBase64 } = await sarvam.ttsToBase64(chunk, language);
+                if (audioBase64) audioB64s.push(audioBase64);
+            }
+
+            const mergedAudio = mergeWavBase64(audioB64s);
+
+            res.json({
+                ok: true,
+                explanation_text: explanationText,
+                audio_b64:        mergedAudio || '',
+                audio_mime:       'audio/wav',
+                tts_available:    !!mergedAudio,
+                language
+            });
         } catch (err) { res.status(500).json({ error: err.message }); }
     });
 
