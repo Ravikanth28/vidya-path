@@ -1,8 +1,8 @@
 ﻿// Service Worker for VidyaPath AI PWA
 // Features: App shell caching, offline fallback, network-first for API
 
-const CACHE_NAME = 'vidyapath-v2'
-const API_CACHE  = 'vidyapath-api-v2'
+const CACHE_NAME = 'vidyapath-v3'
+const API_CACHE  = 'vidyapath-api-v3'
 const OFFLINE_URL = '/offline.html'
 
 // Static assets to pre-cache (app shell)
@@ -10,7 +10,8 @@ const STATIC_ASSETS = [
     '/',
     '/index.html',
     '/offline.html',
-    '/manifest.json'
+    '/manifest.json',
+    '/logo.png'
 ]
 
 // VidyaPath API prefixes — network-first, cache fallback when offline
@@ -232,8 +233,8 @@ self.addEventListener('push', (event) => {
     event.waitUntil(
         self.registration.showNotification(data.title, {
             body: data.body,
-            icon: '/icons/icon-192.png',
-            badge: '/icons/icon-72.png',
+            icon: '/logo.png',
+            badge: '/logo.png',
             vibrate: [100, 50, 100],
             data: { url: data.url || '/' }
         })

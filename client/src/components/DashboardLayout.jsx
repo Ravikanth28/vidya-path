@@ -1,7 +1,7 @@
 import { NavLink, useLocation, useNavigate } from 'react-router-dom'
 import { useAuth, useTheme } from '../App'
 import { useI18n } from '../services/i18n.jsx'
-import { Sun, Moon, LogOut, Menu, X, Brain, User, Globe, Wifi, WifiOff, ChevronDown, Download } from 'lucide-react'
+import { Sun, Moon, LogOut, Menu, X, User, Globe, Wifi, WifiOff, ChevronDown, Download } from 'lucide-react'
 import { useState, useEffect } from 'react'
 import NotificationCenter from './NotificationCenter'
 import { AIDeptBadge, DataFlowLine } from './AIAnimations'
@@ -115,7 +115,9 @@ function DashboardLayout({ children, navItems, title, subtitle }) {
             >
                 <div className="sidebar-header">
                     <div className="logo">
-                        <div className="logo-icon"><Brain size={18} /></div>
+                        <div className="logo-icon">
+                            <img src="/logo.png" alt="VidyaPath logo" className="logo-mark" />
+                        </div>
                         <span className="logo-text">{t('app_name')}</span>
                     </div>
                     <button

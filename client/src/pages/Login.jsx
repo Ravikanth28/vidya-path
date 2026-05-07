@@ -118,7 +118,7 @@ function AIIllustration() {
             <div className="illustration-container">
                 {/* Central Brain */}
                 <div className="central-brain">
-                    <Brain size={80} />
+                    <img src="/logo.png" alt="VidyaPath logo" className="hero-logo-mark" />
                     <div className="brain-pulse"></div>
                     <div className="brain-pulse delay-1"></div>
                     <div className="brain-pulse delay-2"></div>
@@ -273,7 +273,7 @@ function Login() {
             {/* Navigation */}
             <nav className="login-nav">
                 <div className="nav-logo">
-                    <Brain className="logo-icon-svg" size={28} />
+                    <img src="/logo.png" alt="VidyaPath logo" className="login-logo-mark" />
                     <span className="logo-text">VidyaPath AI</span>
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
@@ -358,7 +358,7 @@ function Login() {
 
                             <div className="card-header">
                                 <div className="header-icon">
-                                    <Brain size={32} />
+                                    <img src="/logo.png" alt="VidyaPath logo" className="auth-logo-mark" />
                                 </div>
                                 <h2>{isRegisterMode ? 'Create Account' : t('welcome_back')}</h2>
                                 <p>{isRegisterMode ? 'Register with OTP verification' : t('login_subtitle')}</p>

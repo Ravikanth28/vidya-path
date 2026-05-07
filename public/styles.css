@@ -102,17 +102,18 @@ body {
 .logo-icon {
     width: 48px;
     height: 48px;
-    background: linear-gradient(135deg, var(--primary), var(--secondary));
+    background: rgba(255, 255, 255, 0.08);
     border-radius: var(--radius-md);
     display: flex;
     align-items: center;
     justify-content: center;
-    color: white;
+    overflow: hidden;
 }
 
-.logo-icon svg {
-    width: 28px;
-    height: 28px;
+.logo-icon img {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
 }
 
 .logo-text {
