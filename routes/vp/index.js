@@ -18,6 +18,13 @@ module.exports = async function vidyaPathRouter(pool, authenticate) {
 
     const router = express.Router();
 
+    // Ensure req.user is always set — routes use req.user.id for personalisation.
+    // If no valid token was provided, treat as an anonymous/guest session.
+    router.use((req, _res, next) => {
+        if (!req.user) req.user = { id: 0, role: 'student', name: 'Guest', email: '' };
+        next();
+    });
+
     router.get('/health', async (_req, res) => {
         const sidecar = await ml.health();
         res.json({

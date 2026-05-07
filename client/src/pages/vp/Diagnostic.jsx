@@ -1,8 +1,43 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import vpApi from '@/services/vp/api'
 import { useI18n } from '@/services/i18n'
-import { Award, ChevronRight, Upload, User, ClipboardList, BarChart3, History, FileDown, GraduationCap, Layers } from 'lucide-react'
+import { Award, ChevronRight, Upload, User, ClipboardList, BarChart3, History, FileDown, GraduationCap, Layers, Mic, MicOff } from 'lucide-react'
+
+/** Hook — returns { listening, toggle, supported } */
+function useSpeechToText({ lang = 'en-IN', onResult }) {
+    const recRef = useRef(null)
+    const [listening, setListening] = useState(false)
+
+    const supported = typeof window !== 'undefined' &&
+        ('SpeechRecognition' in window || 'webkitSpeechRecognition' in window)
+
+    const toggle = useCallback(() => {
+        if (!supported) return
+        const SR = window.SpeechRecognition || window.webkitSpeechRecognition
+        if (listening) {
+            recRef.current?.stop()
+            setListening(false)
+            return
+        }
+        const rec = new SR()
+        rec.lang = lang
+        rec.interimResults = false
+        rec.continuous = false
+        rec.onresult = e => {
+            const transcript = Array.from(e.results)
+                .map(r => r[0].transcript).join(' ')
+            onResult(transcript)
+        }
+        rec.onend = () => setListening(false)
+        rec.onerror = () => setListening(false)
+        recRef.current = rec
+        rec.start()
+        setListening(true)
+    }, [supported, listening, lang, onResult])
+
+    return { listening, toggle, supported }
+}
 
 const LANGUAGE_OPTIONS = [
     { code: 'en', label: 'English-IN' },
@@ -35,6 +70,7 @@ export default function Diagnostic({ onDone }) {
     const [report, setReport] = useState(null)
     const [plan, setPlan] = useState(null)
     const [done, setDone] = useState(false)
+    const [viewAttemptId, setViewAttemptId] = useState(null)
     const [meta, setMeta] = useState({
         language: 'en',
         education_level: 'school',
@@ -50,6 +86,27 @@ export default function Diagnostic({ onDone }) {
     const [selectedTeacherTestId, setSelectedTeacherTestId] = useState('')
     const [syllabusFile, setSyllabusFile] = useState(null)
     const [syllabusUnits, setSyllabusUnits] = useState([])
+    const [error, setError] = useState(null)
+
+    const captureError = (err, label = '') => {
+        const status = err.response?.status
+        const serverData = err.response?.data
+        const info = {
+            label,
+            message: err.message,
+            status,
+            statusText: err.response?.statusText,
+            url: err.config?.url,
+            method: err.config?.method?.toUpperCase(),
+            serverError: serverData?.error || serverData?.message || null,
+            serverDetail: serverData?.detail || serverData?.stack || null,
+            serverRaw: serverData ? JSON.stringify(serverData, null, 2) : null,
+            clientStack: err.stack,
+            timestamp: new Date().toISOString()
+        }
+        setError(info)
+        console.error('[Diagnostic error]', info)
+    }
 
     useEffect(() => {
         setMeta(m => ({ ...m, language: locale }))
@@ -74,8 +131,13 @@ export default function Diagnostic({ onDone }) {
         setIdx(0)
     }
 
+    const refreshHistory = () => {
+        vpApi.diagHistory().then(h => setHistory(h.results || [])).catch(() => {})
+    }
+
     const uploadSyllabus = async () => {
-        if (!syllabusFile) return alert('Please upload syllabus file first.')
+        if (!syllabusFile) return setError({ label: 'Validation', message: 'Please upload a syllabus file first.', timestamp: new Date().toISOString() })
+        setError(null)
         setUploadingSyllabus(true)
         try {
             const fd = new FormData()
@@ -87,20 +149,21 @@ export default function Diagnostic({ onDone }) {
                 setMeta(m => ({ ...m, unit_name: res.units[0] || '' }))
             }
         } catch (err) {
-            alert(err.response?.data?.error || err.message)
+            captureError(err, 'Syllabus Upload')
         } finally {
             setUploadingSyllabus(false)
         }
     }
 
     const startStudentChoice = async () => {
+        setError(null)
         try {
             if (!String(meta.topic || '').trim()) {
                 if (meta.syllabus_scope === 'unit_wise' && !String(meta.unit_name || '').trim()) {
-                    return alert('Please choose a unit for unit-wise diagnostic, or enter a topic.')
+                    return setError({ label: 'Validation', message: 'Please choose a unit for unit-wise diagnostic, or enter a topic.', timestamp: new Date().toISOString() })
                 }
                 if (!String(meta.syllabus_text || '').trim() && meta.education_level === 'college') {
-                    return alert('For college flow, upload syllabus or enter a topic.')
+                    return setError({ label: 'Validation', message: 'For college flow, upload syllabus or enter a topic.', timestamp: new Date().toISOString() })
                 }
             }
             const r = await vpApi.diagStudentStart(meta)
@@ -111,12 +174,13 @@ export default function Diagnostic({ onDone }) {
             setIdx(0)
             setDone(false)
         } catch (err) {
-            alert(err.response?.data?.error || err.message)
+            captureError(err, 'Generate Test')
         }
     }
 
     const startTeacherTest = async () => {
-        if (!selectedTeacherTestId) return alert('Select a teacher test first')
+        setError(null)
+        if (!selectedTeacherTestId) return setError({ label: 'Validation', message: 'Select a teacher test first.', timestamp: new Date().toISOString() })
         try {
             const r = await vpApi.diagTeacherStart(selectedTeacherTestId)
             setMode('teacher_upload')
@@ -126,7 +190,7 @@ export default function Diagnostic({ onDone }) {
             setIdx(0)
             setDone(false)
         } catch (err) {
-            alert(err.response?.data?.error || err.message)
+            captureError(err, 'Start Teacher Test')
         }
     }
 
@@ -142,10 +206,12 @@ export default function Diagnostic({ onDone }) {
                 : await vpApi.diagStudentSubmit({ attempt_id: attempt.id, answers: arr })
             setReport(r.report)
             setPlan(r.personalized_plan)
+            setViewAttemptId(attempt?.id || null)
             setDone(true)
             onDone?.()
+            refreshHistory()
         } catch (err) {
-            alert(err.response?.data?.error || err.message)
+            captureError(err, 'Submit Test')
         } finally {
             setSubmitting(false)
         }
@@ -155,7 +221,9 @@ export default function Diagnostic({ onDone }) {
         return <ResultView
             report={report}
             plan={plan}
-            onBack={() => { setDone(false); resetAttempt(); setViewTab('take') }}
+            attemptId={viewAttemptId}
+            onPlanUpdate={p => setPlan(p)}
+            onBack={() => { setDone(false); resetAttempt(); setViewTab('history'); refreshHistory() }}
         />
     }
 
@@ -164,6 +232,53 @@ export default function Diagnostic({ onDone }) {
             <div className="vp-diag-shell">
                 <h1 className="vp-diag-section-title">{t('vp_diagnostic') || 'Diagnostic'}</h1>
                 <p className="vp-text-sm">Take a new diagnostic or review your previous results.</p>
+
+                {error && (
+                    <div style={{ margin: '12px 0', borderRadius: 10, background: 'rgba(248,113,113,0.08)', border: '1px solid rgba(248,113,113,0.4)', color: '#f87171', fontSize: '0.85rem', overflow: 'hidden' }}>
+                        {/* Header */}
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', background: 'rgba(248,113,113,0.15)', borderBottom: '1px solid rgba(248,113,113,0.25)' }}>
+                            <span style={{ fontWeight: 700, fontSize: '0.9rem' }}>⚠ Error{error.label ? ` — ${error.label}` : ''}</span>
+                            {error.status && <span style={{ marginLeft: 'auto', background: 'rgba(248,113,113,0.25)', padding: '2px 8px', borderRadius: 4, fontSize: '0.78rem', fontFamily: 'monospace' }}>HTTP {error.status} {error.statusText || ''}</span>}
+                            <button onClick={() => setError(null)} style={{ background: 'none', border: 'none', color: '#f87171', cursor: 'pointer', fontSize: '1.1rem', lineHeight: 1, marginLeft: error.status ? 4 : 'auto' }}>✕</button>
+                        </div>
+                        {/* Body */}
+                        <div style={{ padding: '12px 14px', display: 'flex', flexDirection: 'column', gap: 8 }}>
+                            {/* Main message */}
+                            <div><span style={{ opacity: 0.6, fontSize: '0.78rem' }}>Message</span><br /><strong>{error.message}</strong></div>
+                            {/* Server error */}
+                            {error.serverError && error.serverError !== error.message && (
+                                <div><span style={{ opacity: 0.6, fontSize: '0.78rem' }}>Server Error</span><br />{error.serverError}</div>
+                            )}
+                            {/* Request info */}
+                            {(error.url || error.method) && (
+                                <div><span style={{ opacity: 0.6, fontSize: '0.78rem' }}>Request</span><br /><code style={{ fontFamily: 'monospace', fontSize: '0.82rem' }}>{error.method} {error.url}</code></div>
+                            )}
+                            {/* Full server response */}
+                            {error.serverRaw && (
+                                <div>
+                                    <span style={{ opacity: 0.6, fontSize: '0.78rem' }}>Full Server Response</span>
+                                    <pre style={{ margin: '4px 0 0', padding: '8px 10px', background: 'rgba(0,0,0,0.35)', borderRadius: 6, fontFamily: 'monospace', fontSize: '0.78rem', whiteSpace: 'pre-wrap', wordBreak: 'break-all', maxHeight: 200, overflowY: 'auto', color: '#fca5a5' }}>{error.serverRaw}</pre>
+                                </div>
+                            )}
+                            {/* Server detail / stack */}
+                            {error.serverDetail && (
+                                <div>
+                                    <span style={{ opacity: 0.6, fontSize: '0.78rem' }}>Server Detail / Stack</span>
+                                    <pre style={{ margin: '4px 0 0', padding: '8px 10px', background: 'rgba(0,0,0,0.35)', borderRadius: 6, fontFamily: 'monospace', fontSize: '0.75rem', whiteSpace: 'pre-wrap', wordBreak: 'break-all', maxHeight: 200, overflowY: 'auto', color: '#fca5a5' }}>{error.serverDetail}</pre>
+                                </div>
+                            )}
+                            {/* Client stack */}
+                            {error.clientStack && (
+                                <div>
+                                    <span style={{ opacity: 0.6, fontSize: '0.78rem' }}>Client Stack Trace</span>
+                                    <pre style={{ margin: '4px 0 0', padding: '8px 10px', background: 'rgba(0,0,0,0.35)', borderRadius: 6, fontFamily: 'monospace', fontSize: '0.75rem', whiteSpace: 'pre-wrap', wordBreak: 'break-all', maxHeight: 200, overflowY: 'auto', color: '#fca5a5' }}>{error.clientStack}</pre>
+                                </div>
+                            )}
+                            {/* Timestamp */}
+                            {error.timestamp && <div style={{ opacity: 0.5, fontSize: '0.75rem', marginTop: 4 }}>at {error.timestamp}</div>}
+                        </div>
+                    </div>
+                )}
 
                 <div className="vp-segment vp-mt-12">
                     <button className={'vp-btn ' + (viewTab === 'take' ? 'vp-btn-primary' : '')} onClick={() => setViewTab('take')}><ClipboardList size={16} /> Take Test</button>
@@ -191,6 +306,7 @@ export default function Diagnostic({ onDone }) {
                                             onClick={() => {
                                                 setReport(item.report || null)
                                                 setPlan(item.personalized_plan || null)
+                                                setViewAttemptId(item.id || null)
                                                 setDone(true)
                                             }}
                                         >
@@ -342,13 +458,12 @@ export default function Diagnostic({ onDone }) {
                         ))}
                     </div>
                 ) : (
-                    <textarea
-                        rows={cur.marks >= 5 ? 6 : 3}
-                        className="vp-search"
-                        style={{ width: '100%' }}
+                    <ShortAnswerField
+                        qid={cur.qid}
+                        marks={cur.marks}
                         value={answers[cur.qid] || ''}
-                        onChange={e => setAnswers(a => ({ ...a, [cur.qid]: e.target.value }))}
-                        placeholder={cur.marks >= 5 ? 'Write your detailed answer...' : 'Write your answer...'}
+                        onChange={val => setAnswers(a => ({ ...a, [cur.qid]: val }))}
+                        lang={locale || 'en'}
                     />
                 )}
                 <div className="vp-row">
@@ -387,6 +502,60 @@ const rv = {
         { bg: 'rgba(16,185,129,0.12)', border: 'rgba(16,185,129,0.35)', color: '#34d399', label: 'Week 3' },
         { bg: 'rgba(239,68,68,0.10)',  border: 'rgba(239,68,68,0.30)',  color: '#f87171', label: 'Week 4' },
     ]
+}
+
+// Speech-to-text textarea with mic button
+function ShortAnswerField({ qid, marks, value, onChange, lang }) {
+    const langMap = {
+        hi: 'hi-IN', ta: 'ta-IN', bn: 'bn-IN', gu: 'gu-IN',
+        kn: 'kn-IN', ml: 'ml-IN', mr: 'mr-IN', pa: 'pa-IN',
+        te: 'te-IN', ur: 'ur-IN', or: 'or-IN', en: 'en-IN'
+    }
+    const srLang = langMap[lang] || 'en-IN'
+    const { listening, toggle, supported } = useSpeechToText({
+        lang: srLang,
+        onResult: transcript => onChange(value ? value + ' ' + transcript : transcript)
+    })
+
+    return (
+        <div style={{ position: 'relative' }}>
+            <textarea
+                rows={marks >= 5 ? 6 : 3}
+                className="vp-search"
+                style={{ width: '100%', paddingRight: supported ? 48 : undefined }}
+                value={value}
+                onChange={e => onChange(e.target.value)}
+                placeholder={marks >= 5 ? 'Write your detailed answer...' : 'Write your answer...'}
+            />
+            {supported && (
+                <button
+                    type="button"
+                    onClick={toggle}
+                    title={listening ? 'Stop recording' : 'Speak your answer'}
+                    style={{
+                        position: 'absolute', top: 10, right: 10,
+                        background: listening ? 'rgba(239,68,68,0.18)' : 'rgba(139,92,246,0.15)',
+                        border: `1.5px solid ${listening ? 'rgba(239,68,68,0.5)' : 'rgba(139,92,246,0.4)'}`,
+                        borderRadius: 8, padding: '5px 7px', cursor: 'pointer',
+                        color: listening ? '#f87171' : '#a78bfa',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        transition: 'all 0.2s'
+                    }}
+                >
+                    {listening
+                        ? <><MicOff size={16} /><span style={{ marginLeft: 4, fontSize: '0.72rem', fontWeight: 600 }}>Stop</span></>
+                        : <><Mic size={16} /><span style={{ marginLeft: 4, fontSize: '0.72rem', fontWeight: 600 }}>Speak</span></>
+                    }
+                </button>
+            )}
+            {listening && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 5, fontSize: '0.75rem', color: '#f87171' }}>
+                    <span style={{ width: 7, height: 7, borderRadius: '50%', background: '#f87171', animation: 'vp-mic-pulse 1s infinite' }} />
+                    Listening...
+                </div>
+            )}
+        </div>
+    )
 }
 
 function ProgressBar({ pct, color }) {
@@ -583,9 +752,25 @@ function TopicPlanCard({ tp }) {
     )
 }
 
-function ResultView({ report, plan, onBack }) {
+function ResultView({ report, plan, attemptId, onPlanUpdate, onBack }) {
     const navigate = useNavigate()
     const [showQ, setShowQ] = useState(false)
+    const [regenerating, setRegenerating] = useState(false)
+    const [regenError, setRegenError] = useState(null)
+
+    const regeneratePlan = async () => {
+        if (!attemptId) return
+        setRegenerating(true)
+        setRegenError(null)
+        try {
+            const r = await vpApi.diagRegeneratePlan(attemptId)
+            onPlanUpdate?.(r.personalized_plan)
+        } catch (e) {
+            setRegenError('Could not regenerate plan. Please try again.')
+        } finally {
+            setRegenerating(false)
+        }
+    }
 
     const questionWise = report?.question_wise || []
     const weakTopics = report?.weak_topics || []
@@ -596,6 +781,18 @@ function ResultView({ report, plan, onBack }) {
 
     return (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
+
+            {/* ── Back button ── */}
+            <div>
+                <button
+                    className="vp-btn"
+                    onClick={onBack}
+                    style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}
+                >
+                    <ChevronRight size={15} style={{ transform: 'rotate(180deg)' }} />
+                    Back to Diagnostic
+                </button>
+            </div>
 
             {/* ── Score banner ── */}
             <div style={{
@@ -626,9 +823,30 @@ function ResultView({ report, plan, onBack }) {
             {/* ── Overall weekly goals ── */}
             {plan?.weekly_goals?.length > 0 && (
                 <div style={rv.card()}>
-                    <div style={{ fontWeight: 700, fontSize: '0.95rem', color: '#e2e8f0', marginBottom: 14 }}>
-                        📅 {plan.title || 'Your Improvement Plan'}
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14, flexWrap: 'wrap', gap: 8 }}>
+                        <div style={{ fontWeight: 700, fontSize: '0.95rem', color: '#e2e8f0' }}>
+                            📅 {plan.title || 'Your Improvement Plan'}
+                        </div>
+                        {attemptId && (
+                            <button
+                                onClick={regeneratePlan}
+                                disabled={regenerating}
+                                style={{
+                                    display: 'inline-flex', alignItems: 'center', gap: 6,
+                                    background: regenerating ? 'rgba(99,102,241,0.08)' : 'rgba(99,102,241,0.15)',
+                                    border: '1px solid rgba(99,102,241,0.4)',
+                                    borderRadius: 8, padding: '5px 12px', cursor: regenerating ? 'not-allowed' : 'pointer',
+                                    color: '#a78bfa', fontSize: '0.78rem', fontWeight: 600,
+                                    opacity: regenerating ? 0.6 : 1, transition: 'all 0.2s'
+                                }}
+                            >
+                                {regenerating ? '⟳ Generating…' : '✦ Regenerate with AI'}
+                            </button>
+                        )}
                     </div>
+                    {regenError && (
+                        <div style={{ fontSize: '0.78rem', color: '#f87171', marginBottom: 10 }}>{regenError}</div>
+                    )}
                     <div style={{ fontSize: '0.8rem', color: '#64748b', marginBottom: 14 }}>
                         Target: <strong style={{ color: '#60a5fa' }}>{plan.target_score}%</strong> in <strong style={{ color: '#60a5fa' }}>{plan.horizon_days} days</strong>
                     </div>

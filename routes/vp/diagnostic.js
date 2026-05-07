@@ -9,6 +9,7 @@ const express = require('express');
 const multer = require('multer');
 const { v4: uuidv4 } = require('uuid');
 const ml = require('../../services/vp/ml_client');
+const llmRouter = require('../../services/vp/llm_router');
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
 
@@ -180,7 +181,7 @@ module.exports = function diagnosticRoutes(pool, authenticate) {
             // Priority: explicit topic > unit (when unit-wise) > no explicit context
             const effectiveTopic = topicInput || (syllabus_scope === 'unit_wise' ? unitInput : '');
 
-            const questionPaper = buildQuestionPaper(candidates, {
+            const questionPaper = await buildQuestionPaper(candidates, {
                 subject: normalizedSubject,
                 topic: effectiveTopic,
                 grade: gradeNum,
@@ -249,7 +250,7 @@ module.exports = function diagnosticRoutes(pool, authenticate) {
 
             const questionPaper = toJSON(row.question_paper_json, []);
             const evaluation = evaluateDiagnostic(questionPaper, answers);
-            const plan = buildPersonalizedPlan({
+            const plan = await buildPersonalizedPlan({
                 report: evaluation.report,
                 subject: row.subject,
                 topic: row.topic,
@@ -392,7 +393,7 @@ module.exports = function diagnosticRoutes(pool, authenticate) {
 
             const questionPaper = toJSON(row.question_paper_json, []);
             const evaluation = evaluateDiagnostic(questionPaper, answers);
-            const plan = buildPersonalizedPlan({
+            const plan = await buildPersonalizedPlan({
                 report: evaluation.report,
                 subject: row.subject,
                 topic: row.topic,
@@ -641,6 +642,51 @@ module.exports = function diagnosticRoutes(pool, authenticate) {
         }
     });
 
+    // Regenerate AI plan for an existing submitted attempt
+    router.post('/diagnostic/plan/regenerate', authenticate, async (req, res) => {
+        const sid = String(req.user.id);
+        const { attempt_id } = req.body || {};
+        if (!attempt_id) return res.status(400).json({ error: 'attempt_id required' });
+
+        try {
+            const [[row]] = await pool.query(
+                `SELECT id, student_id, subject, topic, scope, grade, report_json, status
+                 FROM vp_diagnostic_attempts
+                 WHERE id = ? AND student_id = ? AND status = 'submitted'`,
+                [attempt_id, sid]
+            );
+            if (!row) return res.status(404).json({ error: 'submitted attempt not found' });
+
+            const report = toJSON(row.report_json, {});
+            if (!report || !Object.keys(report).length) {
+                return res.status(400).json({ error: 'no report data found for this attempt' });
+            }
+
+            const plan = await buildPersonalizedPlan({
+                report,
+                subject: row.subject,
+                topic: row.topic,
+                scope: row.scope,
+                grade: row.grade
+            });
+
+            // Update the attempt row and the plans table
+            await pool.query(
+                `UPDATE vp_diagnostic_attempts SET personalized_plan_json = ? WHERE id = ?`,
+                [JSON.stringify(plan), attempt_id]
+            );
+            await pool.query(
+                `UPDATE vp_personalized_plans SET plan_json = ?, title = ? WHERE attempt_id = ?`,
+                [JSON.stringify(plan), plan.title, attempt_id]
+            );
+
+            res.json({ ok: true, personalized_plan: plan });
+        } catch (err) {
+            console.error('[vp] plan regenerate:', err);
+            res.status(500).json({ error: err.message });
+        }
+    });
+
     return router;
 };
 
@@ -668,6 +714,58 @@ function normalizePlanRow(row) {
         plan: toJSON(row.plan_json, {}),
         created_at: row.created_at
     };
+}
+
+/**
+ * Generate a full set of diagnostic questions using AI.
+ * Returns { mcq: [...], short: [...], long: [...] }
+ * Falls back to empty arrays on failure (caller handles fallback).
+ */
+async function generateAiQuestionSet({ subject, topic, grade, language = 'en', needMcq = 15, needShort = 1, needLong = 1 }) {
+    const levelLabel = `Grade ${grade}`;
+    const langNote = language && language !== 'en' ? ` Respond in ${language}.` : '';
+    const messages = [
+        {
+            role: 'system',
+            content:
+                `You are an expert ${subject} teacher writing a diagnostic test for ${levelLabel} students.` +
+                ` Your task is to generate questions SPECIFICALLY about "${topic}" — every question must reference real facts, formulas, processes, or definitions from this topic.` +
+                ` Return ONLY valid JSON. No prose, no markdown fences.${langNote}`
+        },
+        {
+            role: 'user',
+            content:
+                `Generate a question set about "${topic}" in ${subject} for ${levelLabel} students.\n\n` +
+                `Return this exact JSON shape:\n` +
+                `{\n` +
+                `  "mcq": [ /* ${needMcq} items */ { "text": "...", "options": ["A) ...","B) ...","C) ...","D) ..."], "answer_key": "<exact option text>" } ],\n` +
+                `  "short": [ /* ${needShort} item */ { "text": "...", "answer_key": "key points as comma-separated terms" } ],\n` +
+                `  "long":  [ /* ${needLong} item */  { "text": "...", "answer_key": "key points as comma-separated terms" } ]\n` +
+                `}\n\n` +
+                `Rules:\n` +
+                `- Every MCQ option must be unique and plausible; answer_key must be the EXACT full text of the correct option\n` +
+                `- Short question: ask for a specific explanation, definition, or process within "${topic}"\n` +
+                `- Long question: ask for a detailed analysis, comparison, or application within "${topic}"\n` +
+                `- NO generic questions — every question must name "${topic}" or its specific sub-concepts`
+        }
+    ];
+
+    const result = await llmRouter.llmJson({ messages, temperature: 0.4, maxTokens: 4000 });
+    const j = result.json || {};
+
+    const normMcq = (Array.isArray(j.mcq) ? j.mcq : [])
+        .filter(q => q?.text && Array.isArray(q.options) && q.options.length >= 3 && q.answer_key)
+        .map(q => ({ type: 'mcq', text: String(q.text).trim(), options: q.options.map(String), answer_key: String(q.answer_key), topic, subject, a: 1, b: 0, c: 0.2 }));
+
+    const normShort = (Array.isArray(j.short) ? j.short : [])
+        .filter(q => q?.text)
+        .map(q => ({ type: 'short', text: String(q.text).trim(), options: [], answer_key: String(q.answer_key || topic), topic, subject }));
+
+    const normLong = (Array.isArray(j.long) ? j.long : [])
+        .filter(q => q?.text)
+        .map(q => ({ type: 'long', text: String(q.text).trim(), options: [], answer_key: String(q.answer_key || topic), topic, subject }));
+
+    return { mcq: normMcq, short: normShort, long: normLong };
 }
 
 async function getQuestionCandidates(pool, { subject, grade, topic, language, educationLevel = 'school' }) {
@@ -716,7 +814,7 @@ async function getQuestionCandidates(pool, { subject, grade, topic, language, ed
     }));
 }
 
-function buildQuestionPaper(candidates, {
+async function buildQuestionPaper(candidates, {
     subject,
     topic,
     grade,
@@ -764,45 +862,31 @@ function buildQuestionPaper(candidates, {
         if (oneMark.length >= 15) break;
     }
 
-    if (oneMark.length < 15) {
-        const needed = 15 - oneMark.length;
-        const synth = generateSyntheticQuestions({
-            subject,
-            topic: resolvedContext.value,
-            grade,
-            educationLevel,
-            collegeYear,
-            keywords: syllabusKeywords,
-            count: needed,
-            type: 'mcq',
-            seedBase: 40
-        });
-        oneMark.push(...synth.map(q => ({ ...q, qid: `q-${uuidv4()}`, marks: 1 })));
+    const needMcq = 15 - oneMark.length;
+    const needShort = shortCandidates.length >= 1 ? 0 : 1;
+    const needLong  = shortCandidates.length >= 2 ? 0 : 1;
+
+    if (needMcq > 0 || needShort > 0 || needLong > 0) {
+        try {
+            const aiSet = await generateAiQuestionSet({
+                subject,
+                topic: resolvedContext.value,
+                grade,
+                language,
+                needMcq: needMcq > 0 ? needMcq : 0,
+                needShort,
+                needLong
+            });
+            if (needMcq > 0) oneMark.push(...aiSet.mcq.slice(0, needMcq).map(q => ({ ...q, qid: `q-${uuidv4()}`, marks: 1 })));
+            if (needShort > 0 && aiSet.short.length) shortCandidates.push(...aiSet.short);
+            if (needLong  > 0 && aiSet.long.length)  shortCandidates.push(...aiSet.long);
+        } catch (e) {
+            console.warn('[vp] AI question generation failed:', e.message);
+        }
     }
 
-    const twoMarkBase = shortCandidates[0] || generateSyntheticQuestions({
-        subject,
-        topic: resolvedContext.value,
-        grade,
-        educationLevel,
-        collegeYear,
-        keywords: syllabusKeywords,
-        count: 1,
-        type: 'short',
-        seedBase: 101
-    })[0];
-
-    const fiveMarkBase = shortCandidates[1] || generateSyntheticQuestions({
-        subject,
-        topic: resolvedContext.value,
-        grade,
-        educationLevel,
-        collegeYear,
-        keywords: syllabusKeywords,
-        count: 1,
-        type: 'long',
-        seedBase: 203
-    })[0];
+    const twoMarkBase = shortCandidates[0] || { type: 'short', subject, topic: resolvedContext.value, text: `Explain a key concept of ${resolvedContext.value} with an example.`, options: [], answer_key: resolvedContext.value };
+    const fiveMarkBase = shortCandidates[1] || { type: 'long', subject, topic: resolvedContext.value, text: `Describe the main principles of ${resolvedContext.value} and their real-world applications.`, options: [], answer_key: resolvedContext.value };
 
     const twoMark = [{
         ...twoMarkBase,
@@ -832,114 +916,7 @@ function buildQuestionPaper(candidates, {
     }));
 }
 
-function generateSyntheticQuestions({ subject, topic, grade, educationLevel, collegeYear, keywords = [], count = 1, type = 'mcq', seedBase = 1 }) {
-    const out = [];
-    const baseTopic = String(topic || keywords[0] || subject || 'Core Concepts').trim();
-    const keyPool = keywords.length ? keywords : [baseTopic, subject, 'concept'];
 
-    for (let i = 0; i < count; i += 1) {
-        const seed = seedBase + i;
-        if (type === 'mcq') {
-            out.push(generateOneMcq({ subject, baseTopic, grade, educationLevel, collegeYear, keyPool, seed }));
-        } else if (type === 'short') {
-            const k1 = keyPool[(seed + 1) % keyPool.length];
-            out.push({
-                type: 'short',
-                subject,
-                topic: baseTopic,
-                text: `Explain the role of ${k1} in ${baseTopic} with one practical example${educationLevel === 'college' ? ' from your syllabus' : ''}.`,
-                options: [],
-                answer_key: `${k1},definition,example,application`
-            });
-        } else {
-            const k1 = keyPool[(seed + 2) % keyPool.length];
-            const k2 = keyPool[(seed + 4) % keyPool.length];
-            out.push({
-                type: 'long',
-                subject,
-                topic: baseTopic,
-                text: `Write a detailed answer on ${baseTopic}: include concept of ${k1}, process/steps, and one real-life or industry application related to ${k2}.`,
-                options: [],
-                answer_key: `${k1},${k2},steps,application,example,diagram`
-            });
-        }
-    }
-    return out;
-}
-
-function generateOneMcq({ subject, baseTopic, grade, educationLevel, collegeYear, keyPool, seed }) {
-    const subj = String(subject || '').toLowerCase();
-
-    if (subj.includes('math') || baseTopic.toLowerCase().includes('algebra')) {
-        const a = 2 + (seed % 7);
-        const b = 3 + ((seed * 2) % 9);
-        const x = 1 + (seed % 6);
-        const c = a * x + b;
-        const text = `Solve for x: ${a}x + ${b} = ${c}`;
-        const correct = String(x);
-        const opts = uniqueOptions([correct, String(x + 1), String(Math.max(0, x - 1)), String(x + 2)]);
-        return { type: 'mcq', subject, topic: baseTopic, text, options: opts, answer_key: correct };
-    }
-
-    if (subj.includes('science')) {
-        const k = keyPool[seed % keyPool.length];
-        const text = `Which statement best explains ${k} in ${baseTopic}?`;
-        const correct = `${k} describes the core principle and its measurable effect.`;
-        const opts = uniqueOptions([
-            correct,
-            `${k} is unrelated to observations and cannot be tested.`,
-            `${k} applies only in language studies.`,
-            `${k} means memorizing formulas without understanding.`
-        ]);
-        return { type: 'mcq', subject, topic: baseTopic, text, options: opts, answer_key: correct };
-    }
-
-    if (subj.includes('program')) {
-        const n = 3 + (seed % 5);
-        const text = `What is the output of this expression? ${n} * (${n - 1})`;
-        const correct = String(n * (n - 1));
-        const opts = uniqueOptions([correct, String(n + (n - 1)), String(n * n), String((n - 1) * (n - 1))]);
-        return { type: 'mcq', subject, topic: baseTopic, text, options: opts, answer_key: correct };
-    }
-
-    if (subj.includes('english')) {
-        const text = `Choose the best sentence with correct grammar for ${baseTopic}.`;
-        const correct = 'The student has completed the assignment and reviewed the feedback.';
-        const opts = uniqueOptions([
-            correct,
-            'The student have complete assignment and review feedback.',
-            'The student completed assignment but not reviewed it properly yesterday now.',
-            'Student was complete the assignment and reviews feedbacks.'
-        ]);
-        return { type: 'mcq', subject, topic: baseTopic, text, options: opts, answer_key: correct };
-    }
-
-    const levelLabel = educationLevel === 'college' ? `Year ${collegeYear || ''}` : `Grade ${grade || ''}`;
-    const k = keyPool[seed % keyPool.length];
-    const text = `${levelLabel}: Which option is most relevant to understanding ${k} in ${baseTopic}?`;
-    const correct = `Definition, key process, and one practical application of ${k}.`;
-    const opts = uniqueOptions([
-        correct,
-        `Only memorizing the term ${k} without application.`,
-        `Ignoring the concept and focusing on unrelated topics.`,
-        `Learning ${k} without examples, diagrams, or context.`
-    ]);
-    return { type: 'mcq', subject, topic: baseTopic, text, options: opts, answer_key: correct };
-}
-
-function uniqueOptions(options) {
-    const out = [];
-    const seen = new Set();
-    for (const o of options) {
-        const t = String(o || '').trim();
-        if (!t) continue;
-        const k = t.toLowerCase();
-        if (seen.has(k)) continue;
-        seen.add(k);
-        out.push(t);
-    }
-    return out.slice(0, 4);
-}
 
 function stripAnswers(questionPaper) {
     return (questionPaper || []).map(q => ({
@@ -1083,33 +1060,102 @@ function evaluateSingleQuestion(question, answer) {
     };
 }
 
-function buildPersonalizedPlan({ report, subject, topic, scope, grade }) {
+async function buildPersonalizedPlan({ report, subject, topic, scope, grade }) {
     const weakTopics = (report.weak_topics || []).length
         ? report.weak_topics
         : [{ topic: topic || subject || 'Core Concepts', percentage: report.percentage || 0 }];
 
-    const topicPlans = weakTopics.slice(0, 6).map((t, idx) => {
+    const stage       = report.stage || 'Foundation';
+    const percentage  = Number(report.percentage || 0);
+    const topicList   = weakTopics.slice(0, 6);
+
+    // ── AI: overall 4-week plan + per-topic focus ──────────────────────────────
+    let aiPlan = null;
+    try {
+        const topicSummary = topicList.map(t =>
+            `${t.topic} (score: ${t.percentage ?? 0}%, correct: ${t.score ?? '?'}/${t.total ?? '?'})`
+        ).join('; ');
+
+        const messages = [
+            {
+                role: 'system',
+                content:
+                    `You are an expert ${subject} teacher writing a personalised 4-week improvement plan for a Grade ${grade || ''} student.` +
+                    ` The student just completed a diagnostic test. Analyse their weak areas and produce a concrete, actionable plan.` +
+                    ` Return ONLY valid JSON \u2014 no prose, no markdown fences.`
+            },
+            {
+                role: 'user',
+                content:
+                    `Student diagnostic results:\n` +
+                    `- Subject: ${subject}\n` +
+                    `- Stage: ${stage}\n` +
+                    `- Overall accuracy: ${percentage}%\n` +
+                    `- Weak topics: ${topicSummary}\n\n` +
+                    `Generate a plan with this exact JSON shape:\n` +
+                    `{\n` +
+                    `  "weekly_goals": ["Week 1: <specific goal>", "Week 2: ...", "Week 3: ...", "Week 4: ..."],\n` +
+                    `  "topic_plans": [\n` +
+                    `    {\n` +
+                    `      "topic": "<topic name>",\n` +
+                    `      "why_struggle": "<1-2 sentences: specific reason the student struggles based on their score>",\n` +
+                    `      "weekly_focus": [\n` +
+                    `        "Week 1: <specific task for this topic>",\n` +
+                    `        "Week 2: <specific task>",\n` +
+                    `        "Week 3: <specific task>"\n` +
+                    `      ],\n` +
+                    `      "daily_tasks": ["<actionable task 1>", "<actionable task 2>", "<actionable task 3>"]\n` +
+                    `    }\n` +
+                    `  ]\n` +
+                    `}\n\n` +
+                    `Rules:\n` +
+                    `- weekly_goals must address the student's ACTUAL weak topics (${topicList.map(t => t.topic).join(', ')})\n` +
+                    `- Each topic_plan must be for one of the weak topics listed above\n` +
+                    `- daily_tasks must be concrete and specific to that topic\n` +
+                    `- Do NOT use generic phrases like "strengthen fundamentals" — name the actual concepts`
+            }
+        ];
+
+        const result = await llmRouter.llmJson({ messages, temperature: 0.3, maxTokens: 3000 });
+        const j = result.json || {};
+        if (Array.isArray(j.weekly_goals) && Array.isArray(j.topic_plans)) {
+            aiPlan = j;
+        }
+    } catch (e) {
+        console.warn('[vp] AI plan generation failed, using fallback:', e.message);
+    }
+
+    // Merge AI-generated content with static resources/notes per topic
+    const topicPlans = topicList.map((t, idx) => {
         const tName = String(t.topic || 'Core Concepts');
-        const cur = Number(t.percentage || 0);
+        const cur   = Number(t.percentage || 0);
         const target = Math.min(100, Math.max(cur + 20, 70));
         const resources = getResourceBundle({ subject, topic: tName, grade });
         const notesText = buildQuickNotes({ subject, topic: tName, grade });
+
+        // Use AI plan for this topic if available
+        const aiTp = aiPlan?.topic_plans?.find(p =>
+            String(p.topic || '').toLowerCase().includes(tName.toLowerCase()) ||
+            tName.toLowerCase().includes(String(p.topic || '').toLowerCase())
+        ) || aiPlan?.topic_plans?.[idx];
+
         return {
             rank: idx + 1,
             topic: tName,
             current_pct: cur,
             target_pct: target,
-            why_struggle: `Accuracy in ${tName} is ${cur}%. Needs better concept clarity and structured practice.`,
-            weekly_focus: [
+            why_struggle: aiTp?.why_struggle ||
+                `Accuracy in ${tName} is ${cur}%. Needs better concept clarity and structured practice.`,
+            weekly_focus: (aiTp?.weekly_focus?.length ? aiTp.weekly_focus : [
                 `Week 1: Build fundamentals of ${tName} with examples and notes.`,
                 `Week 2: Practice 20 MCQs and 6 descriptive questions on ${tName}.`,
                 `Week 3: Timed revision + mini test for ${tName}.`
-            ],
-            daily_tasks: [
+            ]),
+            daily_tasks: (aiTp?.daily_tasks?.length ? aiTp.daily_tasks : [
                 `Read notes for ${tName} (25 mins).`,
                 `Solve 10 one-mark and 2 short-answer questions on ${tName}.`,
                 'Maintain an error log and retry mistakes.'
-            ],
+            ]),
             resources,
             notes: {
                 file_name: `${slugify(tName)}-notes.txt`,
@@ -1118,17 +1164,19 @@ function buildPersonalizedPlan({ report, subject, topic, scope, grade }) {
         };
     });
 
+    const weeklyGoals = aiPlan?.weekly_goals?.length ? aiPlan.weekly_goals : [
+        `Week 1: Strengthen fundamentals for ${subject || 'selected subject'}`,
+        'Week 2: Topic-wise targeted practice on weak areas',
+        'Week 3: Mixed-level problem solving with timed attempts',
+        'Week 4: Full diagnostic retest and final revision'
+    ];
+
     return {
         title: `${subject || 'Subject'} detailed personalized improvement plan`,
-        stage: report.stage,
-        target_score: Math.min(100, Number(report.percentage || 0) + 20),
+        stage,
+        target_score: Math.min(100, percentage + 20),
         horizon_days: 28,
-        weekly_goals: [
-            `Week 1: Strengthen fundamentals for ${subject || 'selected subject'}`,
-            'Week 2: Topic-wise targeted practice on weak areas',
-            'Week 3: Mixed-level problem solving with timed attempts',
-            'Week 4: Full diagnostic retest and final revision'
-        ],
+        weekly_goals: weeklyGoals,
         topic_plans: topicPlans,
         recommendations: [
             'Follow topic plans in sequence from weakest to strongest.',

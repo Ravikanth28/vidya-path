@@ -14603,7 +14603,7 @@ async function ensureFrontendEvalTables() {
     // ── VidyaPath AI (adaptive learning) ────────────────────────────────────
     try {
         const vidyaPathRouter = require('./routes/vp');
-        const vpRouter = await vidyaPathRouter(pool, authenticate);
+        const vpRouter = await vidyaPathRouter(pool, optionalAuth);
         app.use('/api/vp', vpRouter);
         console.log('🎓 VidyaPath AI mounted at /api/vp');
     } catch (err) {
