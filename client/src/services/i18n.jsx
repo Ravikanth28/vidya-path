@@ -866,14 +866,191 @@ const translations = {
         issue_certificates: 'प्रमाणपत्र जारी करें',
         webhook_manager: 'वेबहुक प्रबंधक',
         allocations_group: 'आवंटन',
+    },
+
+    // Added Indian locales. Keys will gracefully fall back to English until
+    // dedicated translations are filled for each language.
+    bn: {
+        app_name: 'AI Mentor Hub',
+        dashboard: 'ড্যাশবোর্ড',
+        my_profile: 'আমার প্রোফাইল',
+        language: 'ভাষা',
+        language_label: 'ভাষা',
+        dark_mode: 'ডার্ক মোড',
+        light_mode: 'লাইট মোড',
+        vp_section: 'বিদ্যাপথ AI',
+        vp_home: 'হোম',
+        vp_diagnostic: 'ডায়াগনস্টিক',
+        vp_practice: 'প্র্যাকটিস',
+        vp_tutor: 'AI টিউটর',
+        vp_career_hub: 'ক্যারিয়ার হাব',
+        vp_profile: 'আমার প্রোফাইল',
+        vp_edit_profile: 'প্রোফাইল সম্পাদনা করুন'
+    },
+    gu: {
+        app_name: 'AI Mentor Hub',
+        dashboard: 'ડેશબોર્ડ',
+        my_profile: 'મારો પ્રોફાઇલ',
+        language: 'ભાષા',
+        language_label: 'ભાષા',
+        dark_mode: 'ડાર્ક મોડ',
+        light_mode: 'લાઇટ મોડ',
+        vp_section: 'વિદ્યાપથ AI',
+        vp_home: 'હોમ',
+        vp_diagnostic: 'ડાયગ્નોસ્ટિક',
+        vp_practice: 'પ્રેક્ટિસ',
+        vp_tutor: 'AI ટ્યુટર',
+        vp_career_hub: 'કેરિયર હબ',
+        vp_profile: 'મારો પ્રોફાઇલ',
+        vp_edit_profile: 'પ્રોફાઇલ સંપાદિત કરો'
+    },
+    kn: {
+        app_name: 'AI Mentor Hub',
+        dashboard: 'ಡ್ಯಾಶ್ಬೋರ್ಡ್',
+        my_profile: 'ನನ್ನ ಪ್ರೊಫೈಲ್',
+        language: 'ಭಾಷೆ',
+        language_label: 'ಭಾಷೆ',
+        dark_mode: 'ಡಾರ್ಕ್ ಮೋಡ್',
+        light_mode: 'ಲೈಟ್ ಮೋಡ್',
+        vp_section: 'ವಿದ್ಯಾಪಥ AI',
+        vp_home: 'ಮುಖಪುಟ',
+        vp_diagnostic: 'ಡಯಾಗ್ನೋಸ್ಟಿಕ್',
+        vp_practice: 'ಅಭ್ಯಾಸ',
+        vp_tutor: 'AI ಟ್ಯೂಟರ್',
+        vp_career_hub: 'ಕರಿಯರ್ ಹಬ್',
+        vp_profile: 'ನನ್ನ ಪ್ರೊಫೈಲ್',
+        vp_edit_profile: 'ಪ್ರೊಫೈಲ್ ಸಂಪಾದಿಸಿ'
+    },
+    ml: {
+        app_name: 'AI Mentor Hub',
+        dashboard: 'ഡാഷ്ബോർഡ്',
+        my_profile: 'എന്റെ പ്രൊഫൈൽ',
+        language: 'ഭാഷ',
+        language_label: 'ഭാഷ',
+        dark_mode: 'ഡാർക്ക് മോഡ്',
+        light_mode: 'ലൈറ്റ് മോഡ്',
+        vp_section: 'വിദ്യാപാത് AI',
+        vp_home: 'ഹോം',
+        vp_diagnostic: 'ഡയഗ്നോസ്റ്റിക്',
+        vp_practice: 'പ്രാക്ടീസ്',
+        vp_tutor: 'AI ട്യൂട്ടർ',
+        vp_career_hub: 'കരിയർ ഹബ്',
+        vp_profile: 'എന്റെ പ്രൊഫൈൽ',
+        vp_edit_profile: 'പ്രൊഫൈൽ തിരുത്തുക'
+    },
+    mr: {
+        app_name: 'AI Mentor Hub',
+        dashboard: 'डॅशबोर्ड',
+        my_profile: 'माझे प्रोफाइल',
+        language: 'भाषा',
+        language_label: 'भाषा',
+        dark_mode: 'डार्क मोड',
+        light_mode: 'लाईट मोड',
+        vp_section: 'विद्यापथ AI',
+        vp_home: 'मुख्यपृष्ठ',
+        vp_diagnostic: 'डायग्नोस्टिक',
+        vp_practice: 'सराव',
+        vp_tutor: 'AI ट्यूटर',
+        vp_career_hub: 'करिअर हब',
+        vp_profile: 'माझे प्रोफाइल',
+        vp_edit_profile: 'प्रोफाइल संपादित करा'
+    },
+    or: {
+        app_name: 'AI Mentor Hub',
+        dashboard: 'ଡ୍ୟାଶବୋର୍ଡ',
+        my_profile: 'ମୋ ପ୍ରୋଫାଇଲ୍',
+        language: 'ଭାଷା',
+        language_label: 'ଭାଷା',
+        dark_mode: 'ଡାର୍କ ମୋଡ୍',
+        light_mode: 'ଲାଇଟ୍ ମୋଡ୍',
+        vp_section: 'ବିଦ୍ୟାପଥ AI',
+        vp_home: 'ହୋମ',
+        vp_diagnostic: 'ଡାୟାଗ୍ନୋଷ୍ଟିକ',
+        vp_practice: 'ଅଭ୍ୟାସ',
+        vp_tutor: 'AI ଟ୍ୟୁଟର',
+        vp_career_hub: 'କ୍ୟାରିୟର ହବ',
+        vp_profile: 'ମୋ ପ୍ରୋଫାଇଲ୍',
+        vp_edit_profile: 'ପ୍ରୋଫାଇଲ୍ ସମ୍ପାଦନା କରନ୍ତୁ'
+    },
+    pa: {
+        app_name: 'AI Mentor Hub',
+        dashboard: 'ਡੈਸ਼ਬੋਰਡ',
+        my_profile: 'ਮੇਰਾ ਪ੍ਰੋਫ਼ਾਈਲ',
+        language: 'ਭਾਸ਼ਾ',
+        language_label: 'ਭਾਸ਼ਾ',
+        dark_mode: 'ਡਾਰਕ ਮੋਡ',
+        light_mode: 'ਲਾਈਟ ਮੋਡ',
+        vp_section: 'ਵਿਦਿਆਪਥ AI',
+        vp_home: 'ਹੋਮ',
+        vp_diagnostic: 'ਡਾਇਗਨੋਸਟਿਕ',
+        vp_practice: 'ਪ੍ਰੈਕਟਿਸ',
+        vp_tutor: 'AI ਟਿਊਟਰ',
+        vp_career_hub: 'ਕੈਰੀਅਰ ਹੱਬ',
+        vp_profile: 'ਮੇਰਾ ਪ੍ਰੋਫ਼ਾਈਲ',
+        vp_edit_profile: 'ਪ੍ਰੋਫ਼ਾਈਲ ਸੋਧੋ'
+    },
+    te: {
+        app_name: 'AI Mentor Hub',
+        dashboard: 'డ్యాష్‌బోర్డ్',
+        my_profile: 'నా ప్రొఫైల్',
+        language: 'భాష',
+        language_label: 'భాష',
+        dark_mode: 'డార్క్ మోడ్',
+        light_mode: 'లైట్ మోడ్',
+        vp_section: 'విద్యాపథ్ AI',
+        vp_home: 'హోమ్',
+        vp_diagnostic: 'డయాగ్నస్టిక్',
+        vp_practice: 'ప్రాక్టీస్',
+        vp_tutor: 'AI ట్యూటర్',
+        vp_career_hub: 'కెరీర్ హబ్',
+        vp_profile: 'నా ప్రొఫైల్',
+        vp_edit_profile: 'ప్రొఫైల్ సవరించండి'
+    },
+    ur: {
+        app_name: 'AI Mentor Hub',
+        dashboard: 'ڈیش بورڈ',
+        my_profile: 'میرا پروفائل',
+        language: 'زبان',
+        language_label: 'زبان',
+        dark_mode: 'ڈارک موڈ',
+        light_mode: 'لائٹ موڈ',
+        vp_section: 'ودیا پاتھ AI',
+        vp_home: 'ہوم',
+        vp_diagnostic: 'تشخیصی',
+        vp_practice: 'پریکٹس',
+        vp_tutor: 'AI ٹیوٹر',
+        vp_career_hub: 'کیریئر ہب',
+        vp_profile: 'میرا پروفائل',
+        vp_edit_profile: 'پروفائل میں ترمیم کریں'
     }
+}
+
+const LOCALE_FALLBACK_MAP = {
+    bn: 'hi',
+    gu: 'hi',
+    kn: 'ta',
+    ml: 'ta',
+    mr: 'hi',
+    or: 'hi',
+    pa: 'hi',
+    te: 'ta',
+    ur: 'hi'
 }
 
 // ===== LANGUAGE METADATA =====
 export const LANGUAGES = [
-    { code: 'en', name: 'English', nativeName: 'English', flag: '🇺🇸' },
-    { code: 'ta', name: 'Tamil', nativeName: 'தமிழ்', flag: '🇮🇳' },
-    { code: 'hi', name: 'Hindi', nativeName: 'हिन्दी', flag: '🇮🇳' }
+    { code: 'en', name: 'English-IN', nativeName: 'English', flag: '🇮🇳' },
+    { code: 'hi', name: 'Hindi-IN', nativeName: 'हिन्दी', flag: '🇮🇳' },
+    { code: 'ta', name: 'Tamil-IN', nativeName: 'தமிழ்', flag: '🇮🇳' },
+    { code: 'bn', name: 'Bengali-IN', nativeName: 'বাংলা', flag: '🇮🇳' },
+    { code: 'gu', name: 'Gujarati-IN', nativeName: 'ગુજરાતી', flag: '🇮🇳' },
+    { code: 'kn', name: 'Kannada-IN', nativeName: 'ಕನ್ನಡ', flag: '🇮🇳' },
+    { code: 'ml', name: 'Malayalam-IN', nativeName: 'മലയാളം', flag: '🇮🇳' },
+    { code: 'mr', name: 'Marathi-IN', nativeName: 'मराठी', flag: '🇮🇳' },
+    { code: 'or', name: 'Odia-IN', nativeName: 'ଓଡ଼ିଆ', flag: '🇮🇳' },
+    { code: 'pa', name: 'Punjabi-IN', nativeName: 'ਪੰਜਾਬੀ', flag: '🇮🇳' },
+    { code: 'te', name: 'Telugu-IN', nativeName: 'తెలుగు', flag: '🇮🇳' },
+    { code: 'ur', name: 'Urdu-IN', nativeName: 'اردو', flag: '🇮🇳' }
 ]
 
 // ===== CONTEXT =====
@@ -916,7 +1093,12 @@ export function I18nProvider({ children }) {
 
     // Translation function with interpolation
     const t = useCallback((key, params = {}) => {
-        let text = translations[locale]?.[key] || translations.en?.[key] || key
+        const fallbackLocale = LOCALE_FALLBACK_MAP[locale]
+        let text =
+            translations[locale]?.[key] ||
+            (fallbackLocale ? translations[fallbackLocale]?.[key] : undefined) ||
+            translations.en?.[key] ||
+            key
 
         // Simple interpolation: {n} → value
         Object.entries(params).forEach(([k, v]) => {

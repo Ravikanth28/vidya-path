@@ -150,19 +150,19 @@ export default function AdminVPDiagnostic() {
     }
 
     return (
-        <div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+        <div className='vp-admin-diag-shell'>
+            <div className='vp-admin-diag-head'>
                 <h3 style={{ margin: 0, color: '#e2e8f0' }}>Diagnostic Test Studio</h3>
                 <button onClick={load} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '7px 14px', background: 'rgba(148,163,184,0.08)', border: '1px solid rgba(148,163,184,0.2)', borderRadius: 8, color: '#94a3b8', cursor: 'pointer', fontSize: '0.85rem' }}>
                     <RefreshCw size={13} /> Refresh
                 </button>
             </div>
 
-            <div style={card}>
+            <div className='vp-admin-diag-card'>
                 <h4 style={{ marginTop: 0, color: '#e2e8f0' }}>Manual Test Creation</h4>
                 <p style={{ color: '#94a3b8', fontSize: '0.8rem' }}>Use one question per line with this format:</p>
                 <p style={{ color: '#60a5fa', fontSize: '0.78rem' }}>question|type|marks|answer|opt1;opt2;opt3;opt4|topic</p>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(180px,1fr))', gap: 10, marginBottom: 10 }}>
+                <div className='vp-admin-diag-grid' style={{ marginBottom: 10 }}>
                     <input style={input} placeholder='Title' value={manual.title} onChange={e => setManual(m => ({ ...m, title: e.target.value }))} />
                     <select style={input} value={manual.subject} onChange={e => setManual(m => ({ ...m, subject: e.target.value }))}>
                         {SUBJECTS.map(s => <option key={s}>{s}</option>)}
@@ -176,14 +176,16 @@ export default function AdminVPDiagnostic() {
                 </div>
                 <textarea style={{ ...input, minHeight: 120, marginBottom: 8 }} value={manual.description} onChange={e => setManual(m => ({ ...m, description: e.target.value }))} placeholder='Description' />
                 <textarea style={{ ...input, minHeight: 160, marginBottom: 12 }} value={manual.questionsText} onChange={e => setManual(m => ({ ...m, questionsText: e.target.value }))} placeholder='Paste question lines...' />
+                <div className='vp-admin-diag-actions'>
                 <button onClick={saveManual} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '8px 16px', background: 'rgba(96,165,250,0.2)', border: '1px solid rgba(96,165,250,0.5)', borderRadius: 8, color: '#60a5fa', cursor: 'pointer', fontWeight: 600, fontSize: '0.85rem' }}>
                     <Save size={14} /> Save Manual Test
                 </button>
+                </div>
             </div>
 
-            <div style={card}>
+            <div className='vp-admin-diag-card'>
                 <h4 style={{ marginTop: 0, color: '#e2e8f0' }}>Upload Test File (PDF/CSV/Excel)</h4>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(180px,1fr))', gap: 10, marginBottom: 10 }}>
+                <div className='vp-admin-diag-grid' style={{ marginBottom: 10 }}>
                     <input style={input} placeholder='Title' value={uploadMeta.title} onChange={e => setUploadMeta(m => ({ ...m, title: e.target.value }))} />
                     <select style={input} value={uploadMeta.subject} onChange={e => setUploadMeta(m => ({ ...m, subject: e.target.value }))}>
                         {SUBJECTS.map(s => <option key={s}>{s}</option>)}
@@ -195,13 +197,15 @@ export default function AdminVPDiagnostic() {
                         {LANGUAGES.map(l => <option key={l.code} value={l.code}>{l.code} ({l.label})</option>)}
                     </select>
                 </div>
+                <div className='vp-admin-diag-actions'>
                 <input type='file' onChange={e => setUploadFile(e.target.files?.[0] || null)} style={{ marginBottom: 10, color: '#cbd5e1' }} />
                 <button onClick={saveUpload} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '8px 16px', background: 'rgba(96,165,250,0.2)', border: '1px solid rgba(96,165,250,0.5)', borderRadius: 8, color: '#60a5fa', cursor: 'pointer', fontWeight: 600, fontSize: '0.85rem' }}>
                     <Upload size={14} /> Upload & Publish
                 </button>
+                </div>
             </div>
 
-            <div style={card}>
+            <div className='vp-admin-diag-card'>
                 <h4 style={{ marginTop: 0, color: '#e2e8f0' }}>Published / Draft Diagnostic Tests</h4>
                 {loading && <div style={{ color: '#94a3b8' }}>Loading...</div>}
                 {!loading && !tests.length && <div style={{ color: '#64748b' }}>No tests created yet.</div>}
@@ -218,7 +222,7 @@ export default function AdminVPDiagnostic() {
                 ))}
             </div>
 
-            <div style={card}>
+            <div className='vp-admin-diag-card'>
                 <h4 style={{ marginTop: 0, color: '#e2e8f0' }}>Student Personalized Plans (Admin View)</h4>
                 {!plans.length && <div style={{ color: '#64748b' }}>No plans generated yet.</div>}
                 {plans.slice(0, 30).map(p => (

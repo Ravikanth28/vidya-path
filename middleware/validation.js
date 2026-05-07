@@ -11,6 +11,19 @@ const loginSchema = z.object({
     password: z.string().min(1, 'Password is required')
 });
 
+const registerRequestOtpSchema = z.object({
+    name: z.string().min(2, 'Name must be at least 2 characters').max(100),
+    phone: z.string().min(10, 'Phone number must be at least 10 digits').max(20),
+    studentClass: z.string().min(1, 'Class is required').max(50),
+    email: z.string().email('Invalid email format'),
+    password: z.string().min(6, 'Password must be at least 6 characters')
+});
+
+const registerVerifyOtpSchema = z.object({
+    email: z.string().email('Invalid email format'),
+    otp: z.string().regex(/^\d{6}$/, 'OTP must be 6 digits')
+});
+
 const createUserSchema = z.object({
     name: z.string().min(2, 'Name must be at least 2 characters').max(100),
     email: z.string().email('Invalid email format'),
@@ -214,6 +227,8 @@ function validateQuery(schema) {
 module.exports = {
     // Schemas
     loginSchema,
+    registerRequestOtpSchema,
+    registerVerifyOtpSchema,
     createUserSchema,
     resetPasswordSchema,
     createTaskSchema,

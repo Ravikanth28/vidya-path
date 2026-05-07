@@ -2,8 +2,10 @@
 .login-page {
     position: relative;
     width: 100vw;
-    height: 100vh;
-    overflow: hidden;
+    min-height: 100vh;
+    height: auto;
+    overflow-x: hidden;
+    overflow-y: auto;
     color: var(--text-main);
 }
 
@@ -68,7 +70,8 @@
 /* Content Layout */
 .login-content {
     display: flex;
-    height: 100%;
+    min-height: 100vh;
+    height: auto;
     padding: 6rem 3rem 3rem;
     max-width: 1400px;
     margin: 0 auto;
@@ -275,6 +278,33 @@
     color: var(--text-muted);
 }
 
+.auth-switch-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0.5rem;
+    margin-bottom: 1.2rem;
+    background: rgba(59, 130, 246, 0.08);
+    border: 1px solid var(--border-color);
+    border-radius: 0.8rem;
+    padding: 0.35rem;
+}
+
+.auth-switch-btn {
+    border: none;
+    background: transparent;
+    color: var(--text-secondary);
+    font-weight: 600;
+    border-radius: 0.6rem;
+    padding: 0.55rem 0.7rem;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.auth-switch-btn.active {
+    background: #3b82f6;
+    color: #fff;
+}
+
 .login-form .form-group {
     margin-bottom: 1.25rem;
 }
@@ -363,6 +393,35 @@
     text-align: center;
     margin-top: 1rem;
     border: 1px solid rgba(239, 68, 68, 0.2);
+}
+
+.demo-otp-box {
+    border: 1px dashed rgba(16, 185, 129, 0.6);
+    background: rgba(16, 185, 129, 0.08);
+    border-radius: 0.75rem;
+    padding: 0.8rem;
+    margin-top: 0.25rem;
+    margin-bottom: 0.9rem;
+    text-align: center;
+}
+
+.demo-otp-label {
+    font-size: 0.8rem;
+    color: #86efac;
+    margin-bottom: 0.35rem;
+}
+
+.demo-otp-code {
+    font-size: 1.5rem;
+    letter-spacing: 0.2rem;
+    font-weight: 800;
+    color: #bbf7d0;
+}
+
+.demo-otp-note {
+    margin-top: 0.35rem;
+    color: var(--text-muted);
+    font-size: 0.75rem;
 }
 
 @media (max-width: 1024px) {

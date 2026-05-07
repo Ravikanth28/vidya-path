@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import vpApi from '@/services/vp/api'
 import { useI18n, LANGUAGES } from '@/services/i18n'
-import { Save } from 'lucide-react'
+import { Mail, Phone, Save, School, Sparkles } from 'lucide-react'
 
 const BOARDS = ['CBSE', 'ICSE', 'State Board', 'NIOS']
 const STATES = [
@@ -14,6 +14,8 @@ export default function VPProfile() {
     const { t, locale, setLocale } = useI18n()
     const [data, setData] = useState(null)
     const [name, setName] = useState('')
+    const [phone, setPhone] = useState('')
+    const [studentClass, setStudentClass] = useState('')
     const [grade, setGrade] = useState(9)
     const [board, setBoard] = useState('CBSE')
     const [stateName, setStateName] = useState('')
@@ -24,6 +26,8 @@ export default function VPProfile() {
         vpApi.profile().then(d => {
             setData(d)
             setName(d.user?.name || '')
+            setPhone(d.user?.phone || '')
+            setStudentClass(d.user?.studentClass || '')
             setGrade(d.prefs?.grade || 9)
             setBoard(d.prefs?.board || 'CBSE')
             setStateName(d.prefs?.state || '')
@@ -33,8 +37,25 @@ export default function VPProfile() {
     const save = async () => {
         setSaving(true)
         try {
-            await vpApi.updateProfile({ name, grade: Number(grade), board, state: stateName, lang: locale })
+            await vpApi.updateProfile({
+                name,
+                phone,
+                studentClass,
+                grade: Number(grade),
+                board,
+                state: stateName,
+                lang: locale
+            })
             setSavedAt(new Date().toLocaleTimeString())
+            setData(prev => ({
+                ...prev,
+                user: {
+                    ...(prev?.user || {}),
+                    name,
+                    phone,
+                    studentClass
+                }
+            }))
         } catch (err) {
             alert(err.response?.data?.error || err.message)
         } finally {
@@ -47,28 +68,35 @@ export default function VPProfile() {
     const initials = (name || 'S').trim().split(/\s+/).map(s => s[0]).join('').slice(0, 2).toUpperCase()
 
     return (
-        <div>
+        <div className="vp-profile-shell">
             <h1 className="vp-h1">{t('vp_profile') || 'My Profile'}</h1>
 
-            <div className="vp-row" style={{ alignItems: 'center', gap: 16 }}>
-                <div style={{
-                    width: 80, height: 80, borderRadius: '50%',
-                    background: 'linear-gradient(135deg, #4f46e5, #7c3aed)',
-                    color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    fontSize: 28, fontWeight: 700
-                }}>{initials}</div>
-                <div>
-                    <h3 style={{ margin: 0 }}>{name || 'Student'}</h3>
-                    <p className="vp-text-sm" style={{ margin: 0 }}>{data.user?.email || '—'}</p>
-                    <p className="vp-text-sm">XP: <strong>{data.prefs?.xp_points || 0}</strong></p>
+            <div className="vp-profile-hero">
+                <div className="vp-profile-avatar">{initials}</div>
+                <div className="vp-profile-id">
+                    <h3>{name || 'Student'}</h3>
+                    <p><Mail size={14} /> {data.user?.email || '—'}</p>
+                    <p><Phone size={14} /> {data.user?.phone || 'Not added yet'}</p>
+                    <p><School size={14} /> {data.user?.studentClass || `Grade ${grade}`}</p>
+                </div>
+                <div className="vp-profile-xp">
+                    <Sparkles size={16} />
+                    <strong>{data.prefs?.xp_points || 0}</strong>
+                    <span>XP</span>
                 </div>
             </div>
 
-            <div className="vp-card vp-mt-24">
+            <div className="vp-card vp-mt-24 vp-profile-editor">
                 <h3>{t('vp_edit_profile') || 'Edit profile'}</h3>
                 <div className="vp-grid" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 12 }}>
                     <Field label="Name">
                         <input className="vp-search" value={name} onChange={e => setName(e.target.value)} />
+                    </Field>
+                    <Field label="Mobile Number">
+                        <input className="vp-search" value={phone} onChange={e => setPhone(e.target.value)} placeholder="Enter phone number" />
+                    </Field>
+                    <Field label="Class">
+                        <input className="vp-search" value={studentClass} onChange={e => setStudentClass(e.target.value)} placeholder="e.g. 10 / 11 / B.Tech 1st Year" />
                     </Field>
                     <Field label="Grade">
                         <select className="vp-search" value={grade} onChange={e => setGrade(e.target.value)}>

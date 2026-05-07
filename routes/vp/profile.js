@@ -1,8 +1,8 @@
 /**
  * VidyaPath profile — student-side profile read/write + mastery overview.
  *
- *   GET  /api/vp/profile        — name, grade, board, lang, xp, theta-by-subject, top-mastery
- *   PUT  /api/vp/profile        — { name?, grade?, board?, state?, lang? }
+ *   GET  /api/vp/profile        — name, email, phone, class, prefs, theta-by-subject, top-mastery
+ *   PUT  /api/vp/profile        — { name?, phone?, studentClass?, grade?, board?, state?, lang? }
  *   GET  /api/vp/profile/mastery — full per-concept mastery list
  */
 const express = require('express');
@@ -16,7 +16,7 @@ module.exports = function profileRoutes(pool, authenticate) {
             // Fetch user from the existing users table (best effort).
             let userRow = {};
             try {
-                const [u] = await pool.query('SELECT id, name, email, role FROM users WHERE id = ?', [sid]);
+                const [u] = await pool.query('SELECT id, name, email, phone, student_class, role FROM users WHERE id = ?', [sid]);
                 userRow = u[0] || {};
             } catch { /* table may differ */ }
 
@@ -44,7 +44,13 @@ module.exports = function profileRoutes(pool, authenticate) {
             );
 
             res.json({
-                user: { id: sid, name: userRow.name || req.user.name || 'Student', email: userRow.email || req.user.email },
+                user: {
+                    id: sid,
+                    name: userRow.name || req.user.name || 'Student',
+                    email: userRow.email || req.user.email,
+                    phone: userRow.phone || null,
+                    studentClass: userRow.student_class || null
+                },
                 prefs,
                 ability: ability.map(a => ({ subject: a.subject, theta: Number(a.theta), n: Number(a.n_responses) })),
                 mastery: mastery.map(m => ({
@@ -59,7 +65,7 @@ module.exports = function profileRoutes(pool, authenticate) {
 
     router.put('/profile', authenticate, async (req, res) => {
         const sid = String(req.user.id);
-        const { name, grade, board, state, lang } = req.body || {};
+        const { name, phone, studentClass, grade, board, state, lang } = req.body || {};
         try {
             await pool.query(
                 `INSERT INTO vp_user_prefs (student_id, grade, board, state, lang)
@@ -75,6 +81,16 @@ module.exports = function profileRoutes(pool, authenticate) {
             if (typeof name === 'string' && name.trim()) {
                 try {
                     await pool.query('UPDATE users SET name = ? WHERE id = ?', [name.trim(), sid]);
+                } catch { /* not critical */ }
+            }
+            if (typeof phone === 'string' || phone === null) {
+                try {
+                    await pool.query('UPDATE users SET phone = ? WHERE id = ?', [phone ? phone.trim() : null, sid]);
+                } catch { /* not critical */ }
+            }
+            if (typeof studentClass === 'string' || studentClass === null) {
+                try {
+                    await pool.query('UPDATE users SET student_class = ? WHERE id = ?', [studentClass ? studentClass.trim() : null, sid]);
                 } catch { /* not critical */ }
             }
             res.json({ ok: true });

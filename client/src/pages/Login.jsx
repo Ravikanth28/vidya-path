@@ -8,6 +8,8 @@ import {
 } from 'lucide-react'
 import './Login.css'
 
+const API_BASE = (import.meta.env.VITE_API_URL || 'http://localhost:3000') + '/api'
+
 // Neural Network Background Component
 function NeuralBackground() {
     const canvasRef = useRef(null)
@@ -170,6 +172,18 @@ function AIIllustration() {
 function Login() {
     const [email, setEmail] = useState('')
     const [password, setPassword] = useState('')
+    const [isRegisterMode, setIsRegisterMode] = useState(false)
+    const [registerForm, setRegisterForm] = useState({
+        name: '',
+        phone: '',
+        studentClass: '',
+        email: '',
+        password: ''
+    })
+    const [otpInput, setOtpInput] = useState('')
+    const [demoOtp, setDemoOtp] = useState('')
+    const [otpRequested, setOtpRequested] = useState(false)
+    const [registering, setRegistering] = useState(false)
     const [error, setError] = useState('')
     const [loading, setLoading] = useState(false)
     const [showLoginPanel, setShowLoginPanel] = useState(false)
@@ -189,6 +203,67 @@ function Login() {
         }
 
         setLoading(false)
+    }
+
+    const requestDemoOtp = async (e) => {
+        e.preventDefault()
+        setError('')
+        setRegistering(true)
+
+        try {
+            const response = await fetch(`${API_BASE}/auth/register/request-otp`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(registerForm)
+            })
+
+            const data = await response.json()
+            if (!response.ok) {
+                throw new Error(data.error || 'Failed to generate OTP')
+            }
+
+            setDemoOtp(data.demoOtp || '')
+            setOtpRequested(true)
+        } catch (err) {
+            setError(err.message)
+        } finally {
+            setRegistering(false)
+        }
+    }
+
+    const verifyOtpAndRegister = async (e) => {
+        e.preventDefault()
+        setError('')
+        setRegistering(true)
+
+        try {
+            const verifyResponse = await fetch(`${API_BASE}/auth/register/verify-otp`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ email: registerForm.email, otp: otpInput })
+            })
+            const verifyData = await verifyResponse.json()
+            if (!verifyResponse.ok) {
+                throw new Error(verifyData.error || 'OTP verification failed')
+            }
+
+            const loginResult = await login(registerForm.email, registerForm.password)
+            if (!loginResult.success) {
+                throw new Error(loginResult.error || 'Registered but login failed. Please login manually.')
+            }
+        } catch (err) {
+            setError(err.message)
+        } finally {
+            setRegistering(false)
+        }
+    }
+
+    const switchAuthMode = (registerMode) => {
+        setIsRegisterMode(registerMode)
+        setError('')
+        setOtpRequested(false)
+        setDemoOtp('')
+        setOtpInput('')
     }
 
     return (
@@ -285,57 +360,199 @@ function Login() {
                                 <div className="header-icon">
                                     <Brain size={32} />
                                 </div>
-                                <h2>{t('welcome_back')}</h2>
-                                <p>{t('login_subtitle')}</p>
+                                <h2>{isRegisterMode ? 'Create Account' : t('welcome_back')}</h2>
+                                <p>{isRegisterMode ? 'Register with OTP verification' : t('login_subtitle')}</p>
                             </div>
 
-                            <form onSubmit={handleSubmit} className="login-form">
-                                <div className="form-group">
-                                    <label htmlFor="email">{t('email')}</label>
-                                    <div className="input-field">
-                                        <Mail className="field-icon" size={18} />
-                                        <input
-                                            type="email"
-                                            id="email"
-                                            value={email}
-                                            onChange={(e) => setEmail(e.target.value)}
-                                            placeholder={t('email')}
-                                            required
-                                        />
+                            <div className="auth-switch-row">
+                                <button
+                                    type="button"
+                                    className={`auth-switch-btn ${!isRegisterMode ? 'active' : ''}`}
+                                    onClick={() => switchAuthMode(false)}
+                                >
+                                    Login
+                                </button>
+                                <button
+                                    type="button"
+                                    className={`auth-switch-btn ${isRegisterMode ? 'active' : ''}`}
+                                    onClick={() => switchAuthMode(true)}
+                                >
+                                    Register
+                                </button>
+                            </div>
+
+                            {!isRegisterMode ? (
+                                <form onSubmit={handleSubmit} className="login-form">
+                                    <div className="form-group">
+                                        <label htmlFor="email">{t('email')}</label>
+                                        <div className="input-field">
+                                            <Mail className="field-icon" size={18} />
+                                            <input
+                                                type="email"
+                                                id="email"
+                                                value={email}
+                                                onChange={(e) => setEmail(e.target.value)}
+                                                placeholder={t('email')}
+                                                required
+                                            />
+                                        </div>
                                     </div>
-                                </div>
 
-                                <div className="form-group">
-                                    <label htmlFor="password">{t('password')}</label>
-                                    <div className="input-field">
-                                        <Lock className="field-icon" size={18} />
-                                        <input
-                                            type="password"
-                                            id="password"
-                                            value={password}
-                                            onChange={(e) => setPassword(e.target.value)}
-                                            placeholder={t('password')}
-                                            required
-                                        />
+                                    <div className="form-group">
+                                        <label htmlFor="password">{t('password')}</label>
+                                        <div className="input-field">
+                                            <Lock className="field-icon" size={18} />
+                                            <input
+                                                type="password"
+                                                id="password"
+                                                value={password}
+                                                onChange={(e) => setPassword(e.target.value)}
+                                                placeholder={t('password')}
+                                                required
+                                            />
+                                        </div>
                                     </div>
-                                </div>
 
-                                {error && <div className="error-message">{error}</div>}
+                                    {error && <div className="error-message">{error}</div>}
 
-                                <button type="submit" className="submit-btn" disabled={loading}>
-                                    {loading ? (
+                                    <button type="submit" className="submit-btn" disabled={loading}>
+                                        {loading ? (
+                                            <>
+                                                <div className="btn-spinner"></div>
+                                                {t('loading')}
+                                            </>
+                                        ) : (
+                                            <>
+                                                {t('sign_in')}
+                                                <ArrowRight size={18} />
+                                            </>
+                                        )}
+                                    </button>
+                                </form>
+                            ) : (
+                                <form onSubmit={otpRequested ? verifyOtpAndRegister : requestDemoOtp} className="login-form">
+                                    <div className="form-group">
+                                        <label htmlFor="reg-name">Name</label>
+                                        <div className="input-field">
+                                            <User className="field-icon" size={18} />
+                                            <input
+                                                type="text"
+                                                id="reg-name"
+                                                value={registerForm.name}
+                                                onChange={(e) => setRegisterForm(v => ({ ...v, name: e.target.value }))}
+                                                placeholder="Student name"
+                                                required
+                                            />
+                                        </div>
+                                    </div>
+
+                                    <div className="form-group">
+                                        <label htmlFor="reg-phone">Phone Number</label>
+                                        <div className="input-field">
+                                            <Shield className="field-icon" size={18} />
+                                            <input
+                                                type="tel"
+                                                id="reg-phone"
+                                                value={registerForm.phone}
+                                                onChange={(e) => setRegisterForm(v => ({ ...v, phone: e.target.value }))}
+                                                placeholder="10-digit mobile number"
+                                                required
+                                            />
+                                        </div>
+                                    </div>
+
+                                    <div className="form-group">
+                                        <label htmlFor="reg-class">Class</label>
+                                        <div className="input-field">
+                                            <GraduationCap className="field-icon" size={18} />
+                                            <input
+                                                type="text"
+                                                id="reg-class"
+                                                value={registerForm.studentClass}
+                                                onChange={(e) => setRegisterForm(v => ({ ...v, studentClass: e.target.value }))}
+                                                placeholder="e.g. 10, 11, 12, BTech 1st Year"
+                                                required
+                                            />
+                                        </div>
+                                    </div>
+
+                                    <div className="form-group">
+                                        <label htmlFor="reg-email">Email</label>
+                                        <div className="input-field">
+                                            <Mail className="field-icon" size={18} />
+                                            <input
+                                                type="email"
+                                                id="reg-email"
+                                                value={registerForm.email}
+                                                onChange={(e) => setRegisterForm(v => ({ ...v, email: e.target.value }))}
+                                                placeholder="Email"
+                                                required
+                                            />
+                                        </div>
+                                    </div>
+
+                                    <div className="form-group">
+                                        <label htmlFor="reg-password">Password</label>
+                                        <div className="input-field">
+                                            <Lock className="field-icon" size={18} />
+                                            <input
+                                                type="password"
+                                                id="reg-password"
+                                                value={registerForm.password}
+                                                onChange={(e) => setRegisterForm(v => ({ ...v, password: e.target.value }))}
+                                                placeholder="Create password"
+                                                required
+                                            />
+                                        </div>
+                                    </div>
+
+                                    {otpRequested && (
                                         <>
-                                            <div className="btn-spinner"></div>
-                                            {t('loading')}
-                                        </>
-                                    ) : (
-                                        <>
-                                            {t('sign_in')}
-                                            <ArrowRight size={18} />
+                                            <div className="demo-otp-box">
+                                                <div className="demo-otp-label">Demo OTP</div>
+                                                <div className="demo-otp-code">{demoOtp || '------'}</div>
+                                                <div className="demo-otp-note">Use this OTP to complete registration.</div>
+                                            </div>
+                                            <div className="form-group">
+                                                <label htmlFor="reg-otp">Enter OTP</label>
+                                                <div className="input-field">
+                                                    <Shield className="field-icon" size={18} />
+                                                    <input
+                                                        type="text"
+                                                        id="reg-otp"
+                                                        value={otpInput}
+                                                        onChange={(e) => setOtpInput(e.target.value)}
+                                                        placeholder="6-digit OTP"
+                                                        maxLength={6}
+                                                        required
+                                                    />
+                                                </div>
+                                            </div>
                                         </>
                                     )}
-                                </button>
-                            </form>
+
+                                    {error && <div className="error-message">{error}</div>}
+
+                                    <button type="submit" className="submit-btn" disabled={registering}>
+                                        {registering ? (
+                                            <>
+                                                <div className="btn-spinner"></div>
+                                                {t('loading')}
+                                            </>
+                                        ) : otpRequested ? (
+                                            <>
+                                                Verify OTP & Login
+                                                <ArrowRight size={18} />
+                                            </>
+                                        ) : (
+                                            <>
+                                                Sign Up
+                                                <ArrowRight size={18} />
+                                            </>
+                                        )}
+                                    </button>
+                                </form>
+                            )}
                         </div>
                     )}
                 </div>

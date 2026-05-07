@@ -157,26 +157,22 @@ export default function Diagnostic({ onDone }) {
 
     if (!attempt) {
         return (
-            <div>
-                <h1 className="vp-h1">{t('vp_diagnostic') || 'Diagnostic'}</h1>
+            <div className="vp-diag-shell">
+                <h1 className="vp-diag-section-title">{t('vp_diagnostic') || 'Diagnostic'}</h1>
                 <p className="vp-text-sm">Take a new diagnostic or review your previous results.</p>
 
-                <div className="vp-row vp-mt-12" style={{ gap: 8 }}>
-                    <button className={'vp-btn ' + (viewTab === 'take' ? 'vp-btn-primary' : '')} onClick={() => setViewTab('take')}>
-                        <ClipboardList size={16} /> Take Test
-                    </button>
-                    <button className={'vp-btn ' + (viewTab === 'history' ? 'vp-btn-primary' : '')} onClick={() => setViewTab('history')}>
-                        <History size={16} /> Previous Results
-                    </button>
+                <div className="vp-segment vp-mt-12">
+                    <button className={'vp-btn ' + (viewTab === 'take' ? 'vp-btn-primary' : '')} onClick={() => setViewTab('take')}><ClipboardList size={16} /> Take Test</button>
+                    <button className={'vp-btn ' + (viewTab === 'history' ? 'vp-btn-primary' : '')} onClick={() => setViewTab('history')}><History size={16} /> Previous Results</button>
                 </div>
 
                 {viewTab === 'history' && (
-                    <div className="vp-card vp-mt-12">
+                    <div className="vp-diag-panel vp-mt-12">
                         <h3><History size={16} /> Previous Results</h3>
                         {!history.length ? (
                             <div className="vp-empty">No previous diagnostic results yet.</div>
                         ) : (
-                            <div className="vp-grid" style={{ gridTemplateColumns: '1fr', gap: 10 }}>
+                            <div className="vp-diag-history-grid">
                                 {history.map(item => (
                                     <div key={item.id} className="vp-card" style={{ margin: 0 }}>
                                         <h3>{item.subject || 'General'} {item.topic ? `· ${item.topic}` : ''}</h3>
@@ -205,96 +201,92 @@ export default function Diagnostic({ onDone }) {
 
                 {viewTab === 'take' && (
                     <>
-                        <div className="vp-row vp-mt-12" style={{ gap: 8 }}>
-                            <button className={'vp-btn ' + (mode === 'student_choice' ? 'vp-btn-primary' : '')} onClick={() => setMode('student_choice')}>
-                                <User size={16} /> Student Choice
-                            </button>
-                            <button className={'vp-btn ' + (mode === 'teacher_upload' ? 'vp-btn-primary' : '')} onClick={() => setMode('teacher_upload')}>
-                                <Upload size={16} /> Teacher Uploaded
-                            </button>
+                        <div className="vp-segment vp-mt-12">
+                            <button className={'vp-btn ' + (mode === 'student_choice' ? 'vp-btn-primary' : '')} onClick={() => setMode('student_choice')}><User size={16} /> Student Choice</button>
+                            <button className={'vp-btn ' + (mode === 'teacher_upload' ? 'vp-btn-primary' : '')} onClick={() => setMode('teacher_upload')}><Upload size={16} /> Teacher Uploaded</button>
                         </div>
 
                 {mode === 'student_choice' ? (
-                    <div className="vp-card vp-mt-12">
+                    <div className="vp-diag-panel vp-mt-12">
                         <h3><ClipboardList size={16} /> Student Choice Test</h3>
                         <p className="vp-text-sm">Clean flow: Topic (highest priority) -> Unit (if Unit Wise) -> Whole Syllabus -> fallback profile context.</p>
-                        <div className="vp-grid" style={{ gridTemplateColumns: 'repeat(auto-fit,minmax(180px,1fr))', gap: 10 }}>
-                            <label>
-                                Learning Level
+                        <div className="vp-diag-fields">
+                            <div className="vp-diag-field">
+                                <label>Learning Level</label>
                                 <select className="vp-search" value={meta.education_level} onChange={e => setMeta(m => ({ ...m, education_level: e.target.value }))}>
                                     <option value="school">School</option>
                                     <option value="college">College</option>
                                 </select>
-                            </label>
-                            <label>
-                                Language
+                            </div>
+                            <div className="vp-diag-field">
+                                <label>Language</label>
                                 <select className="vp-search" value={meta.language} onChange={e => setMeta(m => ({ ...m, language: e.target.value }))}>
                                     {LANGUAGE_OPTIONS.map(l => (
                                         <option key={l.code} value={l.code}>{l.code} ({l.label})</option>
                                     ))}
                                 </select>
-                            </label>
+                            </div>
                             {meta.education_level === 'school' ? (
-                                <label>
-                                    Class
+                                <div className="vp-diag-field">
+                                    <label>Class</label>
                                     <select className="vp-search" value={meta.grade} onChange={e => setMeta(m => ({ ...m, grade: Number(e.target.value) }))}>
                                         {[8, 9, 10, 11, 12].map(g => <option key={g} value={g}>{g}</option>)}
                                     </select>
-                                </label>
+                                </div>
                             ) : (
-                                <label>
-                                    College Year
+                                <div className="vp-diag-field">
+                                    <label>College Year</label>
                                     <select className="vp-search" value={meta.college_year} onChange={e => setMeta(m => ({ ...m, college_year: Number(e.target.value) }))}>
                                         {[1, 2, 3, 4, 5, 6].map(y => <option key={y} value={y}>{y}</option>)}
                                     </select>
-                                </label>
+                                </div>
                             )}
                             {meta.education_level === 'school' ? (
-                                <label>
-                                    Subject
+                                <div className="vp-diag-field">
+                                    <label>Subject</label>
                                     <select className="vp-search" value={meta.subject} onChange={e => setMeta(m => ({ ...m, subject: e.target.value }))}>
                                         {['Mathematics', 'Science', 'English', 'Aptitude', 'Programming', 'General'].map(s => <option key={s}>{s}</option>)}
                                     </select>
-                                </label>
+                                </div>
                             ) : (
-                                <label>
-                                    Subject (optional)
+                                <div className="vp-diag-field">
+                                    <label>Subject (optional)</label>
                                     <select className="vp-search" value={meta.subject} onChange={e => setMeta(m => ({ ...m, subject: e.target.value }))}>
                                         {['General', 'Mathematics', 'Science', 'English', 'Aptitude', 'Programming'].map(s => <option key={s}>{s}</option>)}
                                     </select>
-                                </label>
+                                </div>
                             )}
-                            <label>
-                                Scope
+                            <div className="vp-diag-field">
+                                <label>Scope</label>
                                 <select className="vp-search" value={meta.scope} onChange={e => setMeta(m => ({ ...m, scope: e.target.value }))}>
                                     <option value="topic">Topic</option>
                                     <option value="subject">Whole Subject</option>
                                     <option value="year">Whole Year</option>
                                 </select>
-                            </label>
-                            <label>
-                                Syllabus Scope
+                            </div>
+                            <div className="vp-diag-field">
+                                <label>Syllabus Scope</label>
                                 <select className="vp-search" value={meta.syllabus_scope} onChange={e => setMeta(m => ({ ...m, syllabus_scope: e.target.value }))}>
                                     <option value="whole_syllabus">Whole Syllabus</option>
                                     <option value="unit_wise">Unit Wise</option>
                                 </select>
-                            </label>
-                            <label>
-                                Topic (optional - overrides other selections)
+                            </div>
+                            <div className="vp-diag-field span-2">
+                                <label>Topic (optional - overrides other selections)</label>
                                 <input className="vp-search" value={meta.topic} onChange={e => setMeta(m => ({ ...m, topic: e.target.value }))} placeholder={meta.education_level === 'college' ? 'e.g. Compiler Design' : 'e.g. Algebra'} />
-                            </label>
+                            </div>
                             {syllabusUnits.length > 0 && meta.syllabus_scope === 'unit_wise' && (
-                                <label>
-                                    Choose Unit
+                                <div className="vp-diag-field span-2">
+                                    <label>Choose Unit</label>
                                     <select className="vp-search" value={meta.unit_name} onChange={e => setMeta(m => ({ ...m, unit_name: e.target.value }))}>
                                         <option value="">Select Unit</option>
                                         {syllabusUnits.map((u, i) => <option key={i} value={u}>{u}</option>)}
                                     </select>
-                                </label>
+                                </div>
                             )}
                         </div>
 
-                        <div className="vp-card vp-mt-12" style={{ margin: 0, border: '1px solid rgba(99,102,241,0.28)', background: 'rgba(99,102,241,0.07)' }}>
+                        <div className="vp-diag-upload">
                             <h3>{meta.education_level === 'college' ? <><GraduationCap size={16} /> College Syllabus Upload</> : <><Layers size={16} /> School Syllabus Upload</>}</h3>
                             <p className="vp-text-sm">Upload syllabus (TXT/PDF/CSV/Excel). Unit-wise mode will show parsed units here.</p>
                             <div className="vp-row" style={{ gap: 8 }}>
@@ -313,10 +305,10 @@ export default function Diagnostic({ onDone }) {
                         <button className="vp-btn vp-btn-primary vp-mt-12" onClick={startStudentChoice}>Generate Test</button>
                     </div>
                 ) : (
-                    <div className="vp-card vp-mt-12">
+                    <div className="vp-diag-panel vp-mt-12">
                         <h3><Upload size={16} /> Teacher Uploaded Test</h3>
                         <p className="vp-text-sm">Choose a published test uploaded by your teacher/admin.</p>
-                        <select className="vp-search" value={selectedTeacherTestId} onChange={e => setSelectedTeacherTestId(e.target.value)}>
+                        <select className="vp-search" style={{ maxWidth: 520 }} value={selectedTeacherTestId} onChange={e => setSelectedTeacherTestId(e.target.value)}>
                             <option value="">Select test</option>
                             {teacherTests.map(test => (
                                 <option key={test.id} value={test.id}>

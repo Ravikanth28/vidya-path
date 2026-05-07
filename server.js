@@ -27,7 +27,7 @@ const WebhookService = require('./services/webhook_service');
 // Security & Middleware imports
 const { hashPassword, comparePassword, generateToken, authenticate, authorize, optionalAuth } = require('./middleware/auth');
 const { generalLimiter, authLimiter, aiLimiter, codeLimiter, adminLimiter, uploadLimiter, submissionLimiter } = require('./middleware/rateLimiter');
-const { validate, loginSchema, createUserSchema, resetPasswordSchema, createTaskSchema, createSubmissionSchema, sendMessageSchema, bulkReassignSchema, bulkDeleteSchema, createProblemSchema, aptitudeSubmitSchema, globalTestSubmitSchema, plagiarismCheckSchema, createAptitudeSchema } = require('./middleware/validation');
+const { validate, loginSchema, registerRequestOtpSchema, registerVerifyOtpSchema, createUserSchema, resetPasswordSchema, createTaskSchema, createSubmissionSchema, sendMessageSchema, bulkReassignSchema, bulkDeleteSchema, createProblemSchema, aptitudeSubmitSchema, globalTestSubmitSchema, plagiarismCheckSchema, createAptitudeSchema } = require('./middleware/validation');
 const { sanitizeMiddleware, sanitizeString, sanitizeObject } = require('./middleware/sanitizer');
 const setupSwagger = require('./middleware/swagger');
 
@@ -425,6 +425,40 @@ pool.getConnection()
             }
         }
 
+        // Ensure student_class column exists on users table (used by self-registration)
+        try {
+            await pool.query(`ALTER TABLE users ADD COLUMN student_class VARCHAR(50) DEFAULT NULL`);
+            console.log('✅ Added student_class column to users table');
+        } catch (e) {
+            if (e.code === 'ER_DUP_FIELDNAME' || (e.message && e.message.includes('Duplicate column'))) {
+                // Column already exists — fine
+            } else {
+                console.warn('⚠️ Could not add student_class to users:', e.message);
+            }
+        }
+
+        // OTP registrations table for demo OTP signup flow
+        try {
+            await pool.query(`
+                CREATE TABLE IF NOT EXISTS auth_registration_otps (
+                    id INT AUTO_INCREMENT PRIMARY KEY,
+                    name VARCHAR(100) NOT NULL,
+                    phone VARCHAR(20) NOT NULL,
+                    student_class VARCHAR(50) NOT NULL,
+                    email VARCHAR(255) NOT NULL,
+                    password_hash VARCHAR(255) NOT NULL,
+                    otp_code VARCHAR(6) NOT NULL,
+                    expires_at DATETIME NOT NULL,
+                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    INDEX idx_auth_reg_otps_email (email),
+                    INDEX idx_auth_reg_otps_expires (expires_at)
+                )
+            `);
+            console.log('✅ auth_registration_otps table ready');
+        } catch (e) {
+            console.warn('⚠️ OTP registration table init:', e.message);
+        }
+
         // ─── Auto-create Alumni tables ───────────────────────────────────────
         const alumniTables = [
             `CREATE TABLE IF NOT EXISTS alumni_profiles (
@@ -781,6 +815,93 @@ app.post('/api/auth/login', authLimiter, validate(loginSchema), async (req, res)
         );
 
         res.json({ success: true, token, user: responseUser });
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ error: 'Server error' });
+    }
+});
+
+// Request OTP for student self-registration (demo OTP returned in response)
+app.post('/api/auth/register/request-otp', authLimiter, validate(registerRequestOtpSchema), async (req, res) => {
+    try {
+        const { name, phone, studentClass, email, password } = req.body;
+
+        const [existing] = await pool.query('SELECT id FROM users WHERE email = ? LIMIT 1', [email]);
+        if (existing.length > 0) {
+            return res.status(409).json({ error: 'Email is already registered. Please login.' });
+        }
+
+        const otp = String(Math.floor(100000 + Math.random() * 900000));
+        const passwordHash = await hashPassword(password);
+        const expiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
+
+        await pool.query('DELETE FROM auth_registration_otps WHERE email = ?', [email]);
+        await pool.query(
+            `INSERT INTO auth_registration_otps
+                (name, phone, student_class, email, password_hash, otp_code, expires_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?)`,
+            [name, phone, studentClass, email, passwordHash, otp, expiresAt]
+        );
+
+        // Demo mode: return OTP in API response so frontend can display it.
+        return res.json({
+            success: true,
+            message: 'Demo OTP generated',
+            demoOtp: otp,
+            expiresInSeconds: 600
+        });
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ error: 'Server error' });
+    }
+});
+
+// Verify OTP and create student account
+app.post('/api/auth/register/verify-otp', authLimiter, validate(registerVerifyOtpSchema), async (req, res) => {
+    try {
+        const { email, otp } = req.body;
+
+        const [rows] = await pool.query(
+            `SELECT * FROM auth_registration_otps
+             WHERE email = ?
+             ORDER BY id DESC
+             LIMIT 1`,
+            [email]
+        );
+
+        if (rows.length === 0) {
+            return res.status(400).json({ error: 'No OTP request found for this email.' });
+        }
+
+        const pending = rows[0];
+        if (String(pending.otp_code) !== String(otp)) {
+            return res.status(400).json({ error: 'Invalid OTP.' });
+        }
+
+        if (new Date(pending.expires_at).getTime() < Date.now()) {
+            return res.status(400).json({ error: 'OTP expired. Please request a new OTP.' });
+        }
+
+        const [existing] = await pool.query('SELECT id FROM users WHERE email = ? LIMIT 1', [email]);
+        if (existing.length > 0) {
+            await pool.query('DELETE FROM auth_registration_otps WHERE email = ?', [email]);
+            return res.status(409).json({ error: 'Email is already registered. Please login.' });
+        }
+
+        const userId = uuidv4();
+        const createdAt = new Date();
+        await pool.query(
+            `INSERT INTO users (id, name, email, password, role, phone, student_class, batch, status, created_at)
+             VALUES (?, ?, ?, ?, 'student', ?, ?, ?, 'active', ?)`,
+            [userId, pending.name, pending.email, pending.password_hash, pending.phone || null, pending.student_class || null, pending.student_class || null, createdAt]
+        );
+
+        await pool.query('DELETE FROM auth_registration_otps WHERE email = ?', [email]);
+
+        res.json({
+            success: true,
+            message: 'Registration successful'
+        });
     } catch (error) {
         console.error(error);
         res.status(500).json({ error: 'Server error' });

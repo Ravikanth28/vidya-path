@@ -255,3 +255,234 @@
     animation: vp-spin 1s linear infinite;
     display: inline-block;
 }
+
+/* ── Diagnostic Pro UI ───────────────────────────────────────────── */
+.vp-diag-shell {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+}
+
+.vp-diag-toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    align-items: center;
+}
+
+.vp-segment {
+    display: inline-flex;
+    gap: 6px;
+    padding: 4px;
+    border: 1px solid color-mix(in srgb, var(--border-color, #334155) 80%, transparent);
+    border-radius: 12px;
+    background: color-mix(in srgb, var(--bg-primary, #0b1220) 88%, #0f172a 12%);
+}
+
+.vp-segment .vp-btn {
+    border-radius: 9px;
+    padding: 8px 12px;
+}
+
+.vp-diag-panel {
+    border: 1px solid color-mix(in srgb, var(--border-color, #334155) 82%, #6366f1 18%);
+    border-radius: 16px;
+    padding: 18px;
+    background:
+        radial-gradient(1000px 340px at 5% 0%, rgba(59, 130, 246, 0.10), transparent 52%),
+        radial-gradient(720px 260px at 100% 0%, rgba(99, 102, 241, 0.10), transparent 58%),
+        color-mix(in srgb, var(--bg-primary, #0b1220) 92%, #0f172a 8%);
+    box-shadow: 0 10px 26px rgba(2, 8, 23, 0.20);
+}
+
+.vp-diag-section-title {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 23px;
+    font-weight: 700;
+    color: var(--text-primary, #e2e8f0);
+    margin: 0;
+}
+
+.vp-diag-section-sub {
+    margin: 6px 0 0;
+    color: var(--text-secondary, #94a3b8);
+    font-size: 13px;
+}
+
+.vp-diag-fields {
+    display: grid;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    gap: 12px;
+    align-items: end;
+}
+
+.vp-diag-field {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    min-width: 0;
+}
+
+.vp-diag-field > label {
+    font-size: 12px;
+    color: var(--text-secondary, #94a3b8);
+    font-weight: 600;
+}
+
+.vp-diag-field.span-2 { grid-column: span 2; }
+.vp-diag-field.span-3 { grid-column: span 3; }
+.vp-diag-field.span-5 { grid-column: span 5; }
+
+.vp-diag-upload {
+    margin-top: 12px;
+    border-radius: 12px;
+    border: 1px solid rgba(99, 102, 241, 0.35);
+    background: rgba(99, 102, 241, 0.10);
+    padding: 14px;
+}
+
+.vp-diag-upload .vp-row input[type='file'] {
+    font-size: 12px;
+}
+
+.vp-diag-history-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 10px;
+}
+
+/* ── Profile UI ─────────────────────────────────────────────────── */
+.vp-profile-shell {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+}
+
+.vp-profile-hero {
+    display: grid;
+    grid-template-columns: auto 1fr auto;
+    gap: 14px;
+    align-items: center;
+    border: 1px solid color-mix(in srgb, var(--border-color, #334155) 82%, #6366f1 18%);
+    border-radius: 16px;
+    padding: 16px;
+    background:
+        radial-gradient(720px 260px at 0% 0%, rgba(99, 102, 241, 0.10), transparent 60%),
+        color-mix(in srgb, var(--bg-primary, #0b1220) 92%, #0f172a 8%);
+}
+
+.vp-profile-avatar {
+    width: 78px;
+    height: 78px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, #4f46e5, #7c3aed);
+    color: #fff;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 28px;
+    font-weight: 800;
+}
+
+.vp-profile-id h3 {
+    margin: 0;
+    font-size: 30px;
+}
+
+.vp-profile-id p {
+    margin: 4px 0 0;
+    color: var(--text-secondary, #94a3b8);
+    font-size: 13px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.vp-profile-xp {
+    display: grid;
+    gap: 2px;
+    justify-items: center;
+    min-width: 96px;
+    border: 1px solid rgba(99, 102, 241, 0.35);
+    border-radius: 12px;
+    padding: 10px 12px;
+    background: rgba(99, 102, 241, 0.12);
+    color: #c4b5fd;
+}
+
+.vp-profile-xp strong {
+    font-size: 24px;
+    line-height: 1;
+    color: var(--text-primary, #e2e8f0);
+}
+
+.vp-profile-xp span {
+    font-size: 11px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+}
+
+.vp-profile-editor {
+    border-radius: 16px;
+}
+
+@media (max-width: 860px) {
+    .vp-profile-hero {
+        grid-template-columns: 1fr;
+        justify-items: start;
+    }
+    .vp-profile-xp {
+        justify-items: start;
+    }
+}
+
+/* ── Admin Diagnostic Studio UI ─────────────────────────────────── */
+.vp-admin-diag-shell {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.vp-admin-diag-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+}
+
+.vp-admin-diag-card {
+    border: 1px solid rgba(148, 163, 184, 0.20);
+    border-radius: 14px;
+    padding: 14px;
+    background:
+        linear-gradient(180deg, rgba(15, 23, 42, 0.92), rgba(15, 23, 42, 0.76));
+}
+
+.vp-admin-diag-grid {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 10px;
+}
+
+.vp-admin-diag-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+@media (max-width: 1200px) {
+    .vp-diag-fields { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    .vp-diag-field.span-5 { grid-column: span 3; }
+    .vp-admin-diag-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+@media (max-width: 760px) {
+    .vp-diag-fields { grid-template-columns: repeat(1, minmax(0, 1fr)); }
+    .vp-diag-field.span-2,
+    .vp-diag-field.span-3,
+    .vp-diag-field.span-5 { grid-column: span 1; }
+    .vp-admin-diag-grid { grid-template-columns: 1fr; }
+}
