@@ -344,5 +344,119 @@ module.exports = function vpAdminRoutes(pool, authenticate) {
         } catch (err) { res.status(500).json({ error: err.message }); }
     });
 
+    // ── Student Diagnostics ────────────────────────────────────────────────────
+    // GET /api/vp/admin/student-diagnostics
+    //   Returns one row per student who has a diagnostic state, joined with their
+    //   latest attempt summary and user info.
+    router.get('/admin/student-diagnostics', async (req, res) => {
+        const { student_id } = req.query;
+        try {
+            // Derive the latest attempt per student as a subquery in FROM
+            // (TiDB does not support subqueries inside ON conditions)
+            let sql = `
+                SELECT
+                    u.id            AS student_id,
+                    u.name          AS student_name,
+                    u.email         AS student_email,
+                    ds.diagnostic_done,
+                    ds.completed_at,
+                    ds.result_json,
+                    COALESCE(tc.tests_taken, 0) AS tests_taken
+                FROM vp_diagnostic_state ds
+                JOIN users u ON u.id = ds.student_id
+                LEFT JOIN (
+                    SELECT student_id, COUNT(*) AS tests_taken
+                    FROM vp_diagnostic_attempts
+                    GROUP BY student_id
+                ) tc ON tc.student_id = ds.student_id
+                WHERE 1=1`;
+            const params = [];
+            if (student_id) { sql += ' AND ds.student_id = ?'; params.push(student_id); }
+            sql += ' ORDER BY ds.completed_at DESC';
+            const [rows] = await pool.query(sql, params);
+            // Parse result_json if it's a string
+            const out = rows.map(r => ({
+                ...r,
+                result_json: r.result_json
+                    ? (typeof r.result_json === 'string' ? (() => { try { return JSON.parse(r.result_json); } catch { return {}; } })() : r.result_json)
+                    : null
+            }));
+            res.json({ rows: out });
+        } catch (err) { res.status(500).json({ error: err.message }); }
+    });
+
+    // GET /api/vp/admin/student-diagnostics/:studentId
+    //   Returns all diagnostic attempts for a single student plus their ability/mastery.
+    router.get('/admin/student-diagnostics/:studentId', async (req, res) => {
+        const sid = req.params.studentId;
+        try {
+            const [[user]] = await pool.query(
+                'SELECT id, name, email, created_at FROM users WHERE id = ?', [sid]
+            );
+            if (!user) return res.status(404).json({ error: 'Student not found' });
+
+            const [[diagState]] = await pool.query(
+                'SELECT diagnostic_done, completed_at, result_json FROM vp_diagnostic_state WHERE student_id = ?', [sid]
+            );
+            const [attempts] = await pool.query(
+                `SELECT id, mode, status, score, total_marks, created_at, submitted_at,
+                        answers_json, subject, report_json, personalized_plan_json
+                 FROM vp_diagnostic_attempts
+                 WHERE student_id = ?
+                 ORDER BY created_at DESC`, [sid]
+            );
+            const [ability] = await pool.query(
+                'SELECT subject, theta, n_responses, updated_at FROM vp_student_ability WHERE student_id = ?', [sid]
+            );
+            const [mastery] = await pool.query(
+                `SELECT c.title AS concept_title, c.subject, m.p_mastery, m.reps, m.next_due, m.updated_at
+                 FROM vp_student_mastery m
+                 JOIN vp_concepts c ON c.id = m.concept_id
+                 WHERE m.student_id = ?
+                 ORDER BY m.updated_at DESC`, [sid]
+            );
+            const [lessonProgress] = await pool.query(
+                `SELECT l.title, l.subject, p.status, p.mastery_pct, p.updated_at
+                 FROM vp_lesson_progress p
+                 JOIN vp_lessons l ON l.id = p.lesson_id
+                 WHERE p.student_id = ?
+                 ORDER BY p.updated_at DESC`, [sid]
+            );
+            // Latest personalized plan
+            const [[latestPlan]] = await pool.query(
+                `SELECT plan_json, summary_json, title, created_at
+                 FROM vp_personalized_plans
+                 WHERE student_id = ?
+                 ORDER BY created_at DESC LIMIT 1`, [sid]
+            );
+
+            const parseJson = v => {
+                if (!v) return null;
+                if (typeof v === 'string') { try { return JSON.parse(v); } catch { return null; } }
+                return v;
+            };
+
+            res.json({
+                student: user,
+                diagnostic_state: diagState ? { ...diagState, result_json: parseJson(diagState.result_json) } : null,
+                attempts: attempts.map(a => ({
+                    ...a,
+                    answers_json: parseJson(a.answers_json),
+                    report_json: parseJson(a.report_json),
+                    personalized_plan_json: parseJson(a.personalized_plan_json)
+                })),
+                ability,
+                mastery,
+                lesson_progress: lessonProgress,
+                plan: latestPlan ? {
+                    title: latestPlan.title,
+                    created_at: latestPlan.created_at,
+                    summary: parseJson(latestPlan.summary_json),
+                    detail: parseJson(latestPlan.plan_json)
+                } : null
+            });
+        } catch (err) { res.status(500).json({ error: err.message }); }
+    });
+
     return router;
 };

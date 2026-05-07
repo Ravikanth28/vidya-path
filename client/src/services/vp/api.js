@@ -19,6 +19,7 @@ export const vpApi = {
     diagTeacherTest: (id) => axios.get(`${BASE}/diagnostic/teacher-tests/${id}`).then(r => r.data),
     diagTeacherStart: (id) => axios.post(`${BASE}/diagnostic/teacher-tests/${id}/start`).then(r => r.data),
     diagTeacherSubmit: (body) => axios.post(`${BASE}/diagnostic/teacher-tests/submit`, body).then(r => r.data),
+    diagRegeneratePlan: (attempt_id) => axios.post(`${BASE}/diagnostic/plan/regenerate`, { attempt_id }).then(r => r.data),
     adminDiagnosticTests: () => axios.get(`${BASE}/diagnostic/admin/tests`).then(r => r.data),
     adminDiagnosticPlans: (params = {}) => axios.get(`${BASE}/diagnostic/admin/plans`, { params }).then(r => r.data),
     adminDiagnosticManualTest: (body) => axios.post(`${BASE}/diagnostic/admin/tests/manual`, body).then(r => r.data),

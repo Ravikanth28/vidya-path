@@ -1,8 +1,43 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import vpApi from '@/services/vp/api'
 import { useI18n } from '@/services/i18n'
-import { Award, ChevronRight, Upload, User, ClipboardList, BarChart3, History, FileDown, GraduationCap, Layers } from 'lucide-react'
+import { Award, ChevronRight, Upload, User, ClipboardList, BarChart3, History, FileDown, GraduationCap, Layers, Mic, MicOff } from 'lucide-react'
+
+/** Hook — returns { listening, toggle, supported } */
+function useSpeechToText({ lang = 'en-IN', onResult }) {
+    const recRef = useRef(null)
+    const [listening, setListening] = useState(false)
+
+    const supported = typeof window !== 'undefined' &&
+        ('SpeechRecognition' in window || 'webkitSpeechRecognition' in window)
+
+    const toggle = useCallback(() => {
+        if (!supported) return
+        const SR = window.SpeechRecognition || window.webkitSpeechRecognition
+        if (listening) {
+            recRef.current?.stop()
+            setListening(false)
+            return
+        }
+        const rec = new SR()
+        rec.lang = lang
+        rec.interimResults = false
+        rec.continuous = false
+        rec.onresult = e => {
+            const transcript = Array.from(e.results)
+                .map(r => r[0].transcript).join(' ')
+            onResult(transcript)
+        }
+        rec.onend = () => setListening(false)
+        rec.onerror = () => setListening(false)
+        recRef.current = rec
+        rec.start()
+        setListening(true)
+    }, [supported, listening, lang, onResult])
+
+    return { listening, toggle, supported }
+}
 
 const LANGUAGE_OPTIONS = [
     { code: 'en', label: 'English-IN' },
@@ -35,6 +70,7 @@ export default function Diagnostic({ onDone }) {
     const [report, setReport] = useState(null)
     const [plan, setPlan] = useState(null)
     const [done, setDone] = useState(false)
+    const [viewAttemptId, setViewAttemptId] = useState(null)
     const [meta, setMeta] = useState({
         language: 'en',
         education_level: 'school',
@@ -93,6 +129,10 @@ export default function Diagnostic({ onDone }) {
         setQuestions([])
         setAnswers({})
         setIdx(0)
+    }
+
+    const refreshHistory = () => {
+        vpApi.diagHistory().then(h => setHistory(h.results || [])).catch(() => {})
     }
 
     const uploadSyllabus = async () => {
@@ -166,8 +206,10 @@ export default function Diagnostic({ onDone }) {
                 : await vpApi.diagStudentSubmit({ attempt_id: attempt.id, answers: arr })
             setReport(r.report)
             setPlan(r.personalized_plan)
+            setViewAttemptId(attempt?.id || null)
             setDone(true)
             onDone?.()
+            refreshHistory()
         } catch (err) {
             captureError(err, 'Submit Test')
         } finally {
@@ -179,7 +221,9 @@ export default function Diagnostic({ onDone }) {
         return <ResultView
             report={report}
             plan={plan}
-            onBack={() => { setDone(false); resetAttempt(); setViewTab('take') }}
+            attemptId={viewAttemptId}
+            onPlanUpdate={p => setPlan(p)}
+            onBack={() => { setDone(false); resetAttempt(); setViewTab('history'); refreshHistory() }}
         />
     }
 
@@ -262,6 +306,7 @@ export default function Diagnostic({ onDone }) {
                                             onClick={() => {
                                                 setReport(item.report || null)
                                                 setPlan(item.personalized_plan || null)
+                                                setViewAttemptId(item.id || null)
                                                 setDone(true)
                                             }}
                                         >
@@ -413,13 +458,12 @@ export default function Diagnostic({ onDone }) {
                         ))}
                     </div>
                 ) : (
-                    <textarea
-                        rows={cur.marks >= 5 ? 6 : 3}
-                        className="vp-search"
-                        style={{ width: '100%' }}
+                    <ShortAnswerField
+                        qid={cur.qid}
+                        marks={cur.marks}
                         value={answers[cur.qid] || ''}
-                        onChange={e => setAnswers(a => ({ ...a, [cur.qid]: e.target.value }))}
-                        placeholder={cur.marks >= 5 ? 'Write your detailed answer...' : 'Write your answer...'}
+                        onChange={val => setAnswers(a => ({ ...a, [cur.qid]: val }))}
+                        lang={locale || 'en'}
                     />
                 )}
                 <div className="vp-row">
@@ -458,6 +502,60 @@ const rv = {
         { bg: 'rgba(16,185,129,0.12)', border: 'rgba(16,185,129,0.35)', color: '#34d399', label: 'Week 3' },
         { bg: 'rgba(239,68,68,0.10)',  border: 'rgba(239,68,68,0.30)',  color: '#f87171', label: 'Week 4' },
     ]
+}
+
+// Speech-to-text textarea with mic button
+function ShortAnswerField({ qid, marks, value, onChange, lang }) {
+    const langMap = {
+        hi: 'hi-IN', ta: 'ta-IN', bn: 'bn-IN', gu: 'gu-IN',
+        kn: 'kn-IN', ml: 'ml-IN', mr: 'mr-IN', pa: 'pa-IN',
+        te: 'te-IN', ur: 'ur-IN', or: 'or-IN', en: 'en-IN'
+    }
+    const srLang = langMap[lang] || 'en-IN'
+    const { listening, toggle, supported } = useSpeechToText({
+        lang: srLang,
+        onResult: transcript => onChange(value ? value + ' ' + transcript : transcript)
+    })
+
+    return (
+        <div style={{ position: 'relative' }}>
+            <textarea
+                rows={marks >= 5 ? 6 : 3}
+                className="vp-search"
+                style={{ width: '100%', paddingRight: supported ? 48 : undefined }}
+                value={value}
+                onChange={e => onChange(e.target.value)}
+                placeholder={marks >= 5 ? 'Write your detailed answer...' : 'Write your answer...'}
+            />
+            {supported && (
+                <button
+                    type="button"
+                    onClick={toggle}
+                    title={listening ? 'Stop recording' : 'Speak your answer'}
+                    style={{
+                        position: 'absolute', top: 10, right: 10,
+                        background: listening ? 'rgba(239,68,68,0.18)' : 'rgba(139,92,246,0.15)',
+                        border: `1.5px solid ${listening ? 'rgba(239,68,68,0.5)' : 'rgba(139,92,246,0.4)'}`,
+                        borderRadius: 8, padding: '5px 7px', cursor: 'pointer',
+                        color: listening ? '#f87171' : '#a78bfa',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        transition: 'all 0.2s'
+                    }}
+                >
+                    {listening
+                        ? <><MicOff size={16} /><span style={{ marginLeft: 4, fontSize: '0.72rem', fontWeight: 600 }}>Stop</span></>
+                        : <><Mic size={16} /><span style={{ marginLeft: 4, fontSize: '0.72rem', fontWeight: 600 }}>Speak</span></>
+                    }
+                </button>
+            )}
+            {listening && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 5, fontSize: '0.75rem', color: '#f87171' }}>
+                    <span style={{ width: 7, height: 7, borderRadius: '50%', background: '#f87171', animation: 'vp-mic-pulse 1s infinite' }} />
+                    Listening...
+                </div>
+            )}
+        </div>
+    )
 }
 
 function ProgressBar({ pct, color }) {
@@ -654,9 +752,25 @@ function TopicPlanCard({ tp }) {
     )
 }
 
-function ResultView({ report, plan, onBack }) {
+function ResultView({ report, plan, attemptId, onPlanUpdate, onBack }) {
     const navigate = useNavigate()
     const [showQ, setShowQ] = useState(false)
+    const [regenerating, setRegenerating] = useState(false)
+    const [regenError, setRegenError] = useState(null)
+
+    const regeneratePlan = async () => {
+        if (!attemptId) return
+        setRegenerating(true)
+        setRegenError(null)
+        try {
+            const r = await vpApi.diagRegeneratePlan(attemptId)
+            onPlanUpdate?.(r.personalized_plan)
+        } catch (e) {
+            setRegenError('Could not regenerate plan. Please try again.')
+        } finally {
+            setRegenerating(false)
+        }
+    }
 
     const questionWise = report?.question_wise || []
     const weakTopics = report?.weak_topics || []
@@ -667,6 +781,18 @@ function ResultView({ report, plan, onBack }) {
 
     return (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
+
+            {/* ── Back button ── */}
+            <div>
+                <button
+                    className="vp-btn"
+                    onClick={onBack}
+                    style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}
+                >
+                    <ChevronRight size={15} style={{ transform: 'rotate(180deg)' }} />
+                    Back to Diagnostic
+                </button>
+            </div>
 
             {/* ── Score banner ── */}
             <div style={{
@@ -697,9 +823,30 @@ function ResultView({ report, plan, onBack }) {
             {/* ── Overall weekly goals ── */}
             {plan?.weekly_goals?.length > 0 && (
                 <div style={rv.card()}>
-                    <div style={{ fontWeight: 700, fontSize: '0.95rem', color: '#e2e8f0', marginBottom: 14 }}>
-                        📅 {plan.title || 'Your Improvement Plan'}
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14, flexWrap: 'wrap', gap: 8 }}>
+                        <div style={{ fontWeight: 700, fontSize: '0.95rem', color: '#e2e8f0' }}>
+                            📅 {plan.title || 'Your Improvement Plan'}
+                        </div>
+                        {attemptId && (
+                            <button
+                                onClick={regeneratePlan}
+                                disabled={regenerating}
+                                style={{
+                                    display: 'inline-flex', alignItems: 'center', gap: 6,
+                                    background: regenerating ? 'rgba(99,102,241,0.08)' : 'rgba(99,102,241,0.15)',
+                                    border: '1px solid rgba(99,102,241,0.4)',
+                                    borderRadius: 8, padding: '5px 12px', cursor: regenerating ? 'not-allowed' : 'pointer',
+                                    color: '#a78bfa', fontSize: '0.78rem', fontWeight: 600,
+                                    opacity: regenerating ? 0.6 : 1, transition: 'all 0.2s'
+                                }}
+                            >
+                                {regenerating ? '⟳ Generating…' : '✦ Regenerate with AI'}
+                            </button>
+                        )}
                     </div>
+                    {regenError && (
+                        <div style={{ fontSize: '0.78rem', color: '#f87171', marginBottom: 10 }}>{regenError}</div>
+                    )}
                     <div style={{ fontSize: '0.8rem', color: '#64748b', marginBottom: 14 }}>
                         Target: <strong style={{ color: '#60a5fa' }}>{plan.target_score}%</strong> in <strong style={{ color: '#60a5fa' }}>{plan.horizon_days} days</strong>
                     </div>

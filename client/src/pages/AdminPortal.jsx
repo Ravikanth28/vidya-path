@@ -28,6 +28,7 @@ import { CompanyTestManager } from '../components/CompanyFeatures'
 import CompanyRoundManager from '../components/CompanyRoundManager'
 import AdminCommTest from '../components/AdminCommTest'
 import AdminVPContent from '../components/AdminVPContent'
+import AdminVPDiagnostics from '../components/AdminVPDiagnostics'
 import BatchManager from '../components/BatchManager'
 import { useAuth } from '../App'
 import { useI18n } from '../services/i18n.jsx'
@@ -148,6 +149,10 @@ function AdminPortal() {
                 setTitle('VidyaPath Content')
                 setSubtitle('Manage lessons, quiz items and concepts for VidyaPath AI')
                 break
+            case 'vp-diagnostics':
+                setTitle('Student Diagnostics')
+                setSubtitle('View diagnostic results and personalized plans per student')
+                break
             case 'teacher-notes':
                 setTitle("Teacher's Notes")
                 setSubtitle('Upload and manage teacher notes visible to students')
@@ -170,6 +175,7 @@ function AdminPortal() {
             defaultExpanded: false,
             children: [
                 { path: '/admin/vp-content', label: t('content_manager'), icon: <BookOpen size={20} /> },
+                { path: '/admin/vp-diagnostics', label: 'Student Diagnostics', icon: <Brain size={20} /> },
                 { path: '/admin/teacher-notes', label: t('teacher_notes'), icon: <Upload size={20} /> }
             ]
         },
@@ -259,6 +265,7 @@ function AdminPortal() {
                 <Route path="/mcq" element={<AdminMCQ />} />
                 <Route path="/comm-test" element={<AdminCommTest />} />
                 <Route path="/vp-content" element={<AdminVPContent />} />
+                <Route path="/vp-diagnostics" element={<AdminVPDiagnostics />} />
                 <Route path="/teacher-notes" element={<AdminTeacherNotes user={user} />} />
                 <Route path="/batch-add" element={<BatchManager />} />
             </Routes>
