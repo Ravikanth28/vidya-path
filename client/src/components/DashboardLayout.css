@@ -159,6 +159,23 @@
     color: #a5b4fc !important;
 }
 
+/* Locked nav item */
+.nav-item-locked {
+    opacity: 0.45;
+    cursor: not-allowed !important;
+    pointer-events: none;
+    user-select: none;
+}
+.nav-item-locked:hover {
+    background: transparent !important;
+}
+.nav-lock-icon {
+    margin-left: auto;
+    font-size: 0.75rem;
+    opacity: 0.7;
+}
+
+
 /* First nav item (Dashboard) spacing */
 .sidebar-nav > .nav-item:first-child {
     margin-bottom: 1rem;

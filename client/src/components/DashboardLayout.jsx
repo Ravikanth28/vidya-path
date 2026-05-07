@@ -161,25 +161,57 @@ function DashboardLayout({ children, navItems, title, subtitle }) {
                                     </button>
                                     {isExpanded && (
                                         <div className="nav-group-items">
-                                            {item.children.map((child, idx) => (
-                                                <NavLink
-                                                    key={idx}
-                                                    to={child.path}
-                                                    end={child.end || false}
-                                                    className={({ isActive }) => `nav-item nav-sub-item ${isActive ? 'active' : ''}`}
-                                                    onClick={() => setSidebarOpen(false)}
-                                                    aria-current={({ isActive }) => isActive ? 'page' : undefined}
-                                                >
-                                                    {child.icon}
-                                                    <span>{child.label}</span>
-                                                </NavLink>
-                                            ))}
+                                            {item.children.map((child, idx) => {
+                                                if (child.locked) {
+                                                    return (
+                                                        <div
+                                                            key={idx}
+                                                            className="nav-item nav-sub-item nav-item-locked"
+                                                            title="Complete your Diagnostic first"
+                                                            aria-disabled="true"
+                                                        >
+                                                            {child.icon}
+                                                            <span>{child.label}</span>
+                                                            <span className="nav-lock-icon">🔒</span>
+                                                        </div>
+                                                    )
+                                                }
+                                                return (
+                                                    <NavLink
+                                                        key={idx}
+                                                        to={child.path}
+                                                        end={child.end || false}
+                                                        className={({ isActive }) => `nav-item nav-sub-item ${isActive ? 'active' : ''}`}
+                                                        onClick={() => setSidebarOpen(false)}
+                                                        aria-current={({ isActive }) => isActive ? 'page' : undefined}
+                                                    >
+                                                        {child.icon}
+                                                        <span>{child.label}</span>
+                                                    </NavLink>
+                                                )
+                                            })}
                                         </div>
                                     )}
                                 </div>
                             )
                         }
                         
+                        // Locked item
+                        if (item.locked) {
+                            return (
+                                <div
+                                    key={item.path}
+                                    className="nav-item nav-item-locked"
+                                    title="Complete your Diagnostic first"
+                                    aria-disabled="true"
+                                >
+                                    {item.icon}
+                                    <span>{item.label}</span>
+                                    <span className="nav-lock-icon">🔒</span>
+                                </div>
+                            )
+                        }
+
                         // Regular item (no children)
                         // External items navigate outside the current portal layout
                         if (item.external) {

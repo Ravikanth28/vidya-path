@@ -8,6 +8,7 @@ export const vpApi = {
 
     // Diagnostic
     diagState:     () => axios.get(`${BASE}/diagnostic/state`).then(r => r.data),
+    diagHasAttempted: () => axios.get(`${BASE}/diagnostic/has-attempted`).then(r => r.data),
     diagItems:     () => axios.get(`${BASE}/diagnostic/items`).then(r => r.data),
     diagSubmit:    (answers) => axios.post(`${BASE}/diagnostic/submit`, { answers }).then(r => r.data),
     diagPlans:     () => axios.get(`${BASE}/diagnostic/plans`).then(r => r.data),

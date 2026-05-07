@@ -1,5 +1,5 @@
 ﻿import React, { useState, useEffect, useRef } from 'react'
-import { Routes, Route, useLocation } from 'react-router-dom'
+import { Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom'
 import { LayoutDashboard, ClipboardList, Code, Send, Trophy, Clock, CheckCircle, XCircle, ChevronRight, Play, Upload, FileText, Trash2, Eye, AlertTriangle, Download, Lightbulb, HelpCircle, Sparkles, Target, Zap, BookOpen, Brain, Award, X, Video, Shield, Search, BarChart2, BarChart3, Flame, Layers, Database, RefreshCw, TrendingUp, Radar, Users, ArrowUpRight, ArrowDownRight, Minus, PieChart, MessageSquare, Github, ExternalLink, Link2, Calendar, Map, Building2, Mic, FlaskConical } from 'lucide-react'
 import DashboardLayout from '@/components/DashboardLayout'
 import { AIPageTransition, AIWelcomeHeader, AISectionDivider, CountUp, DataFlowLine } from '@/components/AIAnimations'
@@ -19,6 +19,7 @@ import PlagiarismChecker from '@/components/PlagiarismChecker'
 import FeaturesShowcase from '@/components/FeaturesShowcase'
 import { useAuth } from '../App'
 import { useI18n } from '../services/i18n.jsx'
+import { vpApi } from '../services/vp/api.js'
 import axios from 'axios'
 import socketService from '../services/socketService'
 import GlobalReportModal from '@/components/GlobalReportModal'
@@ -57,6 +58,25 @@ function StudentPortal() {
     const [title, setTitle] = useState('')
     const [subtitle, setSubtitle] = useState('')
     const [unreadCount, setUnreadCount] = useState(0)
+    const [hasAttempted, setHasAttempted] = useState(() => localStorage.getItem('vpDiagDone') === '1')
+
+    // Check if student has completed at least one diagnostic test
+    useEffect(() => {
+        vpApi.diagHasAttempted()
+            .then(data => {
+                setHasAttempted(data.hasAttempted)
+                if (data.hasAttempted) localStorage.setItem('vpDiagDone', '1')
+            })
+            .catch(() => {
+                // Fall back to localStorage cache
+                if (localStorage.getItem('vpDiagDone') === '1') setHasAttempted(true)
+            })
+    }, [user?.id])
+
+    const handleDiagnosticComplete = () => {
+        setHasAttempted(true)
+        localStorage.setItem('vpDiagDone', '1')
+    }
 
     // Poll for unread messages
     useEffect(() => {
@@ -130,6 +150,8 @@ function StudentPortal() {
         }
     }, [location, user, t])
 
+    const locked = !hasAttempted
+
     const navItems = [
         { path: '/student', label: t('dashboard'), icon: <LayoutDashboard size={20} />, end: true },
         {
@@ -138,12 +160,12 @@ function StudentPortal() {
             defaultExpanded: true,
             children: [
                 { path: '/student/vp',                label: t('vp_home') || 'Home',           icon: <LayoutDashboard size={20} />, end: true },
-                { path: '/student/vp/resources',      label: t('smart_study') || 'Smart Study', icon: <FlaskConical size={20} /> },
+                { path: '/student/vp/resources',      label: t('smart_study') || 'Smart Study', icon: <FlaskConical size={20} />, locked },
                 { path: '/student/vp/diagnostic',     label: t('vp_diagnostic') || 'Diagnostic', icon: <Brain size={20} /> },
-                { path: '/student/vp/practice',       label: t('vp_practice') || 'Practice',   icon: <Target size={20} /> },
-                { path: '/student/vp/tutor',          label: t('vp_tutor') || 'AI Tutor',      icon: <Sparkles size={20} /> },
-                { path: '/student/vp/careers',        label: t('vp_career_hub') || 'Career Hub', icon: <Building2 size={20} /> },
-                { path: '/student/vp/personalized',   label: 'Personalized Study', icon: <Target size={20} /> }
+                { path: '/student/vp/practice',       label: t('vp_practice') || 'Practice',   icon: <Target size={20} />, locked },
+                { path: '/student/vp/tutor',          label: t('vp_tutor') || 'AI Tutor',      icon: <Sparkles size={20} />, locked },
+                { path: '/student/vp/careers',        label: t('vp_career_hub') || 'Career Hub', icon: <Building2 size={20} />, locked },
+                { path: '/student/vp/personalized',   label: 'Personalized Study', icon: <Target size={20} />, locked }
             ]
         },
         {
@@ -151,13 +173,13 @@ function StudentPortal() {
             icon: <ClipboardList size={20} />,
             defaultExpanded: false,
             children: [
-                { path: '/student/tasks', label: t('ml_tasks'), icon: <ClipboardList size={20} /> },
-                { path: '/student/assignments', label: t('coding_problems'), icon: <Code size={20} /> },
-                { path: '/student/aptitude', label: t('aptitude_tests'), icon: <Brain size={20} /> },
-                { path: '/student/global-tests', label: t('global_complete_tests'), icon: <Layers size={20} /> },
-                { path: '/student/resource-links', label: t('resource_links'), icon: <Link2 size={20} /> },
-                { path: '/student/mcq', label: t('mcq_tests'), icon: <Brain size={20} /> },
-                { path: '/student/comm-test', label: t('comm_test'), icon: <Mic size={20} /> }
+                { path: '/student/tasks', label: t('ml_tasks'), icon: <ClipboardList size={20} />, locked },
+                { path: '/student/assignments', label: t('coding_problems'), icon: <Code size={20} />, locked },
+                { path: '/student/aptitude', label: t('aptitude_tests'), icon: <Brain size={20} />, locked },
+                { path: '/student/global-tests', label: t('global_complete_tests'), icon: <Layers size={20} />, locked },
+                { path: '/student/resource-links', label: t('resource_links'), icon: <Link2 size={20} />, locked },
+                { path: '/student/mcq', label: t('mcq_tests'), icon: <Brain size={20} />, locked },
+                { path: '/student/comm-test', label: t('comm_test'), icon: <Mic size={20} />, locked }
             ]
         },
         {
@@ -165,10 +187,10 @@ function StudentPortal() {
             icon: <TrendingUp size={20} />,
             defaultExpanded: false,
             children: [
-                { path: '/student/submissions', label: t('my_submissions'), icon: <Send size={20} /> },
-                { path: '/student/skill-submissions', label: t('skill_submissions'), icon: <Target size={20} /> },
-                { path: '/student/certificates', label: t('my_certificates'), icon: <Award size={20} /> },
-                { path: '/student/reports', label: t('export_reports'), icon: <Download size={20} /> }
+                { path: '/student/submissions', label: t('my_submissions'), icon: <Send size={20} />, locked },
+                { path: '/student/skill-submissions', label: t('skill_submissions'), icon: <Target size={20} />, locked },
+                { path: '/student/certificates', label: t('my_certificates'), icon: <Award size={20} />, locked },
+                { path: '/student/reports', label: t('export_reports'), icon: <Download size={20} />, locked }
             ]
         },
         {
@@ -176,45 +198,46 @@ function StudentPortal() {
             icon: <Github size={20} />,
             defaultExpanded: false,
             children: [
-                { path: '/student/code-reviews', label: t('code_reviews'), icon: <Github size={20} /> },
-                { path: '/student/ai-reviews', label: t('ai_code_reviews'), icon: <Zap size={20} /> },
-                { path: '/student/plagiarism', label: t('plagiarism_check'), icon: <AlertTriangle size={20} /> }
+                { path: '/student/code-reviews', label: t('code_reviews'), icon: <Github size={20} />, locked },
+                { path: '/student/ai-reviews', label: t('ai_code_reviews'), icon: <Zap size={20} />, locked },
+                { path: '/student/plagiarism', label: t('plagiarism_check'), icon: <AlertTriangle size={20} />, locked }
             ]
         },
-        { path: '/student/profile', label: t('my_profile'), icon: <Award size={20} /> }
+        { path: '/student/profile', label: t('my_profile'), icon: <Award size={20} />, locked }
     ]
 
     return (
         <DashboardLayout navItems={navItems} title={title} subtitle={subtitle}>
             <Routes>
-                <Route path="/" element={<Dashboard user={user} />} />
-                <Route path="/tasks" element={<Tasks key={user?.id} user={user} />} />
-                <Route path="/assignments" element={<Assignments key={user?.id} user={user} />} />
-                <Route path="/aptitude" element={<AptitudeTests user={user} />} />
-                <Route path="/global-tests" element={<GlobalTests user={user} />} />
-                <Route path="/skill-submissions" element={<SkillSubmissions user={user} />} />
-                <Route path="/submissions" element={<Submissions user={user} />} />
-
-                <Route path="/reports" element={<ExportReports user={user} />} />
-                <Route path="/code-reviews" element={<StudentCodeReviews user={user} />} />
-                <Route path="/ai-reviews" element={<StudentAIReviewDashboard user={user} />} />
-                <Route path="/plagiarism" element={<PlagiarismChecker user={user} />} />
-
-                <Route path="/certificates" element={<CertificatePortal user={user} />} />
+                <Route path="/" element={<Dashboard user={user} hasAttempted={hasAttempted} />} />
+                {/* Locked routes — redirect to Diagnostic if no attempt yet */}
+                <Route path="/tasks" element={locked ? <Navigate to="/student/vp/diagnostic" replace /> : <Tasks key={user?.id} user={user} />} />
+                <Route path="/assignments" element={locked ? <Navigate to="/student/vp/diagnostic" replace /> : <Assignments key={user?.id} user={user} />} />
+                <Route path="/aptitude" element={locked ? <Navigate to="/student/vp/diagnostic" replace /> : <AptitudeTests user={user} />} />
+                <Route path="/global-tests" element={locked ? <Navigate to="/student/vp/diagnostic" replace /> : <GlobalTests user={user} />} />
+                <Route path="/skill-submissions" element={locked ? <Navigate to="/student/vp/diagnostic" replace /> : <SkillSubmissions user={user} />} />
+                <Route path="/submissions" element={locked ? <Navigate to="/student/vp/diagnostic" replace /> : <Submissions user={user} />} />
+                <Route path="/reports" element={locked ? <Navigate to="/student/vp/diagnostic" replace /> : <ExportReports user={user} />} />
+                <Route path="/code-reviews" element={locked ? <Navigate to="/student/vp/diagnostic" replace /> : <StudentCodeReviews user={user} />} />
+                <Route path="/ai-reviews" element={locked ? <Navigate to="/student/vp/diagnostic" replace /> : <StudentAIReviewDashboard user={user} />} />
+                <Route path="/plagiarism" element={locked ? <Navigate to="/student/vp/diagnostic" replace /> : <PlagiarismChecker user={user} />} />
+                <Route path="/certificates" element={locked ? <Navigate to="/student/vp/diagnostic" replace /> : <CertificatePortal user={user} />} />
+                <Route path="/resource-links" element={locked ? <Navigate to="/student/vp/diagnostic" replace /> : <StudentResourceLinks user={user} />} />
+                <Route path="/mcq" element={locked ? <Navigate to="/student/vp/diagnostic" replace /> : <StudentMCQ user={user} />} />
+                <Route path="/comm-test" element={locked ? <Navigate to="/student/vp/diagnostic" replace /> : <CommunicationTest user={user} />} />
+                <Route path="/profile" element={locked ? <Navigate to="/student/vp/diagnostic" replace /> : <VPProfile />} />
                 <Route path="/features" element={<FeaturesShowcase />} />
-                <Route path="/resource-links" element={<StudentResourceLinks user={user} />} />
-                <Route path="/mcq" element={<StudentMCQ user={user} />} />
-                <Route path="/comm-test" element={<CommunicationTest user={user} />} />
-                <Route path="/profile" element={<VPProfile />} />
-                <Route path="/vp/*" element={<VidyaPathHome />} />
+                {/* VidyaPath routes — gate is handled inside VidyaPathHome for sub-routes */}
+                <Route path="/vp/*" element={<VidyaPathHome hasAttempted={hasAttempted} onDiagnosticComplete={handleDiagnosticComplete} />} />
             </Routes>
         </DashboardLayout>
     )
 }
 
-function Dashboard({ user }) {
+function Dashboard({ user, hasAttempted }) {
     const [stats, setStats] = useState(null)
     const [loading, setLoading] = useState(true)
+    const navigateTo = useNavigate()
 
     const fetchData = () => {
         setLoading(true)
@@ -335,6 +358,29 @@ function Dashboard({ user }) {
             />
 
             <div className="sdash">
+            {!hasAttempted && (
+                <div style={{
+                    display: 'flex', alignItems: 'center', gap: '1rem',
+                    background: 'linear-gradient(135deg, rgba(251,191,36,0.12), rgba(245,158,11,0.08))',
+                    border: '1.5px solid rgba(251,191,36,0.35)',
+                    borderRadius: '14px', padding: '1rem 1.25rem', marginBottom: '1.5rem',
+                    cursor: 'pointer'
+                }} onClick={() => navigateTo('/student/vp/diagnostic')}>
+                    <span style={{ fontSize: '1.5rem' }}>🔒</span>
+                    <div style={{ flex: 1 }}>
+                        <div style={{ fontWeight: 700, color: '#fbbf24', fontSize: '0.95rem', marginBottom: '0.2rem' }}>
+                            Take your first Diagnostic Test to unlock all features
+                        </div>
+                        <div style={{ fontSize: '0.82rem', color: 'var(--text-muted)' }}>
+                            Smart Study, Practice, AI Tutor, Career Hub and more are waiting — one test unlocks everything.
+                        </div>
+                    </div>
+                    <span style={{
+                        background: '#fbbf24', color: '#0f172a', fontWeight: 700,
+                        borderRadius: '8px', padding: '0.4rem 0.9rem', fontSize: '0.82rem', whiteSpace: 'nowrap'
+                    }}>Start Diagnostic →</span>
+                </div>
+            )}
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
                 <h2 style={{ margin: 0, fontSize: '1.25rem', fontWeight: 700 }}>Overview</h2>
                 <button

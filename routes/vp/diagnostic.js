@@ -133,6 +133,19 @@ module.exports = function diagnosticRoutes(pool, authenticate) {
         }
     });
 
+    router.get('/diagnostic/has-attempted', authenticate, async (req, res) => {
+        const sid = String(req.user.id);
+        try {
+            const [[row]] = await pool.query(
+                `SELECT COUNT(*) AS cnt FROM vp_diagnostic_attempts WHERE student_id = ? AND status = 'submitted'`,
+                [sid]
+            );
+            res.json({ hasAttempted: Number(row?.cnt || 0) > 0 });
+        } catch (err) {
+            res.status(500).json({ error: err.message });
+        }
+    });
+
     router.get('/diagnostic/plans', authenticate, async (req, res) => {
         const sid = String(req.user.id);
         try {

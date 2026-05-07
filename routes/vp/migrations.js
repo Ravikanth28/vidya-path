@@ -37,7 +37,9 @@ const SQL = [
         subject VARCHAR(48) NOT NULL,
         title VARCHAR(255) NOT NULL,
         body_i18n JSON,
+        script_i18n JSON,
         audio_url_i18n JSON,
+        difficulty ENUM('easy','medium','hard') DEFAULT 'medium',
         ordering INT DEFAULT 0,
         grade TINYINT DEFAULT 8,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -338,6 +340,14 @@ async function ensureVpSchema(pool) {
         } catch (err) {
             console.warn('[vp] migration warning:', err.message);
         }
+    }
+    // Idempotent column additions for existing tables
+    const alters = [
+        `ALTER TABLE vp_lessons ADD COLUMN IF NOT EXISTS script_i18n JSON`,
+        `ALTER TABLE vp_lessons ADD COLUMN IF NOT EXISTS difficulty ENUM('easy','medium','hard') DEFAULT 'medium'`
+    ];
+    for (const sql of alters) {
+        try { await pool.query(sql); } catch { /* column already exists */ }
     }
     console.log('[vp] schema ready (' + SQL.length + ' tables)');
 }

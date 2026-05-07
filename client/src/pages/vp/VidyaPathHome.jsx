@@ -1,5 +1,5 @@
 import { useEffect } from 'react'
-import { Routes, Route } from 'react-router-dom'
+import { Routes, Route, Navigate } from 'react-router-dom'
 import { useAuth } from '../../App'
 import { startSyncEngine } from '@/services/vp/syncEngine'
 import { startKeepAlive } from '@/workers/keepAlive'
@@ -21,13 +21,16 @@ import Diagnostic from './Diagnostic'
 
 import '@/components/vp/vp.css'
 
-export default function VidyaPathHome() {
+export default function VidyaPathHome({ hasAttempted = true, onDiagnosticComplete }) {
     const auth = useAuth()
+    const locked = !hasAttempted
 
     useEffect(() => {
         startSyncEngine()
         startKeepAlive()
     }, [])
+
+    const gate = (element) => locked ? <Navigate to="/student/vp/diagnostic" replace /> : element
 
     return (
         <div>
@@ -35,17 +38,17 @@ export default function VidyaPathHome() {
             <div className="vp-container">
                 <Routes>
                     <Route index               element={<VPDashboard />} />
-                    <Route path="lessons"      element={<LessonsList />} />
-                    <Route path="lessons/:id"  element={<LessonDetail />} />
-                    <Route path="lessons/:id/quiz" element={<AdaptiveQuiz />} />
-                    <Route path="resources"    element={<VPResources />} />
-                    <Route path="practice"     element={<PracticePicker />} />
-                    <Route path="tutor"        element={<VPVoiceTutorPage />} />
-                    <Route path="careers"      element={<CareerHub />} />
-                    <Route path="profile"      element={<VPProfile />} />
-                    <Route path="smart-study"  element={<SmartStudy />} />
-                    <Route path="personalized" element={<PersonalizedStudy />} />
-                    <Route path="diagnostic" element={<Diagnostic />} />
+                    <Route path="lessons"      element={gate(<LessonsList />)} />
+                    <Route path="lessons/:id"  element={gate(<LessonDetail />)} />
+                    <Route path="lessons/:id/quiz" element={gate(<AdaptiveQuiz />)} />
+                    <Route path="resources"    element={gate(<VPResources />)} />
+                    <Route path="practice"     element={gate(<PracticePicker />)} />
+                    <Route path="tutor"        element={gate(<VPVoiceTutorPage />)} />
+                    <Route path="careers"      element={gate(<CareerHub />)} />
+                    <Route path="profile"      element={gate(<VPProfile />)} />
+                    <Route path="smart-study"  element={gate(<SmartStudy />)} />
+                    <Route path="personalized" element={gate(<PersonalizedStudy />)} />
+                    <Route path="diagnostic" element={<Diagnostic onDone={onDiagnosticComplete} />} />
                 </Routes>
             </div>
             <FloatingTutor />
