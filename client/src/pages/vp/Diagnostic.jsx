@@ -209,7 +209,7 @@ export default function Diagnostic({ onDone }) {
                 {mode === 'student_choice' ? (
                     <div className="vp-diag-panel vp-mt-12">
                         <h3><ClipboardList size={16} /> Student Choice Test</h3>
-                        <p className="vp-text-sm">Clean flow: Topic (highest priority) -> Unit (if Unit Wise) -> Whole Syllabus -> fallback profile context.</p>
+                        <p className="vp-text-sm">Clean flow: Topic (highest priority) {'->'} Unit (if Unit Wise) {'->'} Whole Syllabus {'->'} fallback profile context.</p>
                         <div className="vp-diag-fields">
                             <div className="vp-diag-field">
                                 <label>Learning Level</label>
