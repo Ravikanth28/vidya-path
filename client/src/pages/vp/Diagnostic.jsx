@@ -54,6 +54,67 @@ const LANGUAGE_OPTIONS = [
     { code: 'ur', label: 'Urdu-IN' }
 ]
 
+const SCHOOL_CLASSES = [8, 9, 10, 11, 12]
+const COLLEGE_YEAR_SEM_OPTIONS = [
+    { year: 1, semester: 1, label: 'I/1' },
+    { year: 1, semester: 2, label: 'I/2' },
+    { year: 2, semester: 3, label: 'II/3' },
+    { year: 2, semester: 4, label: 'II/4' },
+    { year: 3, semester: 5, label: 'III/5' },
+    { year: 3, semester: 6, label: 'III/6' },
+    { year: 4, semester: 7, label: 'IV/7' },
+    { year: 4, semester: 8, label: 'IV/8' }
+]
+
+const SUBJECT_TOPIC_BANK = {
+    mathematics: ['Algebra', 'Geometry', 'Trigonometry', 'Mensuration', 'Statistics', 'Probability', 'Calculus'],
+    science: ['Physics Basics', 'Chemistry Basics', 'Biology Basics', 'Motion', 'Matter', 'Energy'],
+    physics: ['Kinematics', 'Laws of Motion', 'Work Energy Power', 'Electrostatics', 'Current Electricity', 'Optics'],
+    chemistry: ['Atomic Structure', 'Chemical Bonding', 'Stoichiometry', 'Acids and Bases', 'Organic Chemistry', 'Electrochemistry'],
+    biology: ['Cell Biology', 'Genetics', 'Human Physiology', 'Ecology', 'Evolution', 'Plant Physiology'],
+    english: ['Grammar', 'Reading Comprehension', 'Vocabulary', 'Writing Skills', 'Literature'],
+    aptitude: ['Quantitative Aptitude', 'Logical Reasoning', 'Data Interpretation', 'Verbal Ability'],
+    programming: ['Variables and Data Types', 'Control Flow', 'Functions', 'Arrays and Strings', 'Object Oriented Programming'],
+    'data structures': ['Arrays', 'Linked List', 'Stacks and Queues', 'Trees', 'Graphs', 'Hashing'],
+    dbms: ['ER Model', 'Normalization', 'SQL Queries', 'Transactions', 'Indexing', 'Joins'],
+    os: ['Process Management', 'Threads', 'Scheduling', 'Memory Management', 'Deadlocks', 'File Systems'],
+    networks: ['OSI Model', 'TCP IP', 'Routing', 'Subnetting', 'HTTP and DNS', 'Network Security']
+}
+
+function buildTopicsFromSubject(subjectRaw) {
+    const subject = String(subjectRaw || '').trim().toLowerCase()
+    if (!subject) return []
+
+    const seen = new Set()
+    const out = []
+    const add = (v) => {
+        const s = String(v || '').trim()
+        if (!s) return
+        const k = s.toLowerCase()
+        if (seen.has(k)) return
+        seen.add(k)
+        out.push(s)
+    }
+
+    const parts = subject.split(',').map(s => s.trim()).filter(Boolean)
+    const keys = parts.length ? parts : [subject]
+    for (const key of keys) {
+        let matched = false
+        for (const [bankKey, topics] of Object.entries(SUBJECT_TOPIC_BANK)) {
+            if (key.includes(bankKey)) {
+                matched = true
+                topics.forEach(add)
+            }
+        }
+        if (!matched) {
+            add(`${key} Basics`)
+            add(`${key} Core Concepts`)
+            add(`${key} Applications`)
+        }
+    }
+    return out.slice(0, 20)
+}
+
 export default function Diagnostic({ onDone }) {
     const { t, locale } = useI18n()
     const navigate = useNavigate()
@@ -76,9 +137,9 @@ export default function Diagnostic({ onDone }) {
         education_level: 'school',
         grade: 9,
         college_year: 1,
-        subject: 'Mathematics',
+        semester: 1,
+        subject: '',
         topic: '',
-        scope: 'subject',
         syllabus_scope: 'whole_syllabus',
         unit_name: '',
         syllabus_text: ''
@@ -86,7 +147,10 @@ export default function Diagnostic({ onDone }) {
     const [selectedTeacherTestId, setSelectedTeacherTestId] = useState('')
     const [syllabusFile, setSyllabusFile] = useState(null)
     const [syllabusUnits, setSyllabusUnits] = useState([])
+    const [syllabusTopics, setSyllabusTopics] = useState([])
+    const [subjectTopics, setSubjectTopics] = useState([])
     const [error, setError] = useState(null)
+    const [diagUiText, setDiagUiText] = useState({ test: {}, result: {} })
 
     const captureError = (err, label = '') => {
         const status = err.response?.status
@@ -124,6 +188,28 @@ export default function Diagnostic({ onDone }) {
         })
     }, [])
 
+    useEffect(() => {
+        setSubjectTopics(buildTopicsFromSubject(meta.subject))
+    }, [meta.subject])
+
+    useEffect(() => {
+        const lang = attempt?.language || meta.language || locale || 'en'
+        vpApi.diagUiText(lang).then(r => setDiagUiText(r.text || { test: {}, result: {} })).catch(() => {})
+    }, [attempt?.language, meta.language, locale])
+
+    useEffect(() => {
+        const options = syllabusTopics.length ? syllabusTopics : subjectTopics
+        setMeta(prev => {
+            const current = String(prev.topic || '')
+            if (!options.length) {
+                if (!current) return prev
+                return { ...prev, topic: '' }
+            }
+            if (options.includes(current)) return prev
+            return { ...prev, topic: options[0] }
+        })
+    }, [syllabusTopics, subjectTopics])
+
     const resetAttempt = () => {
         setAttempt(null)
         setQuestions([])
@@ -143,8 +229,10 @@ export default function Diagnostic({ onDone }) {
             const fd = new FormData()
             fd.append('file', syllabusFile)
             const res = await vpApi.diagSyllabusUpload(fd)
+            const topics = (res.topics || res.keywords || []).filter(Boolean)
             setMeta(m => ({ ...m, syllabus_text: res.syllabus_text || '' }))
             setSyllabusUnits(res.units || [])
+            setSyllabusTopics(topics)
             if ((res.units || []).length && !meta.unit_name) {
                 setMeta(m => ({ ...m, unit_name: res.units[0] || '' }))
             }
@@ -158,6 +246,15 @@ export default function Diagnostic({ onDone }) {
     const startStudentChoice = async () => {
         setError(null)
         try {
+            if (!String(meta.subject || '').trim()) {
+                return setError({ label: 'Validation', message: 'Please type a subject.', timestamp: new Date().toISOString() })
+            }
+            if (meta.education_level === 'college') {
+                const expectedYear = Math.ceil(Number(meta.semester || 1) / 2)
+                if (Number(meta.college_year) !== expectedYear) {
+                    return setError({ label: 'Validation', message: 'Selected year and semester are not aligned.', timestamp: new Date().toISOString() })
+                }
+            }
             if (!String(meta.topic || '').trim()) {
                 if (meta.syllabus_scope === 'unit_wise' && !String(meta.unit_name || '').trim()) {
                     return setError({ label: 'Validation', message: 'Please choose a unit for unit-wise diagnostic, or enter a topic.', timestamp: new Date().toISOString() })
@@ -168,7 +265,7 @@ export default function Diagnostic({ onDone }) {
             }
             const r = await vpApi.diagStudentStart(meta)
             setMode('student_choice')
-            setAttempt({ id: r.attempt_id, mode: 'student_choice' })
+            setAttempt({ id: r.attempt_id, mode: 'student_choice', language: meta.language })
             setQuestions(r.question_paper || [])
             setAnswers({})
             setIdx(0)
@@ -184,7 +281,7 @@ export default function Diagnostic({ onDone }) {
         try {
             const r = await vpApi.diagTeacherStart(selectedTeacherTestId)
             setMode('teacher_upload')
-            setAttempt({ id: r.attempt_id, mode: 'teacher_upload', title: r.test?.title })
+            setAttempt({ id: r.attempt_id, mode: 'teacher_upload', title: r.test?.title, language: r.test?.language || 'en' })
             setQuestions(r.test?.question_paper || [])
             setAnswers({})
             setIdx(0)
@@ -222,6 +319,7 @@ export default function Diagnostic({ onDone }) {
             report={report}
             plan={plan}
             attemptId={viewAttemptId}
+            initialLanguage={attempt?.language || locale || 'en'}
             onPlanUpdate={p => setPlan(p)}
             onBack={() => { setDone(false); resetAttempt(); setViewTab('history'); refreshHistory() }}
         />
@@ -329,11 +427,22 @@ export default function Diagnostic({ onDone }) {
                 {mode === 'student_choice' ? (
                     <div className="vp-diag-panel vp-mt-12">
                         <h3><ClipboardList size={16} /> Student Choice Test</h3>
-                        <p className="vp-text-sm">Clean flow: Topic (highest priority) {'->'} Unit (if Unit Wise) {'->'} Whole Syllabus {'->'} fallback profile context.</p>
+                        <p className="vp-text-sm">Flow: Education level {'->'} Language {'->'} Class/Year-Sem {'->'} Subject {'->'} Upload syllabus {'->'} Select topic(s) {'->'} Generate test.</p>
                         <div className="vp-diag-fields">
                             <div className="vp-diag-field">
                                 <label>Learning Level</label>
-                                <select className="vp-search" value={meta.education_level} onChange={e => setMeta(m => ({ ...m, education_level: e.target.value }))}>
+                                <select
+                                    className="vp-search"
+                                    value={meta.education_level}
+                                    onChange={e => {
+                                        const nextLevel = e.target.value
+                                        if (nextLevel === 'school') {
+                                            setMeta(m => ({ ...m, education_level: 'school', grade: 9, college_year: 1, semester: 1 }))
+                                        } else {
+                                            setMeta(m => ({ ...m, education_level: 'college', college_year: 1, semester: 1 }))
+                                        }
+                                    }}
+                                >
                                     <option value="school">School</option>
                                     <option value="college">College</option>
                                 </select>
@@ -350,42 +459,48 @@ export default function Diagnostic({ onDone }) {
                                 <div className="vp-diag-field">
                                     <label>Class</label>
                                     <select className="vp-search" value={meta.grade} onChange={e => setMeta(m => ({ ...m, grade: Number(e.target.value) }))}>
-                                        {[8, 9, 10, 11, 12].map(g => <option key={g} value={g}>{g}</option>)}
+                                        {SCHOOL_CLASSES.map(g => <option key={g} value={g}>{g}</option>)}
                                     </select>
                                 </div>
                             ) : (
                                 <div className="vp-diag-field">
-                                    <label>College Year</label>
-                                    <select className="vp-search" value={meta.college_year} onChange={e => setMeta(m => ({ ...m, college_year: Number(e.target.value) }))}>
-                                        {[1, 2, 3, 4, 5, 6].map(y => <option key={y} value={y}>{y}</option>)}
+                                    <label>Year / Semester</label>
+                                    <select
+                                        className="vp-search"
+                                        value={`${meta.college_year}-${meta.semester}`}
+                                        onChange={e => {
+                                            const [year, sem] = e.target.value.split('-').map(Number)
+                                            setMeta(m => ({ ...m, college_year: year, semester: sem }))
+                                        }}
+                                    >
+                                        {COLLEGE_YEAR_SEM_OPTIONS.map(opt => (
+                                            <option key={`${opt.year}-${opt.semester}`} value={`${opt.year}-${opt.semester}`}>
+                                                {opt.label} (Year {opt.year} · Sem {opt.semester})
+                                            </option>
+                                        ))}
                                     </select>
                                 </div>
                             )}
-                            {meta.education_level === 'school' ? (
-                                <div className="vp-diag-field">
-                                    <label>Subject</label>
-                                    <select className="vp-search" value={meta.subject} onChange={e => setMeta(m => ({ ...m, subject: e.target.value }))}>
-                                        {['Mathematics', 'Science', 'English', 'Aptitude', 'Programming', 'General'].map(s => <option key={s}>{s}</option>)}
-                                    </select>
-                                </div>
-                            ) : (
-                                <div className="vp-diag-field">
-                                    <label>Subject (optional)</label>
-                                    <select className="vp-search" value={meta.subject} onChange={e => setMeta(m => ({ ...m, subject: e.target.value }))}>
-                                        {['General', 'Mathematics', 'Science', 'English', 'Aptitude', 'Programming'].map(s => <option key={s}>{s}</option>)}
-                                    </select>
-                                </div>
-                            )}
-                            <div className="vp-diag-field">
-                                <label>Scope</label>
-                                <select className="vp-search" value={meta.scope} onChange={e => setMeta(m => ({ ...m, scope: e.target.value }))}>
-                                    <option value="topic">Topic</option>
-                                    <option value="subject">Whole Subject</option>
-                                </select>
+                            <div className="vp-diag-field span-2">
+                                <label>Subject (type)</label>
+                                <input
+                                    className="vp-search"
+                                    value={meta.subject}
+                                    onChange={e => setMeta(m => ({ ...m, subject: e.target.value }))}
+                                    placeholder={meta.education_level === 'college' ? 'e.g. Data Structures, DBMS, Thermodynamics' : 'e.g. Mathematics, Science, English'}
+                                />
                             </div>
                             <div className="vp-diag-field span-2">
-                                <label>Topic (optional - overrides other selections)</label>
-                                <input className="vp-search" value={meta.topic} onChange={e => setMeta(m => ({ ...m, topic: e.target.value }))} placeholder={meta.education_level === 'college' ? 'e.g. Compiler Design' : 'e.g. Algebra'} />
+                                <label>Topic</label>
+                                <select className="vp-search" value={meta.topic} onChange={e => setMeta(m => ({ ...m, topic: e.target.value }))}>
+                                    {(syllabusTopics.length ? syllabusTopics : subjectTopics).length === 0 ? (
+                                        <option value="">No topics yet (type subject or upload syllabus)</option>
+                                    ) : (
+                                        (syllabusTopics.length ? syllabusTopics : subjectTopics).map((tp, i) => (
+                                            <option key={`${tp}-${i}`} value={tp}>{tp}</option>
+                                        ))
+                                    )}
+                                </select>
                             </div>
                             {syllabusUnits.length > 0 && meta.syllabus_scope === 'unit_wise' && (
                                 <div className="vp-diag-field span-2">
@@ -396,11 +511,12 @@ export default function Diagnostic({ onDone }) {
                                     </select>
                                 </div>
                             )}
+
                         </div>
 
                         <div className="vp-diag-upload">
                             <h3>{meta.education_level === 'college' ? <><GraduationCap size={16} /> College Syllabus Upload</> : <><Layers size={16} /> School Syllabus Upload</>}</h3>
-                            <p className="vp-text-sm">Upload syllabus (TXT/PDF/CSV/Excel). Unit-wise mode will show parsed units here.</p>
+                            <p className="vp-text-sm">Upload syllabus (TXT/PDF/CSV/Excel). Topic dropdown will be filled from uploaded syllabus.</p>
                             <div className="vp-row" style={{ gap: 8 }}>
                                 <input type="file" onChange={e => setSyllabusFile(e.target.files?.[0] || null)} />
                                 <button className="vp-btn" onClick={uploadSyllabus} disabled={uploadingSyllabus}>
@@ -408,9 +524,9 @@ export default function Diagnostic({ onDone }) {
                                 </button>
                             </div>
                             {meta.syllabus_text ? (
-                                <p className="vp-text-sm">Syllabus uploaded successfully. Units detected: {syllabusUnits.length || 0}</p>
+                                <p className="vp-text-sm">Syllabus uploaded successfully. Units detected: {syllabusUnits.length || 0} · Topics extracted: {syllabusTopics.length || 0}</p>
                             ) : (
-                                <p className="vp-text-sm">No syllabus uploaded yet.</p>
+                                <p className="vp-text-sm">No syllabus uploaded yet. Topic dropdown is currently generated from subject name.</p>
                             )}
                         </div>
 
@@ -441,8 +557,8 @@ export default function Diagnostic({ onDone }) {
 
     return (
         <div>
-            <h1 className="vp-h1">{attempt.title || (attempt.mode === 'teacher_upload' ? 'Teacher Diagnostic Test' : 'Student Choice Diagnostic')}</h1>
-            <p className="vp-text-sm">Question {idx + 1} / {questions.length} · {cur.subject || 'General'} · {cur.marks} mark(s)</p>
+            <h1 className="vp-h1">{attempt.title || (attempt.mode === 'teacher_upload' ? (diagUiText.test?.teacherDiagnosticTest || 'Teacher Diagnostic Test') : (diagUiText.test?.studentChoiceDiagnostic || 'Student Choice Diagnostic'))}</h1>
+            <p className="vp-text-sm">{diagUiText.test?.question || 'Question'} {idx + 1} / {questions.length} · {cur.subject || 'General'} · {cur.marks} {diagUiText.test?.marks || 'mark(s)'}</p>
             <div className="vp-progress vp-mt-12"><div style={{ width: `${((idx + 1) / questions.length) * 100}%` }} /></div>
 
             <div className="vp-card vp-mt-12">
@@ -463,26 +579,27 @@ export default function Diagnostic({ onDone }) {
                         marks={cur.marks}
                         value={answers[cur.qid] || ''}
                         onChange={val => setAnswers(a => ({ ...a, [cur.qid]: val }))}
-                        lang={locale || 'en'}
+                        lang={attempt?.language || locale || 'en'}
+                        uiText={diagUiText.test || {}}
                     />
                 )}
                 <div className="vp-row">
-                    <button className="vp-btn" disabled={idx === 0} onClick={() => setIdx(i => i - 1)}>{t('back') || 'Back'}</button>
+                    <button className="vp-btn" disabled={idx === 0} onClick={() => setIdx(i => i - 1)}>{diagUiText.test?.back || t('back') || 'Back'}</button>
                     {!isLast && (
                         <button className="vp-btn vp-btn-primary" onClick={() => setIdx(i => i + 1)} disabled={!String(answers[cur.qid] || '').trim()}>
-                            {t('next') || 'Next'} <ChevronRight size={16} />
+                            {diagUiText.test?.next || t('next') || 'Next'} <ChevronRight size={16} />
                         </button>
                     )}
                     {isLast && (
                         <button className="vp-btn vp-btn-primary" onClick={submit} disabled={submitting}>
-                            {submitting ? '…' : (t('submit') || 'Submit')}
+                            {submitting ? '…' : (diagUiText.test?.submit || t('submit') || 'Submit')}
                         </button>
                     )}
                 </div>
             </div>
 
             <div className="vp-row vp-mt-12">
-                <button className="vp-btn" onClick={resetAttempt}>Exit Test</button>
+                <button className="vp-btn" onClick={resetAttempt}>{diagUiText.test?.exitTest || 'Exit Test'}</button>
             </div>
         </div>
     )
@@ -505,7 +622,7 @@ const rv = {
 }
 
 // Speech-to-text textarea with mic button
-function ShortAnswerField({ qid, marks, value, onChange, lang }) {
+function ShortAnswerField({ qid, marks, value, onChange, lang, uiText = {} }) {
     const langMap = {
         hi: 'hi-IN', ta: 'ta-IN', bn: 'bn-IN', gu: 'gu-IN',
         kn: 'kn-IN', ml: 'ml-IN', mr: 'mr-IN', pa: 'pa-IN',
@@ -525,13 +642,13 @@ function ShortAnswerField({ qid, marks, value, onChange, lang }) {
                 style={{ width: '100%', paddingRight: supported ? 48 : undefined }}
                 value={value}
                 onChange={e => onChange(e.target.value)}
-                placeholder={marks >= 5 ? 'Write your detailed answer...' : 'Write your answer...'}
+                placeholder={marks >= 5 ? (uiText.writeDetailedAnswer || 'Write your detailed answer...') : (uiText.writeAnswer || 'Write your answer...')}
             />
             {supported && (
                 <button
                     type="button"
                     onClick={toggle}
-                    title={listening ? 'Stop recording' : 'Speak your answer'}
+                    title={listening ? (uiText.stop || 'Stop') : (uiText.speak || 'Speak')}
                     style={{
                         position: 'absolute', top: 10, right: 10,
                         background: listening ? 'rgba(239,68,68,0.18)' : 'rgba(139,92,246,0.15)',
@@ -543,15 +660,15 @@ function ShortAnswerField({ qid, marks, value, onChange, lang }) {
                     }}
                 >
                     {listening
-                        ? <><MicOff size={16} /><span style={{ marginLeft: 4, fontSize: '0.72rem', fontWeight: 600 }}>Stop</span></>
-                        : <><Mic size={16} /><span style={{ marginLeft: 4, fontSize: '0.72rem', fontWeight: 600 }}>Speak</span></>
+                        ? <><MicOff size={16} /><span style={{ marginLeft: 4, fontSize: '0.72rem', fontWeight: 600 }}>{uiText.stop || 'Stop'}</span></>
+                        : <><Mic size={16} /><span style={{ marginLeft: 4, fontSize: '0.72rem', fontWeight: 600 }}>{uiText.speak || 'Speak'}</span></>
                     }
                 </button>
             )}
             {listening && (
                 <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 5, fontSize: '0.75rem', color: '#f87171' }}>
                     <span style={{ width: 7, height: 7, borderRadius: '50%', background: '#f87171', animation: 'vp-mic-pulse 1s infinite' }} />
-                    Listening...
+                    {uiText.listening || 'Listening...'}
                 </div>
             )}
         </div>
@@ -752,11 +869,53 @@ function TopicPlanCard({ tp }) {
     )
 }
 
-function ResultView({ report, plan, attemptId, onPlanUpdate, onBack }) {
+function ResultView({ report, plan, attemptId, initialLanguage = 'en', onPlanUpdate, onBack }) {
     const navigate = useNavigate()
     const [showQ, setShowQ] = useState(false)
     const [regenerating, setRegenerating] = useState(false)
     const [regenError, setRegenError] = useState(null)
+    const [viewReport, setViewReport] = useState(report)
+    const [viewPlan, setViewPlan] = useState(plan)
+    const [resultLanguage, setResultLanguage] = useState(initialLanguage)
+    const [localizing, setLocalizing] = useState(false)
+    const [generatingLessons, setGeneratingLessons] = useState(false)
+    const [lessonMessage, setLessonMessage] = useState('')
+    const [uiText, setUiText] = useState({})
+
+    useEffect(() => {
+        setViewReport(report)
+        setViewPlan(plan)
+    }, [report, plan])
+
+    useEffect(() => {
+        setResultLanguage(initialLanguage || 'en')
+    }, [initialLanguage])
+
+    useEffect(() => {
+        vpApi.diagUiText(resultLanguage).then(r => setUiText(r.text?.result || {})).catch(() => {})
+    }, [resultLanguage])
+
+    useEffect(() => {
+        let cancelled = false
+        const localize = async () => {
+            if (!attemptId || !resultLanguage) return
+            setLocalizing(true)
+            setRegenError(null)
+            try {
+                const r = await vpApi.diagLocalizedResult(attemptId, resultLanguage)
+                if (cancelled) return
+                setViewReport(r.report || report)
+                setViewPlan(r.personalized_plan || plan)
+            } catch {
+                if (cancelled) return
+                setRegenError(uiText.couldNotChangeLanguage || 'Could not change result language. Please try again.')
+            } finally {
+                if (!cancelled) setLocalizing(false)
+            }
+        }
+        localize()
+        return () => { cancelled = true }
+    }, [attemptId, resultLanguage])
 
     const regeneratePlan = async () => {
         if (!attemptId) return
@@ -765,18 +924,35 @@ function ResultView({ report, plan, attemptId, onPlanUpdate, onBack }) {
         try {
             const r = await vpApi.diagRegeneratePlan(attemptId)
             onPlanUpdate?.(r.personalized_plan)
+            setViewPlan(r.personalized_plan)
         } catch (e) {
-            setRegenError('Could not regenerate plan. Please try again.')
+            setRegenError(uiText.couldNotRegeneratePlan || 'Could not regenerate plan. Please try again.')
         } finally {
             setRegenerating(false)
         }
     }
 
-    const questionWise = report?.question_wise || []
-    const weakTopics = report?.weak_topics || []
-    const topicPlans = plan?.topic_plans || []
+    const generateWeakTopicLessons = async () => {
+        if (!attemptId) return
+        setGeneratingLessons(true)
+        setLessonMessage('')
+        setRegenError(null)
+        try {
+            await vpApi.diagGenerateLessons(attemptId, resultLanguage)
+            setLessonMessage(uiText.lessonsReady || 'Weak-topic lessons are ready in Smart Study.')
+            navigate('/student/vp/practice')
+        } catch {
+            setRegenError(uiText.couldNotGenerateLessons || 'Could not generate lessons. Please try again.')
+        } finally {
+            setGeneratingLessons(false)
+        }
+    }
 
-    const pct = Number(report?.percentage || 0)
+    const questionWise = viewReport?.question_wise || []
+    const weakTopics = viewReport?.weak_topics || []
+    const topicPlans = viewPlan?.topic_plans || []
+
+    const pct = Number(viewReport?.percentage || 0)
     const scoreColor = rv.pct(pct)
 
     return (
@@ -790,8 +966,18 @@ function ResultView({ report, plan, attemptId, onPlanUpdate, onBack }) {
                     style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}
                 >
                     <ChevronRight size={15} style={{ transform: 'rotate(180deg)' }} />
-                    Back to Diagnostic
+                    {uiText.backToDiagnostic || 'Back to Diagnostic'}
                 </button>
+            </div>
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+                <label style={{ fontSize: '0.86rem', color: '#94a3b8' }}>{uiText.resultLanguage || 'Result Language'}</label>
+                <select className="vp-search" style={{ maxWidth: 280 }} value={resultLanguage} onChange={e => setResultLanguage(e.target.value)}>
+                    {LANGUAGE_OPTIONS.map(l => (
+                        <option key={l.code} value={l.code}>{l.code} ({l.label})</option>
+                    ))}
+                </select>
+                {localizing && <span className="vp-text-sm">{uiText.updatingLanguage || 'Updating language...'}</span>}
             </div>
 
             {/* ── Score banner ── */}
@@ -804,54 +990,73 @@ function ResultView({ report, plan, attemptId, onPlanUpdate, onBack }) {
             }}>
                 <div style={{ textAlign: 'center', minWidth: 80 }}>
                     <div style={{ fontSize: '2.5rem', fontWeight: 800, color: scoreColor, lineHeight: 1 }}>{pct}%</div>
-                    <div style={{ fontSize: '0.75rem', color: '#64748b', marginTop: 4 }}>accuracy</div>
+                    <div style={{ fontSize: '0.75rem', color: '#64748b', marginTop: 4 }}>{uiText.accuracy || 'accuracy'}</div>
                 </div>
                 <div style={{ flex: 1, minWidth: 160 }}>
                     <div style={{ fontWeight: 700, fontSize: '1.1rem', color: '#e2e8f0' }}>
                         <Award size={16} style={{ marginRight: 6, verticalAlign: 'middle' }} />
-                        Diagnostic complete
+                        {uiText.diagnosticComplete || 'Diagnostic complete'}
                     </div>
                     <div style={{ color: '#94a3b8', fontSize: '0.85rem', marginTop: 4 }}>
-                        Score: <strong style={{ color: '#e2e8f0' }}>{report?.score} / {report?.total_marks}</strong>
-                        &nbsp;·&nbsp;Stage: <strong style={{ color: scoreColor }}>{report?.stage || 'N/A'}</strong>
-                        &nbsp;·&nbsp;Weak topics: <strong style={{ color: '#f87171' }}>{weakTopics.length}</strong>
+                        {uiText.score || 'Score'}: <strong style={{ color: '#e2e8f0' }}>{viewReport?.score} / {viewReport?.total_marks}</strong>
+                        &nbsp;·&nbsp;{uiText.stage || 'Stage'}: <strong style={{ color: scoreColor }}>{viewReport?.stage || 'N/A'}</strong>
+                        &nbsp;·&nbsp;{uiText.weakTopics || 'Weak topics'}: <strong style={{ color: '#f87171' }}>{weakTopics.length}</strong>
                     </div>
                     <ProgressBar pct={pct} color={scoreColor} />
                 </div>
             </div>
 
             {/* ── Overall weekly goals ── */}
-            {plan?.weekly_goals?.length > 0 && (
+            {viewPlan?.weekly_goals?.length > 0 && (
                 <div style={rv.card()}>
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14, flexWrap: 'wrap', gap: 8 }}>
                         <div style={{ fontWeight: 700, fontSize: '0.95rem', color: '#e2e8f0' }}>
-                            📅 {plan.title || 'Your Improvement Plan'}
+                            📅 {viewPlan.title || uiText.yourImprovementPlan || 'Your Improvement Plan'}
                         </div>
                         {attemptId && (
-                            <button
-                                onClick={regeneratePlan}
-                                disabled={regenerating}
-                                style={{
-                                    display: 'inline-flex', alignItems: 'center', gap: 6,
-                                    background: regenerating ? 'rgba(99,102,241,0.08)' : 'rgba(99,102,241,0.15)',
-                                    border: '1px solid rgba(99,102,241,0.4)',
-                                    borderRadius: 8, padding: '5px 12px', cursor: regenerating ? 'not-allowed' : 'pointer',
-                                    color: '#a78bfa', fontSize: '0.78rem', fontWeight: 600,
-                                    opacity: regenerating ? 0.6 : 1, transition: 'all 0.2s'
-                                }}
-                            >
-                                {regenerating ? '⟳ Generating…' : '✦ Regenerate with AI'}
-                            </button>
+                            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                                <button
+                                    onClick={generateWeakTopicLessons}
+                                    disabled={generatingLessons}
+                                    style={{
+                                        display: 'inline-flex', alignItems: 'center', gap: 6,
+                                        background: generatingLessons ? 'rgba(16,185,129,0.08)' : 'rgba(16,185,129,0.15)',
+                                        border: '1px solid rgba(16,185,129,0.35)',
+                                        borderRadius: 8, padding: '5px 12px', cursor: generatingLessons ? 'not-allowed' : 'pointer',
+                                        color: '#6ee7b7', fontSize: '0.78rem', fontWeight: 600,
+                                        opacity: generatingLessons ? 0.6 : 1, transition: 'all 0.2s'
+                                    }}
+                                >
+                                    {generatingLessons ? (uiText.generatingLessons || 'Generating lessons...') : (uiText.generateLessonsFromWeakTopics || 'Generate Lessons From Weak Topics')}
+                                </button>
+                                <button
+                                    onClick={regeneratePlan}
+                                    disabled={regenerating}
+                                    style={{
+                                        display: 'inline-flex', alignItems: 'center', gap: 6,
+                                        background: regenerating ? 'rgba(99,102,241,0.08)' : 'rgba(99,102,241,0.15)',
+                                        border: '1px solid rgba(99,102,241,0.4)',
+                                        borderRadius: 8, padding: '5px 12px', cursor: regenerating ? 'not-allowed' : 'pointer',
+                                        color: '#a78bfa', fontSize: '0.78rem', fontWeight: 600,
+                                        opacity: regenerating ? 0.6 : 1, transition: 'all 0.2s'
+                                    }}
+                                >
+                                    {regenerating ? `⟳ ${uiText.generating || 'Generating...'}` : `✦ ${uiText.regenerateWithAI || 'Regenerate with AI'}`}
+                                </button>
+                            </div>
                         )}
                     </div>
                     {regenError && (
                         <div style={{ fontSize: '0.78rem', color: '#f87171', marginBottom: 10 }}>{regenError}</div>
                     )}
+                    {lessonMessage && (
+                        <div style={{ fontSize: '0.78rem', color: '#6ee7b7', marginBottom: 10 }}>{lessonMessage}</div>
+                    )}
                     <div style={{ fontSize: '0.8rem', color: '#64748b', marginBottom: 14 }}>
-                        Target: <strong style={{ color: '#60a5fa' }}>{plan.target_score}%</strong> in <strong style={{ color: '#60a5fa' }}>{plan.horizon_days} days</strong>
+                        {uiText.target || 'Target'}: <strong style={{ color: '#60a5fa' }}>{viewPlan.target_score}%</strong> in <strong style={{ color: '#60a5fa' }}>{viewPlan.horizon_days} {uiText.days || 'days'}</strong>
                     </div>
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 10 }}>
-                        {plan.weekly_goals.map((g, gIdx) => {
+                        {viewPlan.weekly_goals.map((g, gIdx) => {
                             const wc = rv.weekColors[gIdx] || rv.weekColors[3]
                             const colonIdx = g.indexOf(':')
                             const wLabel = colonIdx > -1 ? g.slice(0, colonIdx).trim() : `Week ${gIdx + 1}`
@@ -875,7 +1080,7 @@ function ResultView({ report, plan, attemptId, onPlanUpdate, onBack }) {
                 <div>
                     <div style={{ fontWeight: 700, fontSize: '1rem', color: '#e2e8f0', marginBottom: 14, display: 'flex', alignItems: 'center', gap: 8 }}>
                         <BarChart3 size={17} color="#6366f1" />
-                        Topic-wise personalized plan
+                        {uiText.topicWisePersonalizedPlan || 'Topic-wise personalized plan'}
                         <span style={{ background: 'rgba(99,102,241,0.15)', border: '1px solid rgba(99,102,241,0.3)', color: '#a5b4fc', borderRadius: 20, padding: '2px 10px', fontSize: '0.72rem', fontWeight: 700 }}>
                             {topicPlans.length} topics
                         </span>
@@ -897,8 +1102,8 @@ function ResultView({ report, plan, attemptId, onPlanUpdate, onBack }) {
                             color: '#e2e8f0', fontWeight: 700, fontSize: '0.95rem', padding: 0
                         }}
                     >
-                        <span><ClipboardList size={16} style={{ marginRight: 7, verticalAlign: 'middle' }} />Question-wise report ({questionWise.length} questions)</span>
-                        <span style={{ color: '#64748b', fontSize: '0.8rem' }}>{showQ ? '▲ Hide' : '▼ Show'}</span>
+                        <span><ClipboardList size={16} style={{ marginRight: 7, verticalAlign: 'middle' }} />{uiText.questionWiseReport || 'Question-wise report'} ({questionWise.length} questions)</span>
+                        <span style={{ color: '#64748b', fontSize: '0.8rem' }}>{showQ ? `▲ ${uiText.hide || 'Hide'}` : `▼ ${uiText.show || 'Show'}`}</span>
                     </button>
                     {showQ && (
                         <div style={{ marginTop: 16, display: 'flex', flexDirection: 'column', gap: 10 }}>
@@ -917,10 +1122,10 @@ function ResultView({ report, plan, attemptId, onPlanUpdate, onBack }) {
                                             <span style={{ fontSize: '0.875rem', color: '#cbd5e1', fontWeight: 500 }}>Q{q.index}. {q.question}</span>
                                         </div>
                                         <div style={{ paddingLeft: 20, fontSize: '0.8rem', color: '#64748b', display: 'flex', flexWrap: 'wrap', gap: '4px 16px' }}>
-                                            <span>Score: <strong style={{ color: correct ? '#10b981' : '#f87171' }}>{q.obtained}/{q.marks}</strong></span>
-                                            <span>Topic: <strong style={{ color: '#94a3b8' }}>{q.topic || q.subject}</strong></span>
-                                            <span>Your answer: <strong style={{ color: correct ? '#10b981' : '#f87171' }}>{q.student_answer || 'Not answered'}</strong></span>
-                                            {q.expected_answer && <span>Expected: <strong style={{ color: '#10b981' }}>{q.expected_answer}</strong></span>}
+                                            <span>{uiText.score || 'Score'}: <strong style={{ color: correct ? '#10b981' : '#f87171' }}>{q.obtained}/{q.marks}</strong></span>
+                                            <span>{uiText.topic || 'Topic'}: <strong style={{ color: '#94a3b8' }}>{q.topic || q.subject}</strong></span>
+                                            <span>{uiText.yourAnswer || 'Your answer'}: <strong style={{ color: correct ? '#10b981' : '#f87171' }}>{q.student_answer || (uiText.notAnswered || 'Not answered')}</strong></span>
+                                            {q.expected_answer && <span>{uiText.expected || 'Expected'}: <strong style={{ color: '#10b981' }}>{q.expected_answer}</strong></span>}
                                         </div>
                                         {q.feedback && <div style={{ paddingLeft: 20, marginTop: 4, fontSize: '0.78rem', color: '#475569', fontStyle: 'italic' }}>{q.feedback}</div>}
                                     </div>
@@ -934,10 +1139,10 @@ function ResultView({ report, plan, attemptId, onPlanUpdate, onBack }) {
             {/* ── Actions ── */}
             <div className="vp-row vp-mt-24">
                 <button className="vp-btn vp-btn-primary" onClick={() => navigate('/student/vp/personalized')}>
-                    Open Personalized Study
+                    {uiText.openPersonalizedStudy || 'Open Personalized Study'}
                 </button>
-                <button className="vp-btn" onClick={() => navigate('/student/vp/lessons')}>Browse lessons</button>
-                <button className="vp-btn" onClick={onBack}>Take another diagnostic</button>
+                <button className="vp-btn" onClick={() => navigate('/student/vp/lessons')}>{uiText.browseLessons || 'Browse lessons'}</button>
+                <button className="vp-btn" onClick={onBack}>{uiText.takeAnotherDiagnostic || 'Take another diagnostic'}</button>
             </div>
         </div>
     )

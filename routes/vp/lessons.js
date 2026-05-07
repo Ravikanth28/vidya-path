@@ -36,7 +36,7 @@ module.exports = function lessonsRoutes(pool, authenticate) {
                        FROM vp_lessons l
                        LEFT JOIN vp_lesson_progress p
                          ON p.lesson_id = l.id AND p.student_id = ?
-                       WHERE 1 = 1`;
+                       WHERE l.title NOT LIKE '% - Practice Test %'`;
             if (subject) { sql += ' AND l.subject = ?'; params.push(subject); }
             sql += ' ORDER BY l.subject, l.ordering, l.title';
 

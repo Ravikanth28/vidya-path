@@ -11,13 +11,94 @@ const { v4: uuidv4 } = require('uuid');
 const ml = require('../../services/vp/ml_client');
 const llmRouter = require('../../services/vp/llm_router');
 
-const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
+const DIAGNOSTIC_UPLOAD_MAX_MB = 25;
+const upload = multer({
+    storage: multer.memoryStorage(),
+    limits: { fileSize: DIAGNOSTIC_UPLOAD_MAX_MB * 1024 * 1024 }
+});
+
+const LANGUAGE_LABELS = {
+    en: 'English',
+    hi: 'Hindi',
+    ta: 'Tamil',
+    bn: 'Bengali',
+    gu: 'Gujarati',
+    kn: 'Kannada',
+    ml: 'Malayalam',
+    mr: 'Marathi',
+    or: 'Odia',
+    pa: 'Punjabi',
+    te: 'Telugu',
+    ur: 'Urdu'
+};
+
+const DIAGNOSTIC_UI_TEXT = {
+    test: {
+        question: 'Question',
+        marks: 'mark(s)',
+        back: 'Back',
+        next: 'Next',
+        submit: 'Submit',
+        exitTest: 'Exit Test',
+        writeDetailedAnswer: 'Write your detailed answer...',
+        writeAnswer: 'Write your answer...',
+        listening: 'Listening...',
+        speak: 'Speak',
+        stop: 'Stop',
+        studentChoiceDiagnostic: 'Student Choice Diagnostic',
+        teacherDiagnosticTest: 'Teacher Diagnostic Test'
+    },
+    result: {
+        resultLanguage: 'Result Language',
+        updatingLanguage: 'Updating language...',
+        accuracy: 'accuracy',
+        diagnosticComplete: 'Diagnostic complete',
+        score: 'Score',
+        stage: 'Stage',
+        weakTopics: 'Weak topics',
+        yourImprovementPlan: 'Your Improvement Plan',
+        target: 'Target',
+        days: 'days',
+        topicWisePersonalizedPlan: 'Topic-wise personalized plan',
+        questionWiseReport: 'Question-wise report',
+        topic: 'Topic',
+        notAnswered: 'Not answered',
+        hide: 'Hide',
+        show: 'Show',
+        yourAnswer: 'Your answer',
+        expected: 'Expected',
+        openPersonalizedStudy: 'Open Personalized Study',
+        browseLessons: 'Browse lessons',
+        takeAnotherDiagnostic: 'Take another diagnostic',
+        backToDiagnostic: 'Back to Diagnostic',
+        regenerateWithAI: 'Regenerate with AI',
+        generating: 'Generating...',
+        couldNotRegeneratePlan: 'Could not regenerate plan. Please try again.',
+        couldNotChangeLanguage: 'Could not change result language. Please try again.',
+        generateLessonsFromWeakTopics: 'Generate Lessons From Weak Topics',
+        generatingLessons: 'Generating lessons...',
+        lessonsReady: 'Weak-topic lessons are ready in Smart Study.',
+        couldNotGenerateLessons: 'Could not generate lessons. Please try again.',
+        openLessons: 'Open Lessons',
+        mastery: 'Mastery'
+    }
+};
 
 module.exports = function diagnosticRoutes(pool, authenticate) {
     const router = express.Router();
     const requireAdmin = (req, res, next) => {
         if (req.user?.role !== 'admin') return res.status(403).json({ error: 'Admin access required' });
         next();
+    };
+
+    const handleSyllabusUpload = (req, res, next) => {
+        upload.single('file')(req, res, (err) => {
+            if (!err) return next();
+            if (err instanceof multer.MulterError && err.code === 'LIMIT_FILE_SIZE') {
+                return res.status(400).json({ error: `File too large. Max ${DIAGNOSTIC_UPLOAD_MAX_MB}MB allowed.` });
+            }
+            return res.status(400).json({ error: err.message || 'Invalid upload payload.' });
+        });
     };
 
     router.get('/diagnostic/state', authenticate, async (req, res) => {
@@ -104,7 +185,7 @@ module.exports = function diagnosticRoutes(pool, authenticate) {
         }
     });
 
-    router.post('/diagnostic/syllabus-upload', authenticate, upload.single('file'), async (req, res) => {
+    router.post('/diagnostic/syllabus-upload', authenticate, handleSyllabusUpload, async (req, res) => {
         if (!req.file) return res.status(400).json({ error: 'file required' });
         try {
             const parsed = await parseSyllabusUpload(req.file);
@@ -135,6 +216,17 @@ module.exports = function diagnosticRoutes(pool, authenticate) {
         }
     });
 
+    router.get('/diagnostic/ui-text', authenticate, async (req, res) => {
+        const lang = normalizeLanguageCode(req.query.language || 'en');
+        try {
+            const payload = deepClone(DIAGNOSTIC_UI_TEXT);
+            const localized = await localizeObjectForLanguage(payload, lang);
+            res.json({ ok: true, language: lang, text: localized });
+        } catch (err) {
+            res.status(500).json({ error: err.message });
+        }
+    });
+
     router.post('/diagnostic/student-choice/start', authenticate, async (req, res) => {
         const sid = String(req.user.id);
         const {
@@ -142,27 +234,52 @@ module.exports = function diagnosticRoutes(pool, authenticate) {
             grade,
             subject,
             topic = '',
+            selected_topics = [],
             scope = 'subject',
             education_level = 'school',
             college_year = null,
+            semester = null,
             syllabus_scope = 'whole_syllabus',
             unit_name = '',
             syllabus_text = ''
         } = req.body || {};
 
         const isCollege = String(education_level).toLowerCase() === 'college';
-        const normalizedSubject = String(subject || '').trim() || (isCollege ? 'General' : 'General');
+        const normalizedSubject = String(subject || '').trim();
+        if (!normalizedSubject) {
+            return res.status(400).json({ error: 'subject is required' });
+        }
         const gradeNum = Number(isCollege ? college_year : grade);
+        const semesterNum = semester == null || semester === '' ? null : Number(semester);
+        const selectedTopics = (Array.isArray(selected_topics) ? selected_topics : [])
+            .map(t => String(t || '').trim())
+            .filter(Boolean)
+            .filter((v, i, arr) => arr.findIndex(x => x.toLowerCase() === v.toLowerCase()) === i)
+            .slice(0, 12);
         if (isCollege) {
-            if (!Number.isFinite(gradeNum) || gradeNum < 1 || gradeNum > 6) {
-                return res.status(400).json({ error: 'college year must be between 1 and 6' });
+            if (!Number.isFinite(gradeNum) || gradeNum < 1 || gradeNum > 4) {
+                return res.status(400).json({ error: 'college year must be between 1 and 4' });
             }
-            if (!String(syllabus_text || '').trim() && !String(topic || unit_name || '').trim()) {
+            if (!Number.isFinite(semesterNum) || semesterNum < 1 || semesterNum > 8) {
+                return res.status(400).json({ error: 'semester must be between 1 and 8' });
+            }
+            const expectedYear = Math.ceil(semesterNum / 2);
+            if (expectedYear !== gradeNum) {
+                return res.status(400).json({ error: 'selected semester does not match selected year' });
+            }
+            if (!String(syllabus_text || '').trim() && !String(topic || unit_name || '').trim() && !selectedTopics.length) {
                 return res.status(400).json({ error: 'upload syllabus or provide unit/topic for college diagnostic' });
             }
         } else if (!Number.isFinite(gradeNum) || gradeNum < 8 || gradeNum > 12) {
             return res.status(400).json({ error: 'grade must be between 8 and 12' });
         }
+
+        const difficultyProfile = resolveDifficultyProfile({
+            educationLevel: isCollege ? 'college' : 'school',
+            grade: gradeNum,
+            collegeYear: isCollege ? gradeNum : null,
+            semester: isCollege ? semesterNum : null
+        });
 
         try {
             const candidates = await getQuestionCandidates(pool, {
@@ -178,8 +295,10 @@ module.exports = function diagnosticRoutes(pool, authenticate) {
             const topicInput = String(topic || '').trim();
             const unitInput = String(unit_name || '').trim();
 
-            // Priority: explicit topic > unit (when unit-wise) > no explicit context
-            const effectiveTopic = topicInput || (syllabus_scope === 'unit_wise' ? unitInput : '');
+            // Priority: explicit topic > selected topics > unit (when unit-wise) > no explicit context
+            const effectiveTopic = topicInput
+                || (selectedTopics.length ? selectedTopics.join(', ') : '')
+                || (syllabus_scope === 'unit_wise' ? unitInput : '');
 
             const questionPaper = await buildQuestionPaper(candidates, {
                 subject: normalizedSubject,
@@ -190,12 +309,17 @@ module.exports = function diagnosticRoutes(pool, authenticate) {
                 syllabusKeywords,
                 syllabusScope: syllabus_scope,
                 collegeYear: isCollege ? gradeNum : null,
+                semester: isCollege ? semesterNum : null,
+                selectedTopics,
+                difficultyProfile,
                 questionContext: {
                     topicInput,
                     unitInput,
                     hasSyllabus: !!String(syllabus_text || '').trim()
                 }
             });
+
+            const localizedQuestionPaper = await localizeQuestionPaperForLanguage(questionPaper, language);
 
             const attemptId = uuidv4();
             await pool.query(
@@ -211,7 +335,7 @@ module.exports = function diagnosticRoutes(pool, authenticate) {
                     normalizedSubject,
                     effectiveTopic || null,
                     scope,
-                    JSON.stringify(questionPaper)
+                    JSON.stringify(localizedQuestionPaper)
                 ]
             );
 
@@ -219,7 +343,7 @@ module.exports = function diagnosticRoutes(pool, authenticate) {
                 ok: true,
                 attempt_id: attemptId,
                 mode: 'student_choice',
-                question_paper: stripAnswers(questionPaper)
+                question_paper: stripAnswers(localizedQuestionPaper)
             });
         } catch (err) {
             console.error('[vp] student choice start:', err);
@@ -240,11 +364,13 @@ module.exports = function diagnosticRoutes(pool, authenticate) {
             );
             if (!row) return res.status(404).json({ error: 'attempt not found' });
             if (row.status === 'submitted') {
+                const localizedReport = await localizeObjectForLanguage(toJSON(row.report_json, {}), row.language || 'en');
+                const localizedPlan = await localizeObjectForLanguage(toJSON(row.personalized_plan_json, null), row.language || 'en');
                 return res.json({
                     ok: true,
                     already_submitted: true,
-                    report: toJSON(row.report_json, {}),
-                    personalized_plan: toJSON(row.personalized_plan_json, null)
+                    report: localizedReport,
+                    personalized_plan: localizedPlan
                 });
             }
 
@@ -255,7 +381,8 @@ module.exports = function diagnosticRoutes(pool, authenticate) {
                 subject: row.subject,
                 topic: row.topic,
                 scope: row.scope,
-                grade: row.grade
+                grade: row.grade,
+                language: row.language || 'en'
             });
 
             await finalizeDiagnosticAttempt(pool, {
@@ -267,7 +394,10 @@ module.exports = function diagnosticRoutes(pool, authenticate) {
                 plan
             });
 
-            res.json({ ok: true, report: evaluation.report, personalized_plan: plan });
+            const localizedReport = await localizeObjectForLanguage(evaluation.report, row.language || 'en');
+            const localizedPlan = await localizeObjectForLanguage(plan, row.language || 'en');
+
+            res.json({ ok: true, report: localizedReport, personalized_plan: localizedPlan });
         } catch (err) {
             console.error('[vp] student choice submit:', err);
             res.status(500).json({ error: err.message });
@@ -383,11 +513,13 @@ module.exports = function diagnosticRoutes(pool, authenticate) {
             );
             if (!row) return res.status(404).json({ error: 'attempt not found' });
             if (row.status === 'submitted') {
+                const localizedReport = await localizeObjectForLanguage(toJSON(row.report_json, {}), row.language || 'en');
+                const localizedPlan = await localizeObjectForLanguage(toJSON(row.personalized_plan_json, null), row.language || 'en');
                 return res.json({
                     ok: true,
                     already_submitted: true,
-                    report: toJSON(row.report_json, {}),
-                    personalized_plan: toJSON(row.personalized_plan_json, null)
+                    report: localizedReport,
+                    personalized_plan: localizedPlan
                 });
             }
 
@@ -398,7 +530,8 @@ module.exports = function diagnosticRoutes(pool, authenticate) {
                 subject: row.subject,
                 topic: row.topic,
                 scope: row.scope,
-                grade: row.grade
+                grade: row.grade,
+                language: row.language || 'en'
             });
 
             await finalizeDiagnosticAttempt(pool, {
@@ -410,7 +543,103 @@ module.exports = function diagnosticRoutes(pool, authenticate) {
                 plan
             });
 
-            res.json({ ok: true, report: evaluation.report, personalized_plan: plan });
+            const localizedReport = await localizeObjectForLanguage(evaluation.report, row.language || 'en');
+            const localizedPlan = await localizeObjectForLanguage(plan, row.language || 'en');
+
+            res.json({ ok: true, report: localizedReport, personalized_plan: localizedPlan });
+        } catch (err) {
+            res.status(500).json({ error: err.message });
+        }
+    });
+
+    router.get('/diagnostic/attempts/:id/localized', authenticate, async (req, res) => {
+        const sid = String(req.user.id);
+        const lang = normalizeLanguageCode(req.query.language || 'en');
+        try {
+            const [[row]] = await pool.query(
+                `SELECT id, language, report_json, personalized_plan_json
+                 FROM vp_diagnostic_attempts
+                 WHERE id = ? AND student_id = ?`,
+                [req.params.id, sid]
+            );
+            if (!row) return res.status(404).json({ error: 'attempt not found' });
+
+            const baseReport = toJSON(row.report_json, {});
+            const basePlan = toJSON(row.personalized_plan_json, null);
+            const localizedReport = await localizeObjectForLanguage(baseReport, lang);
+            const localizedPlan = await localizeObjectForLanguage(basePlan, lang);
+
+            res.json({ ok: true, language: lang, report: localizedReport, personalized_plan: localizedPlan });
+        } catch (err) {
+            res.status(500).json({ error: err.message });
+        }
+    });
+
+    router.post('/diagnostic/attempts/:id/generate-lessons', authenticate, async (req, res) => {
+        const sid = String(req.user.id);
+        const lang = normalizeLanguageCode(req.body?.language || req.query.language || 'en');
+        try {
+            const [[row]] = await pool.query(
+                `SELECT id, subject, grade, topic, language, report_json
+                 FROM vp_diagnostic_attempts
+                 WHERE id = ? AND student_id = ? AND status = 'submitted'`,
+                [req.params.id, sid]
+            );
+            if (!row) return res.status(404).json({ error: 'submitted attempt not found' });
+
+            const report = toJSON(row.report_json, {});
+            const weakTopics = Array.isArray(report?.weak_topics) && report.weak_topics.length
+                ? report.weak_topics.slice(0, 6)
+                : [{ topic: row.topic || row.subject || 'Core Concepts', percentage: Number(report?.percentage || 0) }];
+
+            const createdLessons = [];
+            for (const weak of weakTopics) {
+                const topicName = String(weak.topic || row.subject || 'Core Concepts').trim();
+                if (!topicName) continue;
+                const lesson = await createWeakTopicLesson(pool, {
+                    subject: row.subject || 'General',
+                    topic: topicName,
+                    grade: row.grade,
+                    language: 'en',
+                    weaknessPercentage: Number(weak.percentage || 0)
+                });
+                if (lesson) createdLessons.push(lesson);
+            }
+
+            const focusTopic = String(weakTopics?.[0]?.topic || row.topic || row.subject || 'Core Concepts').trim();
+            const focusLesson = createdLessons.find(l => String(l.title || '').toLowerCase() === focusTopic.toLowerCase()) || createdLessons[0] || null;
+            const sourceNotes = String(focusLesson?.body_en || buildSimpleEnglishLessonTemplate({
+                subject: row.subject || 'General',
+                topic: focusTopic,
+                grade: row.grade,
+                weaknessPercentage: Number(weakTopics?.[0]?.percentage || 0)
+            }));
+
+            const practiceTests = [];
+            for (let idx = 1; idx <= 3; idx += 1) {
+                const qSet = await generatePracticeQuestionSet({
+                    subject: row.subject || 'General',
+                    topic: focusTopic,
+                    notesText: sourceNotes,
+                    testIndex: idx
+                });
+                const practiceLesson = await upsertPracticeTestLesson(pool, {
+                    subject: row.subject || 'General',
+                    topic: focusTopic,
+                    grade: row.grade,
+                    testIndex: idx,
+                    questionSet: qSet
+                });
+                practiceTests.push(practiceLesson);
+            }
+
+            res.json({
+                ok: true,
+                created: createdLessons.length,
+                lessons: createdLessons.map(({ body_en, ...rest }) => rest),
+                practice_tests_created: practiceTests.length,
+                practice_tests: practiceTests
+            });
         } catch (err) {
             res.status(500).json({ error: err.message });
         }
@@ -667,7 +896,8 @@ module.exports = function diagnosticRoutes(pool, authenticate) {
                 subject: row.subject,
                 topic: row.topic,
                 scope: row.scope,
-                grade: row.grade
+                grade: row.grade,
+                language: row.language || 'en'
             });
 
             // Update the attempt row and the plans table
@@ -704,6 +934,113 @@ function toJSON(v, fallback) {
     try { return JSON.parse(v); } catch { return fallback; }
 }
 
+function normalizeLanguageCode(code) {
+    const c = String(code || 'en').toLowerCase().trim();
+    return LANGUAGE_LABELS[c] ? c : 'en';
+}
+
+function languageLabel(code) {
+    const c = normalizeLanguageCode(code);
+    return LANGUAGE_LABELS[c] || 'English';
+}
+
+function deepClone(value) {
+    return JSON.parse(JSON.stringify(value));
+}
+
+function shouldTranslateValue({ key, value }) {
+    if (typeof value !== 'string') return false;
+    const text = value.trim();
+    if (!text) return false;
+    if (/^https?:\/\//i.test(text)) return false;
+    if (/^[0-9a-f-]{16,}$/i.test(text)) return false;
+    const skipKeys = new Set([
+        'id', 'qid', 'attempt_id', 'test_id', 'student_id', 'kind',
+        'scope', 'education_level', 'file_name', 'created_at', 'submitted_at'
+    ]);
+    if (skipKeys.has(String(key || ''))) return false;
+    return true;
+}
+
+function collectTranslatableStrings(node, paths = [], path = []) {
+    if (Array.isArray(node)) {
+        node.forEach((item, idx) => collectTranslatableStrings(item, paths, [...path, idx]));
+        return paths;
+    }
+    if (!node || typeof node !== 'object') return paths;
+
+    for (const [k, v] of Object.entries(node)) {
+        if (typeof v === 'string' && shouldTranslateValue({ key: k, value: v })) {
+            paths.push({ path: [...path, k], value: v });
+        } else if (v && typeof v === 'object') {
+            collectTranslatableStrings(v, paths, [...path, k]);
+        }
+    }
+    return paths;
+}
+
+function setByPath(obj, path, value) {
+    let cur = obj;
+    for (let i = 0; i < path.length - 1; i += 1) {
+        cur = cur[path[i]];
+    }
+    cur[path[path.length - 1]] = value;
+}
+
+async function translateStringBatch(strings, languageCode) {
+    const lang = normalizeLanguageCode(languageCode);
+    if (lang === 'en') return strings;
+    if (!strings.length) return [];
+
+    const result = [];
+    const chunkSize = 80;
+    for (let i = 0; i < strings.length; i += chunkSize) {
+        const chunk = strings.slice(i, i + chunkSize);
+        try {
+            const response = await llmRouter.llmJson({
+                messages: [
+                    {
+                        role: 'system',
+                        content: `Translate given texts to ${languageLabel(lang)}. Return only valid JSON.`
+                    },
+                    {
+                        role: 'user',
+                        content:
+                            `Translate each item to ${languageLabel(lang)} and preserve original intent.\n` +
+                            `Do not translate numbers, urls, or IDs.\n` +
+                            `Return exact JSON shape: {"translated": ["..."]}.\n` +
+                            `Input: ${JSON.stringify(chunk)}`
+                    }
+                ],
+                temperature: 0.1,
+                maxTokens: 2500
+            });
+            const translated = Array.isArray(response?.json?.translated) ? response.json.translated : [];
+            if (translated.length === chunk.length) {
+                result.push(...translated.map(x => String(x ?? '')));
+            } else {
+                result.push(...chunk);
+            }
+        } catch {
+            result.push(...chunk);
+        }
+    }
+    return result;
+}
+
+async function localizeObjectForLanguage(payload, languageCode) {
+    const lang = normalizeLanguageCode(languageCode);
+    if (lang === 'en' || !payload || typeof payload !== 'object') return payload;
+
+    const cloned = deepClone(payload);
+    const refs = collectTranslatableStrings(cloned);
+    if (!refs.length) return cloned;
+
+    const translated = await translateStringBatch(refs.map(r => r.value), lang);
+    refs.forEach((ref, idx) => setByPath(cloned, ref.path, translated[idx] ?? ref.value));
+    return cloned;
+}
+
 function normalizePlanRow(row) {
     return {
         id: row.id,
@@ -721,21 +1058,38 @@ function normalizePlanRow(row) {
  * Returns { mcq: [...], short: [...], long: [...] }
  * Falls back to empty arrays on failure (caller handles fallback).
  */
-async function generateAiQuestionSet({ subject, topic, grade, language = 'en', needMcq = 15, needShort = 1, needLong = 1 }) {
-    const levelLabel = `Grade ${grade}`;
-    const langNote = language && language !== 'en' ? ` Respond in ${language}.` : '';
+async function generateAiQuestionSet({
+    subject,
+    topic,
+    grade,
+    language = 'en',
+    needMcq = 15,
+    needShort = 1,
+    needLong = 1,
+    levelLabel = null,
+    difficultyGuidance = null,
+    selectedTopics = []
+}) {
+    const effectiveLevelLabel = levelLabel || `Grade ${grade}`;
+    const topics = (Array.isArray(selectedTopics) ? selectedTopics : []).map(t => String(t || '').trim()).filter(Boolean);
+    const topicCoverageRule = topics.length > 1
+        ? `- Cover all selected topics with balanced spread: ${topics.join(', ')}\n`
+        : '';
+    const lang = normalizeLanguageCode(language);
+    const langNote = lang !== 'en' ? ` Respond in ${languageLabel(lang)}.` : '';
     const messages = [
         {
             role: 'system',
             content:
-                `You are an expert ${subject} teacher writing a diagnostic test for ${levelLabel} students.` +
+                `You are an expert ${subject} teacher writing a diagnostic test for ${effectiveLevelLabel} students.` +
                 ` Your task is to generate questions SPECIFICALLY about "${topic}" — every question must reference real facts, formulas, processes, or definitions from this topic.` +
+                (difficultyGuidance ? ` Keep difficulty profile: ${difficultyGuidance}.` : '') +
                 ` Return ONLY valid JSON. No prose, no markdown fences.${langNote}`
         },
         {
             role: 'user',
             content:
-                `Generate a question set about "${topic}" in ${subject} for ${levelLabel} students.\n\n` +
+                `Generate a question set about "${topic}" in ${subject} for ${effectiveLevelLabel} students.\n\n` +
                 `Return this exact JSON shape:\n` +
                 `{\n` +
                 `  "mcq": [ /* ${needMcq} items */ { "text": "...", "options": ["A) ...","B) ...","C) ...","D) ..."], "answer_key": "<exact option text>" } ],\n` +
@@ -746,6 +1100,7 @@ async function generateAiQuestionSet({ subject, topic, grade, language = 'en', n
                 `- Every MCQ option must be unique and plausible; answer_key must be the EXACT full text of the correct option\n` +
                 `- Short question: ask for a specific explanation, definition, or process within "${topic}"\n` +
                 `- Long question: ask for a detailed analysis, comparison, or application within "${topic}"\n` +
+                topicCoverageRule +
                 `- NO generic questions — every question must name "${topic}" or its specific sub-concepts`
         }
     ];
@@ -766,6 +1121,56 @@ async function generateAiQuestionSet({ subject, topic, grade, language = 'en', n
         .map(q => ({ type: 'long', text: String(q.text).trim(), options: [], answer_key: String(q.answer_key || topic), topic, subject }));
 
     return { mcq: normMcq, short: normShort, long: normLong };
+}
+
+async function localizeQuestionPaperForLanguage(questionPaper, languageCode) {
+    const lang = normalizeLanguageCode(languageCode);
+    if (lang === 'en') return questionPaper;
+
+    const localized = await localizeObjectForLanguage(questionPaper, lang);
+    return Array.isArray(localized) ? localized : questionPaper;
+}
+
+function resolveDifficultyProfile({ educationLevel = 'school', grade = null, collegeYear = null, semester = null }) {
+    if (educationLevel === 'college') {
+        const sem = Number(semester || 1);
+        const yr = Number(collegeYear || 1);
+        const score = Math.max(1, Math.min(8, sem || ((yr - 1) * 2 + 1)));
+        if (score <= 2) {
+            return {
+                levelLabel: `College Year ${yr} Semester ${sem}`,
+                difficultyGuidance: 'easy-to-medium conceptual questions with foundational applications'
+            };
+        }
+        if (score <= 5) {
+            return {
+                levelLabel: `College Year ${yr} Semester ${sem}`,
+                difficultyGuidance: 'medium difficulty with problem-solving and applied concept questions'
+            };
+        }
+        return {
+            levelLabel: `College Year ${yr} Semester ${sem}`,
+            difficultyGuidance: 'high difficulty with analytical, scenario-based, and advanced application questions'
+        };
+    }
+
+    const g = Number(grade || 8);
+    if (g <= 9) {
+        return {
+            levelLabel: `Class ${g}`,
+            difficultyGuidance: 'easy-to-medium school-level questions focusing on concept clarity'
+        };
+    }
+    if (g <= 11) {
+        return {
+            levelLabel: `Class ${g}`,
+            difficultyGuidance: 'medium-to-high school-level questions with deeper reasoning'
+        };
+    }
+    return {
+        levelLabel: `Class ${g}`,
+        difficultyGuidance: 'high school board-exam style difficulty with strong conceptual application'
+    };
 }
 
 async function getQuestionCandidates(pool, { subject, grade, topic, language, educationLevel = 'school' }) {
@@ -823,6 +1228,9 @@ async function buildQuestionPaper(candidates, {
     syllabusKeywords = [],
     syllabusScope = 'whole_syllabus',
     collegeYear = null,
+    semester = null,
+    selectedTopics = [],
+    difficultyProfile = null,
     questionContext = {}
 }) {
 
@@ -830,21 +1238,35 @@ async function buildQuestionPaper(candidates, {
     const unitInput = String(questionContext.unitInput || '').trim();
     const hasSyllabus = !!questionContext.hasSyllabus;
 
-    // Context priority: topic > unit-wise unit > whole syllabus keywords > fallback subject
+    const normalizedSelectedTopics = (Array.isArray(selectedTopics) ? selectedTopics : [])
+        .map(t => String(t || '').trim())
+        .filter(Boolean)
+        .slice(0, 12);
+
+    // Context priority: topic > selected topics > unit-wise unit > whole syllabus keywords > fallback subject
     const resolvedContext = topicInput
         ? { kind: 'topic', value: topicInput }
+        : (normalizedSelectedTopics.length)
+            ? { kind: 'topics', value: normalizedSelectedTopics.join(', ') }
         : (syllabusScope === 'unit_wise' && unitInput)
             ? { kind: 'unit', value: unitInput }
             : (hasSyllabus && syllabusKeywords.length)
                 ? { kind: 'syllabus', value: syllabusKeywords[0] }
                 : { kind: 'fallback', value: topic || subject || 'Core Concepts' };
 
+    const filteredCandidates = normalizedSelectedTopics.length
+        ? (candidates || []).filter(c => {
+            const t = String(c.topic || '').toLowerCase();
+            return normalizedSelectedTopics.some(sel => t.includes(String(sel).toLowerCase()));
+        })
+        : (candidates || []);
+
     const mcqCandidates = shuffle(
-        (candidates || [])
+        (filteredCandidates || [])
             .filter(c => ['mcq', 'tf'].includes(c.type))
             .filter(c => Array.isArray(c.options) && c.options.length >= 3)
     );
-    const shortCandidates = shuffle((candidates || []).filter(c => c.type === 'short'));
+    const shortCandidates = shuffle((filteredCandidates || []).filter(c => c.type === 'short'));
 
     const oneMark = [];
     const seen = new Set();
@@ -873,6 +1295,9 @@ async function buildQuestionPaper(candidates, {
                 topic: resolvedContext.value,
                 grade,
                 language,
+                levelLabel: difficultyProfile?.levelLabel,
+                difficultyGuidance: difficultyProfile?.difficultyGuidance,
+                selectedTopics: normalizedSelectedTopics,
                 needMcq: needMcq > 0 ? needMcq : 0,
                 needShort,
                 needLong
@@ -883,6 +1308,30 @@ async function buildQuestionPaper(candidates, {
         } catch (e) {
             console.warn('[vp] AI question generation failed:', e.message);
         }
+    }
+
+    while (oneMark.length < 15) {
+        const idx = oneMark.length + 1;
+        const stem = `${resolvedContext.value}: choose the most accurate statement (${idx}).`;
+        const correct = `B) Correct explanation for ${resolvedContext.value}`;
+        oneMark.push({
+            qid: `q-${uuidv4()}`,
+            marks: 1,
+            type: 'mcq',
+            subject,
+            topic: resolvedContext.value,
+            text: stem,
+            options: [
+                `A) Unrelated statement about ${subject}`,
+                correct,
+                'C) Common misconception',
+                'D) Incomplete explanation'
+            ],
+            answer_key: correct,
+            a: 1,
+            b: 0,
+            c: 0.2
+        });
     }
 
     const twoMarkBase = shortCandidates[0] || { type: 'short', subject, topic: resolvedContext.value, text: `Explain a key concept of ${resolvedContext.value} with an example.`, options: [], answer_key: resolvedContext.value };
@@ -910,6 +1359,7 @@ async function buildQuestionPaper(candidates, {
             education_level: educationLevel,
             syllabus_scope: syllabusScope,
             college_year: collegeYear,
+            semester,
             context_kind: resolvedContext.kind,
             context_value: resolvedContext.value
         }
@@ -1060,7 +1510,7 @@ function evaluateSingleQuestion(question, answer) {
     };
 }
 
-async function buildPersonalizedPlan({ report, subject, topic, scope, grade }) {
+async function buildPersonalizedPlan({ report, subject, topic, scope, grade, language = 'en' }) {
     const weakTopics = (report.weak_topics || []).length
         ? report.weak_topics
         : [{ topic: topic || subject || 'Core Concepts', percentage: report.percentage || 0 }];
@@ -1072,6 +1522,8 @@ async function buildPersonalizedPlan({ report, subject, topic, scope, grade }) {
     // ── AI: overall 4-week plan + per-topic focus ──────────────────────────────
     let aiPlan = null;
     try {
+        const lang = normalizeLanguageCode(language);
+        const langInstruction = lang !== 'en' ? ` Return all text in ${languageLabel(lang)}.` : '';
         const topicSummary = topicList.map(t =>
             `${t.topic} (score: ${t.percentage ?? 0}%, correct: ${t.score ?? '?'}/${t.total ?? '?'})`
         ).join('; ');
@@ -1082,6 +1534,7 @@ async function buildPersonalizedPlan({ report, subject, topic, scope, grade }) {
                 content:
                     `You are an expert ${subject} teacher writing a personalised 4-week improvement plan for a Grade ${grade || ''} student.` +
                     ` The student just completed a diagnostic test. Analyse their weak areas and produce a concrete, actionable plan.` +
+                    langInstruction +
                     ` Return ONLY valid JSON \u2014 no prose, no markdown fences.`
             },
             {
@@ -1280,6 +1733,45 @@ function normalizeTeacherQuestions(questions) {
     }).filter(q => q.text.length > 0);
 }
 
+async function extractPdfText(buffer) {
+    let mod;
+    try {
+        mod = require('pdf-parse');
+    } catch {
+        throw new Error('PDF upload support is unavailable on server (pdf-parse missing).');
+    }
+
+    // pdf-parse v1 style: callable function export
+    if (typeof mod === 'function') {
+        const out = await mod(buffer);
+        return String(out?.text || '');
+    }
+    if (mod && typeof mod.default === 'function') {
+        const out = await mod.default(buffer);
+        return String(out?.text || '');
+    }
+    if (mod && typeof mod.pdfParse === 'function') {
+        const out = await mod.pdfParse(buffer);
+        return String(out?.text || '');
+    }
+
+    // pdf-parse v2 style: class export with parser.getText()
+    const PDFParseCtor = mod && typeof mod.PDFParse === 'function' ? mod.PDFParse : null;
+    if (PDFParseCtor) {
+        const parser = new PDFParseCtor({ data: buffer });
+        try {
+            const out = await parser.getText();
+            return String(out?.text || '');
+        } finally {
+            if (typeof parser.destroy === 'function') {
+                await parser.destroy().catch(() => {});
+            }
+        }
+    }
+
+    throw new Error('Unsupported pdf-parse module export format on server.');
+}
+
 async function parseDiagnosticUpload(file) {
     const ext = (file.originalname || '').toLowerCase().split('.').pop();
     if (ext === 'csv') {
@@ -1302,14 +1794,8 @@ async function parseDiagnosticUpload(file) {
         return { questions: rowsToQuestions(rows) };
     }
     if (ext === 'pdf') {
-        let pdfParse;
-        try {
-            pdfParse = require('pdf-parse');
-        } catch {
-            throw new Error('PDF upload support is unavailable on server (pdf-parse missing). Use CSV or Excel.');
-        }
-        const parsed = await pdfParse(file.buffer);
-        const questions = pdfTextToQuestions(parsed.text || '');
+        const text = await extractPdfText(file.buffer);
+        const questions = pdfTextToQuestions(text);
         return { questions };
     }
     throw new Error('Unsupported file format. Use PDF, CSV, or Excel.');
@@ -1319,20 +1805,26 @@ async function parseSyllabusUpload(file) {
     const ext = (file.originalname || '').toLowerCase().split('.').pop();
     if (ext === 'txt' || ext === 'md') {
         const text = file.buffer.toString('utf8');
+        const units = extractUnits(text);
+        const keywords = extractKeywordsFromText(text, 30);
         return {
             syllabus_text: text,
-            units: extractUnits(text),
-            keywords: extractKeywordsFromText(text, 30)
+            units,
+            keywords,
+            topics: extractTopicsFromText(text, units, keywords)
         };
     }
     if (ext === 'csv') {
         const text = file.buffer.toString('utf8');
         const rows = parseCSV(text);
         const flat = rows.map(r => r.join(' ')).join('\n');
+        const units = extractUnits(flat);
+        const keywords = extractKeywordsFromText(flat, 30);
         return {
             syllabus_text: flat,
-            units: extractUnits(flat),
-            keywords: extractKeywordsFromText(flat, 30)
+            units,
+            keywords,
+            topics: extractTopicsFromText(flat, units, keywords)
         };
     }
     if (ext === 'xlsx' || ext === 'xls') {
@@ -1345,21 +1837,24 @@ async function parseSyllabusUpload(file) {
             ws.eachRow((row) => rows.push((row.values || []).slice(1).map(v => String(v ?? '').trim()).join(' ')));
         }
         const text = rows.join('\n');
+        const units = extractUnits(text);
+        const keywords = extractKeywordsFromText(text, 30);
         return {
             syllabus_text: text,
-            units: extractUnits(text),
-            keywords: extractKeywordsFromText(text, 30)
+            units,
+            keywords,
+            topics: extractTopicsFromText(text, units, keywords)
         };
     }
     if (ext === 'pdf') {
-        let pdfParse;
-        try { pdfParse = require('pdf-parse'); } catch { throw new Error('PDF upload support is unavailable on server (pdf-parse missing). Use TXT/CSV/Excel.'); }
-        const parsed = await pdfParse(file.buffer);
-        const text = String(parsed.text || '');
+        const text = await extractPdfText(file.buffer);
+        const units = extractUnits(text);
+        const keywords = extractKeywordsFromText(text, 30);
         return {
             syllabus_text: text,
-            units: extractUnits(text),
-            keywords: extractKeywordsFromText(text, 30)
+            units,
+            keywords,
+            topics: extractTopicsFromText(text, units, keywords)
         };
     }
     throw new Error('Unsupported syllabus format. Use TXT, CSV, Excel, or PDF.');
@@ -1375,6 +1870,50 @@ function extractUnits(text) {
         return lines.filter(ln => ln.length > 12 && ln.length < 90).slice(0, 12);
     }
     return units.slice(0, 20);
+}
+
+function extractTopicsFromText(text, units = [], keywords = []) {
+    const topics = [];
+    const seen = new Set();
+
+    const addTopic = (raw) => {
+        const cleaned = String(raw || '')
+            .replace(/^[-*\d.()\s]+/, '')
+            .replace(/\s{2,}/g, ' ')
+            .trim();
+        if (!cleaned || cleaned.length < 3 || cleaned.length > 80) return;
+        const key = cleaned.toLowerCase();
+        if (seen.has(key)) return;
+        seen.add(key);
+        topics.push(cleaned);
+    };
+
+    for (const u of units || []) {
+        const m = String(u).match(/^(?:unit|module|chapter)\s*\d+\s*[:\-]?\s*(.*)$/i);
+        if (m && m[1]) addTopic(m[1]);
+    }
+
+    const lines = String(text || '').split(/\r?\n/).map(s => s.trim()).filter(Boolean);
+    for (const ln of lines) {
+        if (/^(unit|module|chapter)\s*\d+/i.test(ln)) continue;
+        if (ln.includes(':')) {
+            const rhs = ln.split(':').slice(1).join(':').trim();
+            addTopic(rhs);
+        }
+        if (ln.includes(',')) {
+            ln.split(',').forEach(addTopic);
+        } else {
+            addTopic(ln);
+        }
+        if (topics.length >= 40) break;
+    }
+
+    for (const k of (keywords || [])) {
+        addTopic(k);
+        if (topics.length >= 40) break;
+    }
+
+    return topics.slice(0, 40);
 }
 
 function extractKeywordsFromText(text, limit = 20) {
@@ -1428,6 +1967,306 @@ function buildQuickNotes({ subject, topic, grade }) {
         '- Revise errors from your diagnostic report',
         '- Reattempt wrong questions after 2 days'
     ].join('\n');
+}
+
+async function generateLessonBody({ subject, topic, grade, language = 'en', weaknessPercentage = 0 }) {
+    const fallbackBody = buildSimpleEnglishLessonTemplate({ subject, topic, grade, weaknessPercentage });
+
+    try {
+        const gradeLabel = grade ? `Grade/Year ${grade}` : 'secondary level';
+        const out = await llmRouter.llmChat({
+            messages: [
+                {
+                    role: 'system',
+                    content:
+                        'You are a highly qualified subject teacher writing professional, exam-ready self-study notes for students. ' +
+                        'Your notes must be factually correct, detailed, and teach ACTUAL content about the topic — not placeholder text. ' +
+                        'Use clear markdown headings (##), bullet points (- ), numbered steps, and bold for key terms. ' +
+                        'Do NOT use placeholder phrases like "write one line here" or "study each part". ' +
+                        'Write real facts, real definitions, real examples specific to this topic. ' +
+                        'Length: 1400 to 2000 words. No tables.'
+                },
+                {
+                    role: 'user',
+                    content:
+                        `Write professional study notes for topic: "${topic}" in subject: "${subject}" for ${gradeLabel} students.\n` +
+                        `The student scored only ${weaknessPercentage}% so these notes must clearly explain the topic from basics to exam level.\n\n` +
+                        `Use EXACTLY these sections in order:\n` +
+                        `## Overview\n(2-3 sentences explaining what ${topic} is and why it matters in ${subject})\n\n` +
+                        `## Learning Goals\n(4 specific learning outcomes a student will achieve)\n\n` +
+                        `## Key Concepts\n(5-8 core concepts/definitions/rules with REAL content. Be specific and factual.)\n\n` +
+                        `## Worked Example 1\n(A step-by-step solved problem or explanation with real numbers/words for ${topic})\n\n` +
+                        `## Worked Example 2\n(Another solved example showing a different aspect of ${topic})\n\n` +
+                        `## Common Mistakes\n(5 specific mistakes students make in ${topic} and how to avoid each)\n\n` +
+                        `## Revision Checklist\n(5 checkpoints a student can use to self-assess mastery of ${topic})\n\n` +
+                        `## Quick Recap\n(3-4 sentence summary of ${topic} for last-minute revision)`
+                }
+            ],
+            temperature: 0.4,
+            maxTokens: 4500
+        });
+        if (out?.provider === 'mock') return fallbackBody;
+        const text = String(out.text || '').trim();
+        return text.length >= 800 ? text : fallbackBody;
+    } catch {
+        return fallbackBody;
+    }
+}
+
+function buildSimpleEnglishLessonTemplate({ subject, topic, grade, weaknessPercentage = 0 }) {
+    const level = grade ? `Grade/Year ${grade}` : 'Current level';
+    return [
+        `# ${topic}`,
+        '',
+        `Subject: ${subject}`,
+        `Level: ${level}`,
+        `Current topic score: ${weaknessPercentage}%`,
+        '',
+        '## Overview',
+        `${topic} is an important part of ${subject}. This lesson is written in simple English so you can understand it quickly and revise it easily.`,
+        '',
+        '## Learning Goals',
+        `- Understand what ${topic} means in clear words.`,
+        `- Learn the core ideas and steps used in ${topic}.`,
+        `- Solve exam-style questions related to ${topic}.`,
+        `- Avoid common mistakes while writing answers about ${topic}.`,
+        '',
+        '## Key Concepts',
+        `1. Definition: Write what ${topic} is in one line and then in your own words.`,
+        `2. Core idea: Explain why ${topic} is used and where it is applied.`,
+        `3. Components: Break ${topic} into smaller parts and study each part separately.`,
+        `4. Rules/process: Note important rules, formulas, or procedures linked with ${topic}.`,
+        '',
+        '## Worked Example 1',
+        `- Problem setup: Identify what is asked in a basic ${topic} question.`,
+        '- Step 1: List known data/keywords.',
+        '- Step 2: Choose the right method/rule.',
+        '- Step 3: Solve carefully and check logic.',
+        '- Final check: Verify if the answer matches the question.',
+        '',
+        '## Worked Example 2 (Application)',
+        `- Apply ${topic} to a real or practical situation.`,
+        '- Explain each step in plain language.',
+        '- Mention why this approach is correct.',
+        '',
+        '## Common Mistakes',
+        '- Skipping definitions and writing only final answers.',
+        '- Using the wrong formula/rule without checking assumptions.',
+        '- Not explaining intermediate steps clearly.',
+        '- Ignoring units, constraints, or edge cases.',
+        '',
+        '## Practice Set',
+        '- 15 MCQs: concept checks and application checks.',
+        '- 2 short-answer questions: 3-5 lines each.',
+        '- 1 long-answer question: detailed explanation with steps.',
+        '',
+        '## Revision Checklist',
+        `- Can you explain ${topic} to a friend in simple words?`,
+        '- Can you solve one easy and one medium problem without help?',
+        '- Can you list top 5 mistakes and how to avoid them?',
+        '- Can you answer one long question with structure (intro, steps, conclusion)?',
+        '',
+        '## Quick Recap',
+        `${topic} becomes easy when you learn the concept first, then practice step by step, and finally revise mistakes. Keep answers clear, structured, and example-driven.`
+    ].join('\n');
+}
+
+function buildPracticeQuestionSetFallback({ subject, topic, testIndex }) {
+    const mcq = Array.from({ length: 15 }).map((_, i) => {
+        const n = i + 1;
+        const stem = `Practice Test ${testIndex}: In ${topic}, what is the best explanation for concept ${n}?`;
+        const correct = `C) Correct concept-based explanation for ${topic} item ${n}`;
+        return {
+            text: stem,
+            options: [
+                `A) Unrelated definition for ${subject}`,
+                `B) Partially correct but missing key step`,
+                correct,
+                'D) Common misconception'
+            ],
+            answer_key: correct
+        };
+    });
+    const short = {
+        text: `Explain the core idea of ${topic} and write one practical example.`,
+        answer_key: `${topic}, core idea, practical example`
+    };
+    const long = {
+        text: `Write a detailed answer on ${topic}: definition, key steps, common mistakes, and one solved example.`,
+        answer_key: `${topic}, definition, key steps, mistakes, solved example`
+    };
+    return { mcq, short, long };
+}
+
+async function generatePracticeQuestionSet({ subject, topic, notesText, testIndex }) {
+    const fallback = buildPracticeQuestionSetFallback({ subject, topic, testIndex });
+    try {
+        const out = await llmRouter.llmJson({
+            messages: [
+                {
+                    role: 'system',
+                    content: 'You create practice tests in simple English. Return ONLY valid JSON.'
+                },
+                {
+                    role: 'user',
+                    content:
+                        `Create Practice Test ${testIndex} for topic "${topic}" in subject "${subject}" based on notes below.\n` +
+                        'Return exact JSON: {"mcq":[15 items],"short":{"text":"...","answer_key":"..."},"long":{"text":"...","answer_key":"..."}}\n' +
+                        'Each MCQ item must include text, options (4), answer_key (exact option text).\n' +
+                        `Notes:\n${String(notesText || '').slice(0, 8000)}`
+                }
+            ],
+            temperature: 0.35,
+            maxTokens: 3200
+        });
+        if (out?.provider === 'mock') return fallback;
+        const j = out.json || {};
+        const mcq = Array.isArray(j.mcq) ? j.mcq.filter(q => q?.text && Array.isArray(q.options) && q.options.length >= 4 && q.answer_key).slice(0, 15) : [];
+        if (mcq.length < 15) return fallback;
+        const short = j.short?.text ? j.short : fallback.short;
+        const long = j.long?.text ? j.long : fallback.long;
+        return {
+            mcq: mcq.map(x => ({ text: String(x.text), options: x.options.map(String).slice(0, 4), answer_key: String(x.answer_key) })),
+            short: { text: String(short.text), answer_key: String(short.answer_key || '') },
+            long: { text: String(long.text), answer_key: String(long.answer_key || '') }
+        };
+    } catch {
+        return fallback;
+    }
+}
+
+async function upsertPracticeTestLesson(pool, { subject, topic, grade, testIndex, questionSet }) {
+    const normalizedSubject = String(subject || 'General').trim();
+    const title = `${topic} - Practice Test ${testIndex}`;
+
+    let lessonId;
+    const [[existing]] = await pool.query(
+        'SELECT id FROM vp_lessons WHERE subject = ? AND title = ? LIMIT 1',
+        [normalizedSubject, title]
+    );
+    if (existing) {
+        lessonId = existing.id;
+    } else {
+        const [[maxOrderRow]] = await pool.query(
+            'SELECT COALESCE(MAX(ordering), 0) AS max_order FROM vp_lessons WHERE subject = ?',
+            [normalizedSubject]
+        );
+        lessonId = uuidv4();
+        const body = {
+            en: `Practice Test ${testIndex} for ${topic}. Attempt the quiz and review mistakes after submission.`
+        };
+        await pool.query(
+            'INSERT INTO vp_lessons (id, concept_id, subject, title, body_i18n, ordering, grade) VALUES (?,?,?,?,?,?,?)',
+            [lessonId, null, normalizedSubject, title, JSON.stringify(body), Number(maxOrderRow?.max_order || 0) + 1, grade ? Number(grade) : 8]
+        );
+    }
+
+    await pool.query('DELETE FROM vp_quiz_items WHERE lesson_id = ? AND is_diagnostic = 0', [lessonId]);
+
+    for (const q of questionSet.mcq.slice(0, 15)) {
+        await pool.query(
+            `INSERT INTO vp_quiz_items (id, lesson_id, concept_id, subject, kind, prompt_i18n, options_i18n, answer_key, rubric_i18n, a, b, c, is_diagnostic)
+             VALUES (?,?,?,?,?,?,?,?,?,?,?,?,0)`,
+            [
+                uuidv4(),
+                lessonId,
+                null,
+                normalizedSubject,
+                'mcq',
+                JSON.stringify({ en: String(q.text || '') }),
+                JSON.stringify({ en: (q.options || []).map(String) }),
+                String(q.answer_key || ''),
+                null,
+                1,
+                0,
+                0.2
+            ]
+        );
+    }
+
+    await pool.query(
+        `INSERT INTO vp_quiz_items (id, lesson_id, concept_id, subject, kind, prompt_i18n, options_i18n, answer_key, rubric_i18n, a, b, c, is_diagnostic)
+         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,0)`,
+        [
+            uuidv4(),
+            lessonId,
+            null,
+            normalizedSubject,
+            'short',
+            JSON.stringify({ en: String(questionSet.short?.text || '') }),
+            null,
+            String(questionSet.short?.answer_key || ''),
+            JSON.stringify({ en: 'Grade on concept clarity, correctness, and concise explanation.' }),
+            1,
+            0,
+            0.2
+        ]
+    );
+
+    await pool.query(
+        `INSERT INTO vp_quiz_items (id, lesson_id, concept_id, subject, kind, prompt_i18n, options_i18n, answer_key, rubric_i18n, a, b, c, is_diagnostic)
+         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,0)`,
+        [
+            uuidv4(),
+            lessonId,
+            null,
+            normalizedSubject,
+            'short',
+            JSON.stringify({ en: String(questionSet.long?.text || '') }),
+            null,
+            String(questionSet.long?.answer_key || ''),
+            JSON.stringify({ en: 'Grade on depth, structure, key concepts, and example usage.' }),
+            1.2,
+            0,
+            0.2
+        ]
+    );
+
+    return { id: lessonId, title, subject: normalizedSubject };
+}
+
+async function createWeakTopicLesson(pool, { subject, topic, grade, language = 'en', weaknessPercentage = 0 }) {
+    const normalizedSubject = String(subject || 'General').trim();
+    const normalizedTopic = String(topic || 'Core Concepts').trim();
+    const lessonTitle = normalizedTopic;
+
+    const [[existing]] = await pool.query(
+        'SELECT id, title, subject FROM vp_lessons WHERE subject = ? AND title = ? LIMIT 1',
+        [normalizedSubject, lessonTitle]
+    );
+    if (existing) {
+        const [[existingBodyRow]] = await pool.query('SELECT body_i18n FROM vp_lessons WHERE id = ? LIMIT 1', [existing.id]);
+        const bodyObj = toJSON(existingBodyRow?.body_i18n, {});
+        return { id: existing.id, title: existing.title, subject: existing.subject, reused: true, body_en: bodyObj?.en || '' };
+    }
+
+    const bodyPrimary = await generateLessonBody({
+        subject: normalizedSubject,
+        topic: normalizedTopic,
+        grade,
+        language,
+        weaknessPercentage
+    });
+    const bodyMap = { en: bodyPrimary };
+
+    const lang = normalizeLanguageCode(language);
+    if (lang !== 'en') {
+        const localized = await localizeObjectForLanguage({ body: bodyPrimary }, lang);
+        bodyMap.en = bodyPrimary;
+        bodyMap[lang] = localized?.body || bodyPrimary;
+    }
+
+    const [[maxOrderRow]] = await pool.query(
+        'SELECT COALESCE(MAX(ordering), 0) AS max_order FROM vp_lessons WHERE subject = ?',
+        [normalizedSubject]
+    );
+    const lessonId = uuidv4();
+    await pool.query(
+        'INSERT INTO vp_lessons (id, concept_id, subject, title, body_i18n, ordering, grade) VALUES (?,?,?,?,?,?,?)',
+        [lessonId, null, normalizedSubject, lessonTitle, JSON.stringify(bodyMap), Number(maxOrderRow?.max_order || 0) + 1, grade ? Number(grade) : 8]
+    );
+
+    return { id: lessonId, title: lessonTitle, subject: normalizedSubject, reused: false, body_en: bodyMap.en || '' };
 }
 
 function slugify(value) {

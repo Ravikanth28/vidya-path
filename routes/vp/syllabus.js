@@ -67,6 +67,43 @@ module.exports = function syllabusRoutes(pool, authenticate) {
         return out.toString('base64');
     }
 
+    async function extractPdfText(buffer) {
+        let mod;
+        try {
+            mod = require('pdf-parse');
+        } catch {
+            throw new Error('PDF upload support is unavailable on server (pdf-parse missing).');
+        }
+
+        if (typeof mod === 'function') {
+            const out = await mod(buffer);
+            return String(out?.text || '');
+        }
+        if (mod && typeof mod.default === 'function') {
+            const out = await mod.default(buffer);
+            return String(out?.text || '');
+        }
+        if (mod && typeof mod.pdfParse === 'function') {
+            const out = await mod.pdfParse(buffer);
+            return String(out?.text || '');
+        }
+
+        const PDFParseCtor = mod && typeof mod.PDFParse === 'function' ? mod.PDFParse : null;
+        if (PDFParseCtor) {
+            const parser = new PDFParseCtor({ data: buffer });
+            try {
+                const out = await parser.getText();
+                return String(out?.text || '');
+            } finally {
+                if (typeof parser.destroy === 'function') {
+                    await parser.destroy().catch(() => {});
+                }
+            }
+        }
+
+        throw new Error('Unsupported pdf-parse module export format on server.');
+    }
+
     const EXPLAIN_LANG_NAMES = {
         'en-IN': 'English', 'hi-IN': 'Hindi', 'ta-IN': 'Tamil',
         'te-IN': 'Telugu', 'kn-IN': 'Kannada', 'ml-IN': 'Malayalam',
@@ -110,9 +147,7 @@ module.exports = function syllabusRoutes(pool, authenticate) {
     async function extractText(file) {
         const mime = file.mimetype || '';
         if (mime === 'application/pdf') {
-            const pdfParse = require('pdf-parse');
-            const data = await pdfParse(file.buffer);
-            return data.text || '';
+            return await extractPdfText(file.buffer);
         }
         if (mime.startsWith('image/')) {
             // Use vision-capable LLM call (Groq llama-vision / NVIDIA)
