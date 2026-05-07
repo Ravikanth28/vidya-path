@@ -94,7 +94,7 @@ async function ttsToBase64(text, langCode = 'en', speaker) {
 
     const truncated  = String(text).slice(0, 490);
     const langBcp47  = toBcp47(langCode);
-    const useSpeaker = speaker || process.env.SARVAM_TTS_SPEAKER || 'shubh';
+    const useSpeaker = speaker || process.env.SARVAM_TTS_SPEAKER || 'anushka'; // bulbul:v2 compatible
     const useModel   = process.env.SARVAM_TTS_MODEL || 'bulbul:v3';
     const headers    = { 'api-subscription-key': SARVAM_KEY, 'Content-Type': 'application/json' };
 
@@ -120,7 +120,8 @@ async function ttsToBase64(text, langCode = 'en', speaker) {
         console.error(`[sarvam] TTS v2 error (${err.response?.status || 'network'}):`, detail);
     }
 
-    // ── Fallback: bulbul:v3 format (text field) ────────────────────────────
+    // ── Fallback: bulbul:v3 format (text field) — only try if key explicitly set ────────────────────────────
+    if (process.env.SARVAM_TTS_MODEL && process.env.SARVAM_TTS_MODEL.includes('v3')) {
     try {
         const body = {
             text: truncated,
@@ -131,7 +132,7 @@ async function ttsToBase64(text, langCode = 'en', speaker) {
         };
         const { data } = await axios.post(`${SARVAM_BASE}/text-to-speech`, body, {
             headers,
-            timeout: 12_000
+            timeout: 8_000
         });
         const b64 =
             (Array.isArray(data?.audios)             ? data.audios[0]       : null) ||
@@ -143,6 +144,7 @@ async function ttsToBase64(text, langCode = 'en', speaker) {
     } catch (err) {
         const detail = err.response?.data ? JSON.stringify(err.response.data) : err.message;
         console.error(`[sarvam] TTS v3 error (${err.response?.status || 'network'}):`, detail);
+    }
     }
 
     return { audioBase64: '', mimeType: 'audio/wav', provider: 'none' };
