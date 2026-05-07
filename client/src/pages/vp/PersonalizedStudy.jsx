@@ -103,7 +103,7 @@ export default function PersonalizedStudy() {
         weak_areas, srs_queue, bandit_pick, subject_summary,
         total_concepts, mastered_count,
         syllabi, smart_weak_topics, smart_topics_count, smart_notes_ready,
-        read_lessons
+        read_lessons, diagnostic_plans
     } = data
 
     const hasBktData = total_concepts > 0
@@ -139,7 +139,43 @@ export default function PersonalizedStudy() {
                         <div style={{ color: '#475569', fontSize: '0.72rem' }}>{smart_notes_ready}/{smart_topics_count} notes ready</div>
                     </div>
                 )}
+                {(diagnostic_plans?.length > 0) && (
+                    <div style={card({ display: 'flex', flexDirection: 'column', gap: 4 })}>
+                        <div style={{ color: '#64748b', fontSize: '0.75rem', fontWeight: 600, letterSpacing: '0.05em', textTransform: 'uppercase' }}>Saved Plans</div>
+                        <div style={{ fontSize: '2rem', fontWeight: 800, color: '#38bdf8' }}>{diagnostic_plans.length}</div>
+                        <div style={{ color: '#475569', fontSize: '0.72rem' }}>From diagnostic reports</div>
+                    </div>
+                )}
             </div>
+
+            {(diagnostic_plans?.length > 0) && (
+                <div>
+                    <SectionTitle
+                        icon={<FileText size={17} color="#38bdf8" />}
+                        sub="Persisted from your diagnostic attempts"
+                    >
+                        Saved Personalized Plans
+                    </SectionTitle>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: 12 }}>
+                        {diagnostic_plans.map(p => (
+                            <div key={p.id} style={card({ border: '1px solid rgba(56,189,248,0.2)', background: 'rgba(56,189,248,0.04)' })}>
+                                <div style={{ fontSize: '0.88rem', fontWeight: 700, color: '#e2e8f0' }}>{p.title || 'Diagnostic Improvement Plan'}</div>
+                                <div style={{ marginTop: 6, color: '#64748b', fontSize: '0.76rem' }}>
+                                    Stage: {p.summary?.stage || 'N/A'} · Score: {p.summary?.score ?? '-'} / {p.summary?.total_marks ?? '-'}
+                                </div>
+                                <div style={{ marginTop: 6, color: '#94a3b8', fontSize: '0.78rem' }}>
+                                    Target: {p.plan?.target_score ?? 'N/A'}% · Horizon: {p.plan?.horizon_days ?? 21} days
+                                </div>
+                                <div style={{ marginTop: 10, color: '#cbd5e1', fontSize: '0.78rem' }}>
+                                    {(p.plan?.recommendations || []).slice(0, 2).map((r, idx) => (
+                                        <div key={idx}>• {r}</div>
+                                    ))}
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            )}
 
             {/* ── Bandit Pick: Best next lesson ── */}
             {bandit_pick && (

@@ -111,6 +111,15 @@ module.exports = function personalizedRoutes(pool, authenticate) {
                 [sid]
             );
 
+            const [savedPlans] = await pool.query(
+                `SELECT id, attempt_id, test_id, title, summary_json, plan_json, created_at
+                 FROM vp_personalized_plans
+                 WHERE student_id = ?
+                 ORDER BY created_at DESC
+                 LIMIT 5`,
+                [sid]
+            );
+
             // Parse JSON fields and collect unique weak topic titles
             const smartWeakTopics = [];
             const seenTopics = new Set();
@@ -279,7 +288,16 @@ module.exports = function personalizedRoutes(pool, authenticate) {
                 syllabi:          syllabi,
                 smart_weak_topics: smartWeakTopics.slice(0, 8),
                 smart_topics_count: smartStudyTopics.length,
-                smart_notes_ready:  smartStudyTopics.filter(t => t.notes_status === 'ready').length
+                smart_notes_ready:  smartStudyTopics.filter(t => t.notes_status === 'ready').length,
+                diagnostic_plans: savedPlans.map(p => ({
+                    id: p.id,
+                    attempt_id: p.attempt_id,
+                    test_id: p.test_id,
+                    title: p.title,
+                    summary: safeJSON(p.summary_json, {}),
+                    plan: safeJSON(p.plan_json, {}),
+                    created_at: p.created_at
+                }))
             });
         } catch (err) {
             console.error('[vp] personalized:', err);
@@ -289,3 +307,9 @@ module.exports = function personalizedRoutes(pool, authenticate) {
 
     return router;
 };
+
+function safeJSON(v, fallback) {
+    if (v == null) return fallback;
+    if (typeof v === 'object') return v;
+    try { return JSON.parse(v); } catch { return fallback; }
+}

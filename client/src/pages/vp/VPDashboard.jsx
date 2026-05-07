@@ -32,7 +32,7 @@ export default function VPDashboard() {
                 {!diagnostic?.done && (
                     <div className="vp-card" style={{ background: 'linear-gradient(135deg, #4f46e5, #7c3aed)', color: '#fff' }}>
                         <h3 style={{ color: '#fff' }}><GraduationCap size={18} /> {t('vp_take_diag') || 'Take placement test'}</h3>
-                        <p style={{ color: 'rgba(255,255,255,0.85)' }}>{t('vp_diag_desc') || 'Personalise your learning path with a one-time IRT-scored diagnostic.'}</p>
+                        <p style={{ color: 'rgba(255,255,255,0.85)' }}>{t('vp_diag_desc') || 'Choose student-generated or teacher-uploaded diagnostic tests and get a detailed personalized plan.'}</p>
                         <Link to="/student/vp/diagnostic" className="vp-btn vp-mt-12" style={{ background: '#fff', color: '#4f46e5' }}>
                             {t('start') || 'Start now'}
                         </Link>

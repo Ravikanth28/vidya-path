@@ -139,6 +139,7 @@ function StudentPortal() {
             children: [
                 { path: '/student/vp',                label: t('vp_home') || 'Home',           icon: <LayoutDashboard size={20} />, end: true },
                 { path: '/student/vp/resources',      label: t('smart_study') || 'Smart Study', icon: <FlaskConical size={20} /> },
+                { path: '/student/vp/diagnostic',     label: t('vp_diagnostic') || 'Diagnostic', icon: <Brain size={20} /> },
                 { path: '/student/vp/practice',       label: t('vp_practice') || 'Practice',   icon: <Target size={20} /> },
                 { path: '/student/vp/tutor',          label: t('vp_tutor') || 'AI Tutor',      icon: <Sparkles size={20} /> },
                 { path: '/student/vp/careers',        label: t('vp_career_hub') || 'Career Hub', icon: <Building2 size={20} /> },

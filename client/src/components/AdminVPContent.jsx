@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import axios from 'axios'
 import { Plus, Trash2, Edit2, Save, X, BookOpen, HelpCircle, Layers, BarChart2, RefreshCw, Users, Zap, Activity, ChevronDown, ChevronRight } from 'lucide-react'
+import AdminVPDiagnostic from '@/components/vp/AdminVPDiagnostic'
 
 const API = (import.meta.env.VITE_API_URL || 'http://localhost:3000') + '/api/vp/admin'
 const authH = () => ({ Authorization: `Bearer ${localStorage.getItem('authToken')}` })
@@ -10,6 +11,7 @@ const TABS = [
     { key: 'progress',  label: 'Student Progress', icon: <Activity size={15} /> },
     { key: 'ability',   label: 'Ability / Theta',  icon: <Zap size={15} /> },
     { key: 'attempts',  label: 'Attempts',         icon: <Users size={15} /> },
+    { key: 'diagnostic',label: 'Diagnostic Studio', icon: <HelpCircle size={15} /> },
     { key: 'lessons',   label: 'Lessons',          icon: <BookOpen size={15} /> },
     { key: 'quiz',      label: 'Quiz Items',       icon: <HelpCircle size={15} /> },
     { key: 'concepts',  label: 'Concepts',         icon: <Layers size={15} /> }
@@ -690,6 +692,7 @@ export default function AdminVPContent() {
             {tab === 'progress'  && <StudentProgress lessons={lessons} />}
             {tab === 'ability'   && <StudentAbility />}
             {tab === 'attempts'  && <AttemptsView lessons={lessons} />}
+            {tab === 'diagnostic' && <AdminVPDiagnostic />}
             {tab === 'lessons'   && <LessonsManager concepts={concepts} />}
             {tab === 'quiz'      && <QuizManager concepts={concepts} lessons={lessons} />}
             {tab === 'concepts'  && <ConceptsManager concepts={concepts} reload={() => { loadConcepts(); loadLessons() }} />}
