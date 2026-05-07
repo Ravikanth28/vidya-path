@@ -4,6 +4,7 @@
  */
 import { useState, useEffect, useRef, useCallback } from 'react'
 import axios from 'axios'
+import { useI18n } from '@/services/i18n'
 import {
     Upload, FileText, BookOpen, ChevronRight, ChevronDown, Download,
     Loader2, CheckCircle2, XCircle, Youtube, RefreshCw,
@@ -419,8 +420,18 @@ function NotesPanel({ sylId, topic, syllabus }) {
     const [err,          setErr]          = useState(null)
     const [dlLoading,    setDlLoading]    = useState(null)
     const [fromCache,    setFromCache]    = useState(false)  // true when notes loaded from localStorage
+    const { locale } = useI18n()
+
     // voice explain state
-    const [explainLang,       setExplainLang]       = useState('en-IN')
+    const [explainLang,       setExplainLang]       = useState(() => {
+        const mapped = locale + '-IN'
+        return EXPLAIN_LANGS.find(l => l.code === mapped) ? mapped : 'en-IN'
+    })
+
+    useEffect(() => {
+        const mapped = locale + '-IN'
+        setExplainLang(EXPLAIN_LANGS.find(l => l.code === mapped) ? mapped : 'en-IN')
+    }, [locale])
     const [explaining,        setExplaining]         = useState(null) // null | 'loading' | 'playing'
     const [explainText,       setExplainText]        = useState(null)
     const [showText,          setShowText]           = useState(false)

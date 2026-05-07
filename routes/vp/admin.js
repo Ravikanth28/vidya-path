@@ -20,6 +20,7 @@
  */
 const express = require('express');
 const { v4: uuidv4 } = require('uuid');
+const { seedVpCatalog } = require('./seed');
 
 module.exports = function vpAdminRoutes(pool, authenticate) {
     const router = express.Router();
@@ -41,6 +42,19 @@ module.exports = function vpAdminRoutes(pool, authenticate) {
             const [[{ students }]] = await pool.query('SELECT COUNT(DISTINCT student_id) AS students FROM vp_lesson_progress');
             const [[{ completions }]] = await pool.query("SELECT COUNT(*) AS completions FROM vp_lesson_progress WHERE status='completed'");
             res.json({ lessons, quiz_items, concepts, students, completions });
+        } catch (err) {
+            res.status(500).json({ error: err.message });
+        }
+    });
+
+    // ── Seed trigger ───────────────────────────────────────────────────────────
+    router.post('/admin/seed', async (_req, res) => {
+        try {
+            await seedVpCatalog(pool);
+            const [[{ lessons }]] = await pool.query('SELECT COUNT(*) AS lessons FROM vp_lessons');
+            const [[{ quiz_items }]] = await pool.query('SELECT COUNT(*) AS quiz_items FROM vp_quiz_items');
+            const [[{ concepts }]] = await pool.query('SELECT COUNT(*) AS concepts FROM vp_concepts');
+            res.json({ ok: true, message: 'Seed complete (INSERT IGNORE — safe to re-run)', lessons, quiz_items, concepts });
         } catch (err) {
             res.status(500).json({ error: err.message });
         }

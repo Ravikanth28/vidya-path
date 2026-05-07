@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { GraduationCap, BookOpen, Target, Briefcase, Sparkles, Award, Brain } from 'lucide-react'
+import { BookOpen, Target, Briefcase, Sparkles, Award, Brain } from 'lucide-react'
 import vpApi from '@/services/vp/api'
 import { useI18n } from '@/services/i18n'
 
@@ -29,16 +29,6 @@ export default function VPDashboard() {
             </h1>
 
             <div className="vp-grid" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))' }}>
-                {!diagnostic?.done && (
-                    <div className="vp-card" style={{ background: 'linear-gradient(135deg, #4f46e5, #7c3aed)', color: '#fff' }}>
-                        <h3 style={{ color: '#fff' }}><GraduationCap size={18} /> {t('vp_take_diag') || 'Take placement test'}</h3>
-                        <p style={{ color: 'rgba(255,255,255,0.85)' }}>{t('vp_diag_desc') || 'Choose student-generated or teacher-uploaded diagnostic tests and get a detailed personalized plan.'}</p>
-                        <Link to="/student/vp/diagnostic" className="vp-btn vp-mt-12" style={{ background: '#fff', color: '#4f46e5' }}>
-                            {t('start') || 'Start now'}
-                        </Link>
-                    </div>
-                )}
-
                 <StatCard icon={<BookOpen size={18} />} title="Lessons completed"
                     value={profile?.mastery?.length || 0}
                     link="/student/vp/lessons" linkLabel="Browse lessons" />

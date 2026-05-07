@@ -40,8 +40,10 @@ function cardStyle() {
 
 // ── Overview ──────────────────────────────────────────────────────────────────
 function Overview() {
-    const [stats, setStats] = useState(null)
-    const [err, setErr]     = useState(null)
+    const [stats, setStats]     = useState(null)
+    const [err, setErr]         = useState(null)
+    const [seeding, setSeeding] = useState(false)
+    const [seedMsg, setSeedMsg] = useState(null)
     const load = useCallback(() => {
         setErr(null)
         axios.get(`${API}/stats`, { headers: authH() })
@@ -49,6 +51,19 @@ function Overview() {
             .catch(e => setErr(e.response?.data?.error || e.message))
     }, [])
     useEffect(load, [load])
+
+    const runSeed = async () => {
+        setSeeding(true); setSeedMsg(null)
+        try {
+            const { data } = await axios.post(`${API}/seed`, {}, { headers: authH() })
+            setSeedMsg(`Seed complete — ${data.concepts} concepts, ${data.lessons} lessons, ${data.quiz_items} quiz items in DB.`)
+            load()
+        } catch (e) {
+            setSeedMsg('Seed error: ' + (e.response?.data?.error || e.message))
+        } finally {
+            setSeeding(false)
+        }
+    }
 
     if (err)   return <div style={{ color: '#f87171', padding: 24 }}>Error: {err}</div>
     if (!stats) return <div style={{ color: '#94a3b8', padding: 24 }}>Loading…</div>
@@ -69,9 +84,15 @@ function Overview() {
                     </div>
                 ))}
             </div>
-            <button onClick={load} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 14px', background: 'rgba(96,165,250,0.1)', border: '1px solid rgba(96,165,250,0.3)', borderRadius: 8, color: '#60a5fa', cursor: 'pointer', fontSize: '0.85rem' }}>
-                <RefreshCw size={14} /> Refresh
-            </button>
+            <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+                <button onClick={load} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 14px', background: 'rgba(96,165,250,0.1)', border: '1px solid rgba(96,165,250,0.3)', borderRadius: 8, color: '#60a5fa', cursor: 'pointer', fontSize: '0.85rem' }}>
+                    <RefreshCw size={14} /> Refresh
+                </button>
+                <button onClick={runSeed} disabled={seeding} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 14px', background: 'rgba(52,211,153,0.1)', border: '1px solid rgba(52,211,153,0.3)', borderRadius: 8, color: '#34d399', cursor: seeding ? 'not-allowed' : 'pointer', fontSize: '0.85rem', opacity: seeding ? 0.6 : 1 }}>
+                    <Zap size={14} /> {seeding ? 'Seeding…' : 'Seed Default Data'}
+                </button>
+            </div>
+            {seedMsg && <div style={{ marginTop: 12, padding: '10px 14px', borderRadius: 8, background: seedMsg.startsWith('Seed error') ? 'rgba(248,113,113,0.1)' : 'rgba(52,211,153,0.1)', color: seedMsg.startsWith('Seed error') ? '#f87171' : '#34d399', fontSize: '0.85rem', border: `1px solid ${seedMsg.startsWith('Seed error') ? 'rgba(248,113,113,0.3)' : 'rgba(52,211,153,0.3)'}` }}>{seedMsg}</div>}
         </div>
     )
 }

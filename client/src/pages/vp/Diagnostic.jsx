@@ -20,7 +20,7 @@ const LANGUAGE_OPTIONS = [
 ]
 
 export default function Diagnostic({ onDone }) {
-    const { t } = useI18n()
+    const { t, locale } = useI18n()
     const navigate = useNavigate()
     const [viewTab, setViewTab] = useState('take')
     const [mode, setMode] = useState('student_choice')
@@ -50,6 +50,10 @@ export default function Diagnostic({ onDone }) {
     const [selectedTeacherTestId, setSelectedTeacherTestId] = useState('')
     const [syllabusFile, setSyllabusFile] = useState(null)
     const [syllabusUnits, setSyllabusUnits] = useState([])
+
+    useEffect(() => {
+        setMeta(m => ({ ...m, language: locale }))
+    }, [locale])
 
     useEffect(() => {
         Promise.all([vpApi.diagState(), vpApi.diagTeacherTests(), vpApi.diagHistory()]).then(([s, tt, h]) => {
@@ -261,14 +265,6 @@ export default function Diagnostic({ onDone }) {
                                 <select className="vp-search" value={meta.scope} onChange={e => setMeta(m => ({ ...m, scope: e.target.value }))}>
                                     <option value="topic">Topic</option>
                                     <option value="subject">Whole Subject</option>
-                                    <option value="year">Whole Year</option>
-                                </select>
-                            </div>
-                            <div className="vp-diag-field">
-                                <label>Syllabus Scope</label>
-                                <select className="vp-search" value={meta.syllabus_scope} onChange={e => setMeta(m => ({ ...m, syllabus_scope: e.target.value }))}>
-                                    <option value="whole_syllabus">Whole Syllabus</option>
-                                    <option value="unit_wise">Unit Wise</option>
                                 </select>
                             </div>
                             <div className="vp-diag-field span-2">
