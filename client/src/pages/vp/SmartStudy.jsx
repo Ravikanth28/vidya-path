@@ -1098,61 +1098,65 @@ function TestTab({ syllabus, selectedTopics, onToggleTopic, onResult }) {
 }
 
 /* ─── Results Tab ─────────────────────────────────────────────────────────── */
-function ResultsTab({ result }) {
-    if (!result) return (
-        <div style={{ ...card(), color: '#64748b', textAlign: 'center', padding: 40 }}>
-            <Target size={36} style={{ marginBottom: 12, opacity: 0.4 }} />
-            <div>No result yet — generate and take a test first.</div>
-        </div>
-    )
-
+function SingleResult({ result, defaultOpen = false }) {
     const pct = result.pct
     const scoreColor = SCORE_COLOR(pct)
-    const [showAll, setShowAll] = useState(false)
+    const [showAll, setShowAll] = useState(defaultOpen)
 
     return (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
             {/* Score summary */}
-            <div style={{ ...card({ background: `rgba(${pct >= 70 ? '16,185,129' : pct >= 40 ? '245,158,11' : '239,68,68'},.06)`, border: `1px solid ${scoreColor}40` }), textAlign: 'center' }}>
-                <div style={{ fontSize: '3rem', fontWeight: 800, color: scoreColor }}>{pct}%</div>
-                <div style={{ color: '#94a3b8', marginTop: 4 }}>{result.score} / {result.total} correct</div>
-                <div style={{ marginTop: 8, fontSize: '1rem', fontWeight: 600, color: pct >= 70 ? '#10b981' : pct >= 40 ? '#f59e0b' : '#ef4444' }}>
-                    {pct >= 70 ? '🎉 Great job!' : pct >= 40 ? '📚 Keep studying!' : '⚠️ Needs more practice'}
+            <div style={{ ...card({ background: `rgba(${pct >= 70 ? '16,185,129' : pct >= 40 ? '245,158,11' : '239,68,68'},.06)`, border: `1px solid ${scoreColor}40` }), display: 'flex', alignItems: 'center', gap: 20, flexWrap: 'wrap' }}>
+                <div style={{ textAlign: 'center', minWidth: 70 }}>
+                    <div style={{ fontSize: '2.2rem', fontWeight: 800, color: scoreColor }}>{pct}%</div>
+                    <div style={{ fontSize: '0.72rem', color: '#64748b' }}>{result.score}/{result.total} correct</div>
+                </div>
+                <div style={{ flex: 1 }}>
+                    <div style={{ fontWeight: 600, color: pct >= 70 ? '#10b981' : pct >= 40 ? '#f59e0b' : '#ef4444', marginBottom: 4 }}>
+                        {pct >= 70 ? '🎉 Great job!' : pct >= 40 ? '📚 Keep studying!' : '⚠️ Needs more practice'}
+                    </div>
+                    {result.completed_at && (
+                        <div style={{ fontSize: '0.75rem', color: '#475569' }}>
+                            {new Date(result.completed_at).toLocaleString()}
+                        </div>
+                    )}
                 </div>
             </div>
 
             {/* Topic-wise breakdown */}
-            <div style={card()}>
-                <div style={{ fontWeight: 600, color: '#e2e8f0', marginBottom: 14 }}>Topic Performance</div>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                    {(result.topic_stats || []).map(t => {
-                        const p = Math.round((t.correct / t.total) * 100)
-                        const c = SCORE_COLOR(p)
-                        return (
-                            <div key={t.topic_id}>
-                                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4, fontSize: '0.875rem' }}>
-                                    <span style={{ color: '#cbd5e1' }}>{t.topic}</span>
-                                    <span style={{ color: c, fontWeight: 600 }}>{t.correct}/{t.total}</span>
+            {(result.topic_stats || []).length > 0 && (
+                <div style={card()}>
+                    <div style={{ fontWeight: 600, color: '#e2e8f0', marginBottom: 12 }}>Topic Performance</div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                        {(result.topic_stats || []).map(t => {
+                            const p = Math.round((t.correct / t.total) * 100)
+                            const c = SCORE_COLOR(p)
+                            return (
+                                <div key={t.topic_id}>
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4, fontSize: '0.875rem' }}>
+                                        <span style={{ color: '#cbd5e1' }}>{t.topic}</span>
+                                        <span style={{ color: c, fontWeight: 600 }}>{t.correct}/{t.total} &nbsp;<span style={{ color: '#475569' }}>({p}%)</span></span>
+                                    </div>
+                                    <div style={{ height: 6, borderRadius: 3, background: 'rgba(148,163,184,0.12)', overflow: 'hidden' }}>
+                                        <div style={{ height: '100%', width: `${p}%`, background: c, borderRadius: 3, transition: 'width .6s ease' }} />
+                                    </div>
                                 </div>
-                                <div style={{ height: 6, borderRadius: 3, background: 'rgba(148,163,184,0.12)', overflow: 'hidden' }}>
-                                    <div style={{ height: '100%', width: `${p}%`, background: c, borderRadius: 3, transition: 'width .6s ease' }} />
-                                </div>
-                            </div>
-                        )
-                    })}
+                            )
+                        })}
+                    </div>
                 </div>
-            </div>
+            )}
 
             {/* Weak areas + YouTube */}
-            {result.weak_topics?.length > 0 && (
+            {(result.weak_topics?.length > 0 || result.recommendations?.length > 0) && (
                 <div style={card({ border: '1px solid rgba(239,68,68,0.25)', background: 'rgba(239,68,68,0.04)' })}>
                     <div style={{ fontWeight: 600, color: '#fca5a5', marginBottom: 14, display: 'flex', alignItems: 'center', gap: 8 }}>
                         <AlertTriangle size={16} /> Areas that need more study
                     </div>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
                         {(result.recommendations || []).map((r, i) => (
-                            <div key={i} style={{ ...card({ background: 'rgba(255,255,255,0.03)', padding: 14 }) }}>
-                                <div style={{ fontWeight: 500, color: '#e2e8f0', marginBottom: 6 }}>{r.topic}</div>
+                            <div key={i} style={{ ...card({ background: 'rgba(255,255,255,0.03)', padding: '12px 14px' }) }}>
+                                <div style={{ fontWeight: 500, color: '#e2e8f0', marginBottom: 4 }}>{r.topic}</div>
                                 <div style={{ fontSize: '0.8rem', color: '#94a3b8', marginBottom: 10 }}>
                                     Your score: <span style={{ color: SCORE_COLOR(r.score_pct), fontWeight: 600 }}>{r.score_pct}%</span>
                                 </div>
@@ -1161,57 +1165,229 @@ function ResultsTab({ result }) {
                                     target="_blank"
                                     rel="noopener noreferrer"
                                     style={{
-                                        display: 'inline-flex', alignItems: 'center', gap: 6,
-                                        padding: '7px 14px', borderRadius: 8, textDecoration: 'none',
-                                        background: 'rgba(239,68,68,0.15)', border: '1px solid rgba(239,68,68,0.3)',
+                                        display: 'inline-flex', alignItems: 'center', gap: 8,
+                                        padding: '8px 14px', borderRadius: 9, textDecoration: 'none',
+                                        background: 'rgba(239,68,68,0.13)', border: '1px solid rgba(239,68,68,0.35)',
                                         color: '#fca5a5', fontSize: '0.85rem', fontWeight: 500
                                     }}
                                 >
-                                    <Youtube size={14} /> Search on YouTube: "{r.search_query}"
+                                    <span style={{
+                                        flexShrink: 0, width: 28, height: 20, borderRadius: 4,
+                                        background: '#ef4444', display: 'inline-flex', alignItems: 'center', justifyContent: 'center'
+                                    }}>
+                                        <Youtube size={13} color="white" />
+                                    </span>
+                                    Search: "{r.search_query}"
+                                    <span style={{ marginLeft: 'auto', fontSize: '0.72rem', color: '#94a3b8', flexShrink: 0 }}>↗</span>
                                 </a>
                             </div>
                         ))}
+                        {/* Fallback if no recommendations but weak_topics exist */}
+                        {!(result.recommendations?.length) && (result.weak_topics || []).map((t, i) => {
+                            const tName = t.topic || t.title || String(t)
+                            const searchQ = encodeURIComponent(tName + ' explained')
+                            return (
+                                <div key={i} style={{ ...card({ background: 'rgba(255,255,255,0.03)', padding: '12px 14px' }) }}>
+                                    <div style={{ fontWeight: 500, color: '#e2e8f0', marginBottom: 8 }}>{tName}</div>
+                                    <a
+                                        href={`https://www.youtube.com/results?search_query=${searchQ}`}
+                                        target="_blank" rel="noopener noreferrer"
+                                        style={{
+                                            display: 'inline-flex', alignItems: 'center', gap: 8,
+                                            padding: '8px 14px', borderRadius: 9, textDecoration: 'none',
+                                            background: 'rgba(239,68,68,0.13)', border: '1px solid rgba(239,68,68,0.35)',
+                                            color: '#fca5a5', fontSize: '0.85rem', fontWeight: 500
+                                        }}
+                                    >
+                                        <span style={{ width: 28, height: 20, borderRadius: 4, background: '#ef4444', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                                            <Youtube size={13} color="white" />
+                                        </span>
+                                        Search on YouTube: "{tName}"
+                                    </a>
+                                </div>
+                            )
+                        })}
                     </div>
                 </div>
             )}
 
             {/* Detailed Q&A review */}
-            <div style={card()}>
-                <button
-                    onClick={() => setShowAll(p => !p)}
-                    style={{ ...btn('#475569', true), marginBottom: showAll ? 16 : 0 }}
-                >
-                    {showAll ? 'Hide' : 'Show'} detailed answers ({result.graded?.length})
-                </button>
-                {showAll && (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-                        {(result.graded || []).map((q, i) => (
-                            <div key={i} style={{ ...card({ padding: 14, background: q.is_correct ? 'rgba(16,185,129,0.05)' : 'rgba(239,68,68,0.05)', border: `1px solid ${q.is_correct ? 'rgba(16,185,129,0.25)' : 'rgba(239,68,68,0.25)'}` }) }}>
-                                <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
-                                    {q.is_correct ? <CheckCircle2 size={16} color="#10b981" /> : <XCircle size={16} color="#ef4444" />}
-                                    <span style={{ fontSize: '0.875rem', color: '#cbd5e1', fontWeight: 500 }}>Q{i + 1}. {q.question}</span>
+            {result.graded?.length > 0 && (
+                <div style={card()}>
+                    <button
+                        onClick={() => setShowAll(p => !p)}
+                        style={{ ...btn('#475569', true), marginBottom: showAll ? 16 : 0 }}
+                    >
+                        {showAll ? 'Hide' : 'Show'} detailed answers ({result.graded.length})
+                    </button>
+                    {showAll && (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                            {(result.graded || []).map((q, i) => (
+                                <div key={i} style={{ ...card({ padding: 14, background: q.is_correct ? 'rgba(16,185,129,0.05)' : 'rgba(239,68,68,0.05)', border: `1px solid ${q.is_correct ? 'rgba(16,185,129,0.25)' : 'rgba(239,68,68,0.25)'}` }) }}>
+                                    <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
+                                        {q.is_correct ? <CheckCircle2 size={15} color="#10b981" /> : <XCircle size={15} color="#ef4444" />}
+                                        <span style={{ fontSize: '0.875rem', color: '#cbd5e1', fontWeight: 500 }}>Q{i + 1}. {q.question}</span>
+                                    </div>
+                                    <div style={{ paddingLeft: 23, fontSize: '0.8rem', color: '#94a3b8' }}>
+                                        <div>Your answer: <span style={{ color: q.is_correct ? '#10b981' : '#ef4444', fontWeight: 600 }}>{q.student_answer || '(not answered)'}</span></div>
+                                        {!q.is_correct && <div>Correct: <span style={{ color: '#10b981', fontWeight: 600 }}>{q.answer}</span></div>}
+                                        {q.explanation && <div style={{ marginTop: 6, color: '#64748b', fontStyle: 'italic' }}>{q.explanation}</div>}
+                                    </div>
                                 </div>
-                                <div style={{ paddingLeft: 24, fontSize: '0.8rem', color: '#94a3b8' }}>
-                                    <div>Your answer: <span style={{ color: q.is_correct ? '#10b981' : '#ef4444', fontWeight: 600 }}>{q.student_answer || '(not answered)'}</span></div>
-                                    {!q.is_correct && <div>Correct: <span style={{ color: '#10b981', fontWeight: 600 }}>{q.answer}</span></div>}
-                                    {q.explanation && <div style={{ marginTop: 6, color: '#64748b', fontStyle: 'italic' }}>{q.explanation}</div>}
-                                </div>
-                            </div>
-                        ))}
+                            ))}
+                        </div>
+                    )}
+                </div>
+            )}
+        </div>
+    )
+}
+
+function ResultsTab({ result, history, loadingHistory }) {
+    const hasLatest  = !!result
+    const hasHistory = history?.length > 0
+    const [histOpen, setHistOpen] = useState({})
+
+    if (!hasLatest && !hasHistory) return (
+        <div style={{ ...card(), color: '#64748b', textAlign: 'center', padding: 40 }}>
+            <Target size={36} style={{ marginBottom: 12, opacity: 0.4 }} />
+            {loadingHistory
+                ? <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}><Loader2 size={16} className="spin" /> Loading results…</div>
+                : <div>No results yet — generate and take a test first.</div>
+            }
+        </div>
+    )
+
+    return (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
+
+            {/* ── Latest (just taken) ── */}
+            {hasLatest && (
+                <div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14 }}>
+                        <Award size={16} color="#10b981" />
+                        <span style={{ fontWeight: 700, color: '#e2e8f0', fontSize: '0.95rem' }}>Latest result</span>
+                        <span style={{ background: 'rgba(16,185,129,0.15)', border: '1px solid rgba(16,185,129,0.35)', color: '#34d399', borderRadius: 20, padding: '2px 10px', fontSize: '0.72rem', fontWeight: 600 }}>Just submitted</span>
                     </div>
-                )}
-            </div>
+                    <SingleResult result={result} defaultOpen={false} />
+                </div>
+            )}
+
+            {/* ── History from DB ── */}
+            {hasHistory && (
+                <div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14 }}>
+                        <Target size={16} color="#60a5fa" />
+                        <span style={{ fontWeight: 700, color: '#e2e8f0', fontSize: '0.95rem' }}>Test history</span>
+                        <span style={{ background: 'rgba(96,165,250,0.12)', border: '1px solid rgba(96,165,250,0.3)', color: '#93c5fd', borderRadius: 20, padding: '2px 10px', fontSize: '0.72rem', fontWeight: 600 }}>{history.length} attempts</span>
+                    </div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                        {history.map((h, hIdx) => {
+                            const hOpen = histOpen[h.id]
+                            const hPct  = h.pct
+                            const hColor = SCORE_COLOR(hPct)
+                            return (
+                                <div key={h.id} style={{ ...card({ padding: 0, overflow: 'hidden' }) }}>
+                                    {/* Row header */}
+                                    <button
+                                        onClick={() => setHistOpen(p => ({ ...p, [h.id]: !p[h.id] }))}
+                                        style={{
+                                            display: 'flex', alignItems: 'center', gap: 14, width: '100%',
+                                            background: 'none', border: 'none', cursor: 'pointer',
+                                            padding: '14px 18px', textAlign: 'left'
+                                        }}
+                                    >
+                                        <div style={{
+                                            width: 44, height: 44, borderRadius: 10, flexShrink: 0,
+                                            background: `${hColor}18`, border: `1.5px solid ${hColor}40`,
+                                            display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                            fontWeight: 800, fontSize: '0.95rem', color: hColor
+                                        }}>{hPct}%</div>
+                                        <div style={{ flex: 1 }}>
+                                            <div style={{ fontWeight: 600, color: '#e2e8f0', fontSize: '0.88rem' }}>
+                                                {h.score}/{h.total} correct
+                                                {h.weak_topics?.length > 0 && (
+                                                    <span style={{ marginLeft: 10, background: 'rgba(239,68,68,0.12)', color: '#f87171', borderRadius: 6, padding: '1px 7px', fontSize: '0.72rem' }}>
+                                                        {h.weak_topics.length} weak
+                                                    </span>
+                                                )}
+                                            </div>
+                                            <div style={{ fontSize: '0.75rem', color: '#475569', marginTop: 2 }}>
+                                                {new Date(h.completed_at).toLocaleString()}
+                                            </div>
+                                        </div>
+                                        <span style={{ color: '#64748b', fontSize: '0.78rem', flexShrink: 0 }}>{hOpen ? '▲' : '▼'}</span>
+                                    </button>
+
+                                    {/* Expanded: weak areas + YouTube */}
+                                    {hOpen && (h.weak_topics?.length > 0 || h.recommendations?.length > 0) && (
+                                        <div style={{ borderTop: '1px solid rgba(148,163,184,0.1)', padding: '14px 18px' }}>
+                                            <div style={{ fontSize: '0.78rem', fontWeight: 700, color: '#94a3b8', marginBottom: 10, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                                                Weak areas — YouTube resources
+                                            </div>
+                                            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                                                {((h.recommendations?.length ? h.recommendations : h.weak_topics) || []).map((r, ri) => {
+                                                    const tName  = r.topic || r.title || String(r)
+                                                    const ytUrl  = r.youtube_url || `https://www.youtube.com/results?search_query=${encodeURIComponent(tName + ' explained')}`
+                                                    const ytQ    = r.search_query || tName
+                                                    const sPct   = r.score_pct
+                                                    return (
+                                                        <div key={ri} style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+                                                            <span style={{ fontSize: '0.83rem', color: '#cbd5e1', flex: 1, minWidth: 100 }}>{tName}</span>
+                                                            {sPct != null && <span style={{ color: SCORE_COLOR(sPct), fontSize: '0.78rem', fontWeight: 600 }}>{sPct}%</span>}
+                                                            <a
+                                                                href={ytUrl} target="_blank" rel="noopener noreferrer"
+                                                                style={{
+                                                                    display: 'inline-flex', alignItems: 'center', gap: 6,
+                                                                    padding: '5px 12px', borderRadius: 8, textDecoration: 'none',
+                                                                    background: 'rgba(239,68,68,0.12)', border: '1px solid rgba(239,68,68,0.3)',
+                                                                    color: '#fca5a5', fontSize: '0.8rem', flexShrink: 0
+                                                                }}
+                                                            >
+                                                                <Youtube size={12} /> {ytQ.length > 30 ? ytQ.slice(0, 30) + '…' : ytQ} ↗
+                                                            </a>
+                                                        </div>
+                                                    )
+                                                })}
+                                            </div>
+                                        </div>
+                                    )}
+                                </div>
+                            )
+                        })}
+                    </div>
+                </div>
+            )}
         </div>
     )
 }
 
 /* ─── Syllabus Detail (with tabs) ─────────────────────────────────────────── */
 function SyllabusDetail({ syllabus: initSyl, onBack }) {
-    const [syllabus, setSyllabus]     = useState(initSyl)
-    const [tab, setTab]               = useState('topics')
-    const [selectedTopics, setSel]    = useState(new Set())
-    const [result, setResult]         = useState(null)
-    const [refreshing, setRefreshing] = useState(false)
+    const [syllabus, setSyllabus]         = useState(initSyl)
+    const [tab, setTab]                   = useState('topics')
+    const [selectedTopics, setSel]        = useState(new Set())
+    const [result, setResult]             = useState(null)
+    const [history, setHistory]           = useState([])
+    const [historyLoaded, setHistoryLoaded] = useState(false)
+    const [loadingHistory, setLoadingHistory] = useState(false)
+    const [refreshing, setRefreshing]     = useState(false)
+
+    const loadHistory = useCallback(async () => {
+        if (historyLoaded) return
+        setLoadingHistory(true)
+        try {
+            const { data } = await axios.get(`${API}/study/syllabi/${initSyl.id}/results`, { headers: authH() })
+            setHistory(data.results || [])
+            setHistoryLoaded(true)
+        } catch { /* ignore */ }
+        finally { setLoadingHistory(false) }
+    }, [initSyl.id, historyLoaded])
+
+    // Auto-load history when results tab is active
+    useEffect(() => {
+        if (tab === 'results') loadHistory()
+    }, [tab, loadHistory])
 
     const reload = useCallback(async () => {
         setRefreshing(true)
@@ -1262,11 +1438,19 @@ function SyllabusDetail({ syllabus: initSyl, onBack }) {
             {/* Tabs */}
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 24 }}>
                 {TABS.map(t => (
-                    <button key={t.key} onClick={() => setTab(t.key)} style={tabBtn(tab === t.key)}>
+                    <button key={t.key} onClick={() => {
+                        setTab(t.key)
+                        if (t.key === 'results') loadHistory()
+                    }} style={tabBtn(tab === t.key)}>
                         {t.icon} {t.label}
                         {t.key === 'test' && selectedTopics.size > 0 && (
                             <span style={{ background: '#3b82f6', color: '#fff', borderRadius: '50%', width: 18, height: 18, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.7rem', fontWeight: 700 }}>
                                 {selectedTopics.size}
+                            </span>
+                        )}
+                        {t.key === 'results' && (result || history.length > 0) && (
+                            <span style={{ background: '#10b981', color: '#fff', borderRadius: '50%', width: 18, height: 18, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.7rem', fontWeight: 700 }}>
+                                {(result ? 1 : 0) + history.length}
                             </span>
                         )}
                     </button>
@@ -1285,11 +1469,11 @@ function SyllabusDetail({ syllabus: initSyl, onBack }) {
                     syllabus={syllabus}
                     selectedTopics={selectedTopics}
                     onToggleTopic={toggleTopic}
-                    onResult={(r) => { setResult(r); setTab('results') }}
+                    onResult={(r) => { setResult(r); setHistoryLoaded(false); setTab('results'); loadHistory() }}
                 />
             )}
             {tab === 'results' && (
-                <ResultsTab result={result} />
+                <ResultsTab result={result} history={history} loadingHistory={loadingHistory} />
             )}
         </div>
     )

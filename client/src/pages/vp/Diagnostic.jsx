@@ -373,115 +373,347 @@ export default function Diagnostic({ onDone }) {
     )
 }
 
+/* ── small style helpers scoped to ResultView ── */
+const rv = {
+    card: (extra = {}) => ({
+        background: 'rgba(255,255,255,0.03)',
+        border: '1px solid rgba(148,163,184,0.12)',
+        borderRadius: 14, padding: '18px 20px', ...extra
+    }),
+    pct: (p) => p >= 70 ? '#10b981' : p >= 40 ? '#f59e0b' : '#ef4444',
+    weekColors: [
+        { bg: 'rgba(99,102,241,0.12)', border: 'rgba(99,102,241,0.35)', color: '#a5b4fc', label: 'Week 1' },
+        { bg: 'rgba(245,158,11,0.12)', border: 'rgba(245,158,11,0.35)', color: '#fbbf24', label: 'Week 2' },
+        { bg: 'rgba(16,185,129,0.12)', border: 'rgba(16,185,129,0.35)', color: '#34d399', label: 'Week 3' },
+        { bg: 'rgba(239,68,68,0.10)',  border: 'rgba(239,68,68,0.30)',  color: '#f87171', label: 'Week 4' },
+    ]
+}
+
+function ProgressBar({ pct, color }) {
+    return (
+        <div style={{ height: 8, borderRadius: 99, background: 'rgba(148,163,184,0.1)', overflow: 'hidden', marginTop: 6 }}>
+            <div style={{ width: `${Math.min(100, pct)}%`, height: '100%', background: color, borderRadius: 99, transition: 'width 0.7s ease' }} />
+        </div>
+    )
+}
+
+function YoutubeCard({ url, title }) {
+    return (
+        <a
+            href={url}
+            target="_blank"
+            rel="noopener noreferrer"
+            style={{
+                display: 'flex', alignItems: 'center', gap: 10,
+                padding: '10px 14px', borderRadius: 10, textDecoration: 'none',
+                background: 'rgba(239,68,68,0.10)', border: '1px solid rgba(239,68,68,0.30)',
+                color: '#fca5a5', fontSize: '0.85rem', fontWeight: 500,
+                transition: 'background 0.15s'
+            }}
+        >
+            <span style={{
+                flexShrink: 0, width: 32, height: 22, borderRadius: 5,
+                background: '#ef4444', display: 'flex', alignItems: 'center', justifyContent: 'center'
+            }}>
+                <svg width="14" height="10" viewBox="0 0 14 10" fill="white">
+                    <path d="M13.7 1.56A1.76 1.76 0 0 0 12.46.3C11.36 0 7 0 7 0S2.64 0 1.54.3A1.76 1.76 0 0 0 .3 1.56 18.5 18.5 0 0 0 0 5a18.5 18.5 0 0 0 .3 3.44A1.76 1.76 0 0 0 1.54 9.7C2.64 10 7 10 7 10s4.36 0 5.46-.3a1.76 1.76 0 0 0 1.24-1.26A18.5 18.5 0 0 0 14 5a18.5 18.5 0 0 0-.3-3.44z"/>
+                    <polygon points="5.6,7.1 9.24,5 5.6,2.9" fill="#ef4444"/>
+                </svg>
+            </span>
+            <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{title}</span>
+            <span style={{ flexShrink: 0, fontSize: '0.72rem', color: '#94a3b8' }}>YouTube ↗</span>
+        </a>
+    )
+}
+
+function TopicPlanCard({ tp }) {
+    const [open, setOpen] = useState(false)
+    const color = rv.pct(tp.current_pct)
+    const targetColor = rv.pct(tp.target_pct)
+
+    const downloadNotes = () => {
+        const content = tp?.notes?.content || ''
+        const name = tp?.notes?.file_name || 'notes.txt'
+        const blob = new Blob([content], { type: 'text/plain;charset=utf-8' })
+        const url = URL.createObjectURL(blob)
+        const a = document.createElement('a')
+        a.href = url; a.download = name; a.click()
+        URL.revokeObjectURL(url)
+    }
+
+    return (
+        <div style={{
+            ...rv.card(),
+            border: `1px solid ${color}30`,
+            background: `linear-gradient(135deg, rgba(15,23,42,0.95), rgba(${tp.current_pct < 40 ? '239,68,68' : tp.current_pct < 70 ? '245,158,11' : '16,185,129'},0.04))`
+        }}>
+            {/* ── Header ── */}
+            <div style={{ display: 'flex', alignItems: 'flex-start', gap: 14, marginBottom: 14 }}>
+                <div style={{
+                    width: 40, height: 40, borderRadius: 10, flexShrink: 0,
+                    background: `${color}20`, border: `1.5px solid ${color}50`,
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    fontWeight: 800, fontSize: '1rem', color
+                }}>{tp.rank}</div>
+                <div style={{ flex: 1 }}>
+                    <div style={{ fontWeight: 700, fontSize: '1rem', color: '#e2e8f0' }}>{tp.topic}</div>
+                    <div style={{ fontSize: '0.8rem', color: '#64748b', marginTop: 2 }}>{tp.why_struggle}</div>
+                </div>
+            </div>
+
+            {/* ── Progress: current → target ── */}
+            <div style={{ marginBottom: 16 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.78rem', marginBottom: 4 }}>
+                    <span style={{ color: '#64748b' }}>Current mastery</span>
+                    <span style={{ color, fontWeight: 700 }}>{tp.current_pct}%</span>
+                </div>
+                <ProgressBar pct={tp.current_pct} color={color} />
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.72rem', marginTop: 6 }}>
+                    <span style={{ color: '#475569' }}>Target</span>
+                    <span style={{ color: targetColor, fontWeight: 600 }}>{tp.target_pct}%</span>
+                </div>
+            </div>
+
+            {/* ── Week-by-week plan ── */}
+            <div style={{ marginBottom: 16 }}>
+                <div style={{ fontSize: '0.78rem', fontWeight: 700, color: '#94a3b8', marginBottom: 10, letterSpacing: '0.04em', textTransform: 'uppercase' }}>Weekly focus</div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                    {(tp.weekly_focus || []).map((w, wIdx) => {
+                        const wc = rv.weekColors[wIdx] || rv.weekColors[3]
+                        // Extract "Week N:" prefix text vs rest
+                        const colonIdx = w.indexOf(':')
+                        const weekLabel = colonIdx > -1 ? w.slice(0, colonIdx).trim() : `Week ${wIdx + 1}`
+                        const weekBody  = colonIdx > -1 ? w.slice(colonIdx + 1).trim() : w
+                        return (
+                            <div key={wIdx} style={{
+                                display: 'flex', gap: 10, alignItems: 'flex-start',
+                                background: wc.bg, border: `1px solid ${wc.border}`,
+                                borderRadius: 8, padding: '8px 12px'
+                            }}>
+                                <span style={{
+                                    flexShrink: 0, background: wc.border, color: wc.color,
+                                    borderRadius: 6, padding: '2px 8px', fontSize: '0.7rem',
+                                    fontWeight: 700, minWidth: 54, textAlign: 'center'
+                                }}>{weekLabel}</span>
+                                <span style={{ fontSize: '0.83rem', color: '#cbd5e1', lineHeight: 1.5 }}>{weekBody}</span>
+                            </div>
+                        )
+                    })}
+                </div>
+            </div>
+
+            {/* ── Daily tasks ── */}
+            <div style={{ marginBottom: 16 }}>
+                <div style={{ fontSize: '0.78rem', fontWeight: 700, color: '#94a3b8', marginBottom: 8, letterSpacing: '0.04em', textTransform: 'uppercase' }}>Daily tasks</div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                    {(tp.daily_tasks || []).map((d, dIdx) => (
+                        <div key={dIdx} style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
+                            <span style={{
+                                flexShrink: 0, marginTop: 3, width: 14, height: 14,
+                                borderRadius: 3, border: '1.5px solid rgba(148,163,184,0.3)',
+                                background: 'rgba(255,255,255,0.04)', display: 'inline-block'
+                            }} />
+                            <span style={{ fontSize: '0.83rem', color: '#94a3b8', lineHeight: 1.5 }}>{d}</span>
+                        </div>
+                    ))}
+                </div>
+            </div>
+
+            {/* ── YouTube resources ── */}
+            {(tp.resources?.youtube || []).length > 0 && (
+                <div style={{ marginBottom: 14 }}>
+                    <div style={{ fontSize: '0.78rem', fontWeight: 700, color: '#94a3b8', marginBottom: 8, letterSpacing: '0.04em', textTransform: 'uppercase' }}>YouTube resources</div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                        {(tp.resources.youtube || []).map((y, yIdx) => (
+                            <YoutubeCard key={yIdx} url={y.url} title={y.title} />
+                        ))}
+                    </div>
+                </div>
+            )}
+
+            {/* ── Book references (collapsible) ── */}
+            {(tp.resources?.books || []).length > 0 && (
+                <div style={{ marginBottom: 14 }}>
+                    <button
+                        onClick={() => setOpen(p => !p)}
+                        style={{
+                            display: 'flex', alignItems: 'center', gap: 6,
+                            background: 'none', border: 'none', cursor: 'pointer',
+                            color: '#64748b', fontSize: '0.78rem', fontWeight: 700,
+                            letterSpacing: '0.04em', textTransform: 'uppercase', padding: 0
+                        }}
+                    >
+                        <GraduationCap size={13} /> Book references {open ? '▲' : '▼'}
+                    </button>
+                    {open && (
+                        <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 5 }}>
+                            {tp.resources.books.map((b, bIdx) => (
+                                <div key={bIdx} style={{
+                                    display: 'flex', gap: 8, alignItems: 'flex-start',
+                                    background: 'rgba(148,163,184,0.05)', borderRadius: 7,
+                                    padding: '7px 10px', fontSize: '0.82rem'
+                                }}>
+                                    <span style={{ color: '#6366f1', flexShrink: 0, marginTop: 1 }}>📚</span>
+                                    <div>
+                                        <div style={{ color: '#cbd5e1', fontWeight: 600 }}>{b.title}</div>
+                                        <div style={{ color: '#64748b', fontSize: '0.75rem' }}>{b.ref}</div>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    )}
+                </div>
+            )}
+
+            {/* ── Download Notes ── */}
+            {tp.notes?.content && (
+                <button
+                    onClick={downloadNotes}
+                    style={{
+                        display: 'inline-flex', alignItems: 'center', gap: 6,
+                        padding: '7px 14px', borderRadius: 8, cursor: 'pointer', fontSize: '0.82rem',
+                        border: '1.5px solid rgba(99,102,241,0.4)',
+                        background: 'rgba(99,102,241,0.08)', color: '#a5b4fc'
+                    }}
+                >
+                    <FileDown size={13} /> Download Notes
+                </button>
+            )}
+        </div>
+    )
+}
+
 function ResultView({ report, plan, onBack }) {
     const navigate = useNavigate()
+    const [showQ, setShowQ] = useState(false)
 
     const questionWise = report?.question_wise || []
     const weakTopics = report?.weak_topics || []
     const topicPlans = plan?.topic_plans || []
 
-    const downloadNotes = (topicPlan) => {
-        const content = topicPlan?.notes?.content || ''
-        const name = topicPlan?.notes?.file_name || 'notes.txt'
-        const blob = new Blob([content], { type: 'text/plain;charset=utf-8' })
-        const url = URL.createObjectURL(blob)
-        const a = document.createElement('a')
-        a.href = url
-        a.download = name
-        a.click()
-        URL.revokeObjectURL(url)
-    }
+    const pct = Number(report?.percentage || 0)
+    const scoreColor = rv.pct(pct)
 
     return (
-        <div>
-            <h1 className="vp-h1"><Award size={26} /> Diagnostic complete</h1>
-            <div className="vp-grid" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))' }}>
-                <div className="vp-card">
-                    <h3><BarChart3 size={16} /> Score</h3>
-                    <p style={{ fontSize: 22, fontWeight: 700 }}>{report?.score} / {report?.total_marks}</p>
-                </div>
-                <div className="vp-card">
-                    <h3>Stage</h3>
-                    <p style={{ fontSize: 22, fontWeight: 700 }}>{report?.stage || 'N/A'}</p>
-                </div>
-                <div className="vp-card">
-                    <h3>Accuracy</h3>
-                    <p style={{ fontSize: 22, fontWeight: 700 }}>{report?.percentage || 0}%</p>
-                </div>
-                <div className="vp-card">
-                    <h3>Weak Topics</h3>
-                    <p style={{ fontSize: 22, fontWeight: 700 }}>{weakTopics.length}</p>
-                </div>
-            </div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
 
-            <h2 className="vp-h2">Question-wise detailed report</h2>
-            <div className="vp-grid" style={{ gridTemplateColumns: '1fr', gap: 10 }}>
-                {questionWise.map(q => (
-                    <div key={q.qid} className="vp-card">
-                        <h3>Q{q.index}. {q.question}</h3>
-                        <p className="vp-text-sm">Score: {q.obtained}/{q.marks} · Topic: {q.topic || q.subject}</p>
-                        <p className="vp-text-sm"><strong>Your answer:</strong> {q.student_answer || 'Not answered'}</p>
-                        {q.expected_answer ? <p className="vp-text-sm"><strong>Expected:</strong> {q.expected_answer}</p> : null}
-                        <p className="vp-text-sm">Feedback: {q.feedback}</p>
+            {/* ── Score banner ── */}
+            <div style={{
+                ...rv.card({
+                    background: `linear-gradient(135deg, rgba(15,23,42,0.98), rgba(${pct >= 70 ? '16,185,129' : pct >= 40 ? '245,158,11' : '239,68,68'},0.06))`,
+                    border: `1.5px solid ${scoreColor}40`
+                }),
+                display: 'flex', alignItems: 'center', gap: 20, flexWrap: 'wrap'
+            }}>
+                <div style={{ textAlign: 'center', minWidth: 80 }}>
+                    <div style={{ fontSize: '2.5rem', fontWeight: 800, color: scoreColor, lineHeight: 1 }}>{pct}%</div>
+                    <div style={{ fontSize: '0.75rem', color: '#64748b', marginTop: 4 }}>accuracy</div>
+                </div>
+                <div style={{ flex: 1, minWidth: 160 }}>
+                    <div style={{ fontWeight: 700, fontSize: '1.1rem', color: '#e2e8f0' }}>
+                        <Award size={16} style={{ marginRight: 6, verticalAlign: 'middle' }} />
+                        Diagnostic complete
                     </div>
-                ))}
-            </div>
-
-            <h2 className="vp-h2">Personalized plan to improve weak areas</h2>
-            <div className="vp-card">
-                <h3>{plan?.title || 'Your Improvement Plan'}</h3>
-                <p className="vp-text-sm">Target score: {plan?.target_score || 'N/A'}% in {plan?.horizon_days || 21} days.</p>
-                <p className="vp-text-sm"><strong>Weekly goals:</strong></p>
-                <ul>
-                    {(plan?.weekly_goals || []).map((g, idx) => <li key={idx}>{g}</li>)}
-                </ul>
-                <p className="vp-text-sm"><strong>Daily tasks:</strong></p>
-                <ul>
-                    {(plan?.daily_plan || []).map((d, idx) => <li key={idx}>Day {d.day}: {d.task}</li>)}
-                </ul>
-            </div>
-
-            {topicPlans.length > 0 && (
-                <>
-                    <h2 className="vp-h2">Topic-wise personalized plan with resources</h2>
-                    <div className="vp-grid" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 12 }}>
-                        {topicPlans.map((tp, i) => (
-                            <div key={i} className="vp-card">
-                                <h3>{tp.rank}. {tp.topic}</h3>
-                                <p className="vp-text-sm">Current: {tp.current_pct}% · Target: {tp.target_pct}%</p>
-                                <p className="vp-text-sm">{tp.why_struggle}</p>
-
-                                <p className="vp-text-sm"><strong>Weekly focus:</strong></p>
-                                <ul>
-                                    {(tp.weekly_focus || []).map((w, idx) => <li key={idx}>{w}</li>)}
-                                </ul>
-
-                                <p className="vp-text-sm"><strong>Daily tasks:</strong></p>
-                                <ul>
-                                    {(tp.daily_tasks || []).map((d, idx) => <li key={idx}>{d}</li>)}
-                                </ul>
-
-                                <p className="vp-text-sm"><strong>YouTube resources:</strong></p>
-                                <ul>
-                                    {(tp.resources?.youtube || []).map((y, idx) => (
-                                        <li key={idx}><a href={y.url} target="_blank" rel="noreferrer">{y.title}</a></li>
-                                    ))}
-                                </ul>
-
-                                <p className="vp-text-sm"><strong>Book references:</strong></p>
-                                <ul>
-                                    {(tp.resources?.books || []).map((b, idx) => <li key={idx}>{b.title} - {b.ref}</li>)}
-                                </ul>
-
-                                <button className="vp-btn vp-btn-secondary" onClick={() => downloadNotes(tp)}>
-                                    <FileDown size={14} /> Download Notes
-                                </button>
-                            </div>
-                        ))}
+                    <div style={{ color: '#94a3b8', fontSize: '0.85rem', marginTop: 4 }}>
+                        Score: <strong style={{ color: '#e2e8f0' }}>{report?.score} / {report?.total_marks}</strong>
+                        &nbsp;·&nbsp;Stage: <strong style={{ color: scoreColor }}>{report?.stage || 'N/A'}</strong>
+                        &nbsp;·&nbsp;Weak topics: <strong style={{ color: '#f87171' }}>{weakTopics.length}</strong>
                     </div>
-                </>
+                    <ProgressBar pct={pct} color={scoreColor} />
+                </div>
+            </div>
+
+            {/* ── Overall weekly goals ── */}
+            {plan?.weekly_goals?.length > 0 && (
+                <div style={rv.card()}>
+                    <div style={{ fontWeight: 700, fontSize: '0.95rem', color: '#e2e8f0', marginBottom: 14 }}>
+                        📅 {plan.title || 'Your Improvement Plan'}
+                    </div>
+                    <div style={{ fontSize: '0.8rem', color: '#64748b', marginBottom: 14 }}>
+                        Target: <strong style={{ color: '#60a5fa' }}>{plan.target_score}%</strong> in <strong style={{ color: '#60a5fa' }}>{plan.horizon_days} days</strong>
+                    </div>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 10 }}>
+                        {plan.weekly_goals.map((g, gIdx) => {
+                            const wc = rv.weekColors[gIdx] || rv.weekColors[3]
+                            const colonIdx = g.indexOf(':')
+                            const wLabel = colonIdx > -1 ? g.slice(0, colonIdx).trim() : `Week ${gIdx + 1}`
+                            const wBody  = colonIdx > -1 ? g.slice(colonIdx + 1).trim() : g
+                            return (
+                                <div key={gIdx} style={{
+                                    background: wc.bg, border: `1px solid ${wc.border}`,
+                                    borderRadius: 10, padding: '12px 14px'
+                                }}>
+                                    <div style={{ fontWeight: 700, fontSize: '0.78rem', color: wc.color, marginBottom: 6 }}>{wLabel}</div>
+                                    <div style={{ fontSize: '0.82rem', color: '#94a3b8', lineHeight: 1.5 }}>{wBody}</div>
+                                </div>
+                            )
+                        })}
+                    </div>
+                </div>
             )}
 
+            {/* ── Topic-wise plans ── */}
+            {topicPlans.length > 0 && (
+                <div>
+                    <div style={{ fontWeight: 700, fontSize: '1rem', color: '#e2e8f0', marginBottom: 14, display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <BarChart3 size={17} color="#6366f1" />
+                        Topic-wise personalized plan
+                        <span style={{ background: 'rgba(99,102,241,0.15)', border: '1px solid rgba(99,102,241,0.3)', color: '#a5b4fc', borderRadius: 20, padding: '2px 10px', fontSize: '0.72rem', fontWeight: 700 }}>
+                            {topicPlans.length} topics
+                        </span>
+                    </div>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(340px, 1fr))', gap: 16 }}>
+                        {topicPlans.map((tp, i) => <TopicPlanCard key={i} tp={tp} />)}
+                    </div>
+                </div>
+            )}
+
+            {/* ── Question-wise review (collapsible) ── */}
+            {questionWise.length > 0 && (
+                <div style={rv.card()}>
+                    <button
+                        onClick={() => setShowQ(p => !p)}
+                        style={{
+                            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                            width: '100%', background: 'none', border: 'none', cursor: 'pointer',
+                            color: '#e2e8f0', fontWeight: 700, fontSize: '0.95rem', padding: 0
+                        }}
+                    >
+                        <span><ClipboardList size={16} style={{ marginRight: 7, verticalAlign: 'middle' }} />Question-wise report ({questionWise.length} questions)</span>
+                        <span style={{ color: '#64748b', fontSize: '0.8rem' }}>{showQ ? '▲ Hide' : '▼ Show'}</span>
+                    </button>
+                    {showQ && (
+                        <div style={{ marginTop: 16, display: 'flex', flexDirection: 'column', gap: 10 }}>
+                            {questionWise.map(q => {
+                                const correct = Number(q.obtained || 0) >= Number(q.marks || 1)
+                                return (
+                                    <div key={q.qid} style={{
+                                        ...rv.card({
+                                            padding: '14px 16px',
+                                            background: correct ? 'rgba(16,185,129,0.05)' : 'rgba(239,68,68,0.05)',
+                                            border: `1px solid ${correct ? 'rgba(16,185,129,0.25)' : 'rgba(239,68,68,0.25)'}`
+                                        })
+                                    }}>
+                                        <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start', marginBottom: 6 }}>
+                                            <span style={{ color: correct ? '#10b981' : '#ef4444', flexShrink: 0 }}>{correct ? '✓' : '✗'}</span>
+                                            <span style={{ fontSize: '0.875rem', color: '#cbd5e1', fontWeight: 500 }}>Q{q.index}. {q.question}</span>
+                                        </div>
+                                        <div style={{ paddingLeft: 20, fontSize: '0.8rem', color: '#64748b', display: 'flex', flexWrap: 'wrap', gap: '4px 16px' }}>
+                                            <span>Score: <strong style={{ color: correct ? '#10b981' : '#f87171' }}>{q.obtained}/{q.marks}</strong></span>
+                                            <span>Topic: <strong style={{ color: '#94a3b8' }}>{q.topic || q.subject}</strong></span>
+                                            <span>Your answer: <strong style={{ color: correct ? '#10b981' : '#f87171' }}>{q.student_answer || 'Not answered'}</strong></span>
+                                            {q.expected_answer && <span>Expected: <strong style={{ color: '#10b981' }}>{q.expected_answer}</strong></span>}
+                                        </div>
+                                        {q.feedback && <div style={{ paddingLeft: 20, marginTop: 4, fontSize: '0.78rem', color: '#475569', fontStyle: 'italic' }}>{q.feedback}</div>}
+                                    </div>
+                                )
+                            })}
+                        </div>
+                    )}
+                </div>
+            )}
+
+            {/* ── Actions ── */}
             <div className="vp-row vp-mt-24">
                 <button className="vp-btn vp-btn-primary" onClick={() => navigate('/student/vp/personalized')}>
                     Open Personalized Study

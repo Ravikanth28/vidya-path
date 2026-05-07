@@ -269,7 +269,8 @@ module.exports = function personalizedRoutes(pool, authenticate) {
             }
 
             const has_data = masteries.length > 0 || readLessons.length > 0
-                || smartStudyTopics.length > 0 || recentAttempts.length > 0;
+                || smartStudyTopics.length > 0 || recentAttempts.length > 0
+                || savedPlans.length > 0 || smartAttempts.length > 0;
 
             res.json({
                 ok:               true,

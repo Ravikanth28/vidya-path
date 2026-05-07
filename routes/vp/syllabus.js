@@ -757,5 +757,32 @@ Return JSON: {"suggestions": [{"topic": "<name>", "query": "<youtube search quer
         } catch (err) { res.status(500).json({ error: err.message }); }
     });
 
+    // ── GET /study/syllabi/:syllabusId/results — test attempt history ────────
+    router.get('/study/syllabi/:syllabusId/results', authenticate, async (req, res) => {
+        const sid = String(req.user.id);
+        try {
+            const [rows] = await pool.query(
+                `SELECT sa.id, sa.score, sa.total, sa.weak_topics, sa.recommendations, sa.completed_at
+                 FROM vp_smart_attempts sa
+                 JOIN vp_smart_tests st ON st.id = sa.test_id
+                 WHERE st.syllabus_id = ? AND sa.student_id = ?
+                 ORDER BY sa.completed_at DESC LIMIT 20`,
+                [req.params.syllabusId, sid]
+            );
+            res.json({
+                ok: true,
+                results: rows.map(r => ({
+                    id: r.id,
+                    score: r.score,
+                    total: r.total,
+                    pct: r.total > 0 ? Math.round((r.score / r.total) * 100) : 0,
+                    weak_topics: parseJson(r.weak_topics) || [],
+                    recommendations: parseJson(r.recommendations) || [],
+                    completed_at: r.completed_at
+                }))
+            });
+        } catch (err) { res.status(500).json({ error: err.message }); }
+    });
+
     return router;
 };

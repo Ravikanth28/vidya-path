@@ -9,7 +9,7 @@ import {
     Brain, Target, Zap, RefreshCw, BookOpen,
     ChevronRight, Clock, TrendingUp, AlertTriangle,
     CheckCircle2, Loader2, BarChart3, FlaskConical,
-    FileText, History
+    FileText, History, Youtube, FileDown
 } from 'lucide-react'
 import vpApi from '@/services/vp/api'
 
@@ -55,6 +55,286 @@ function SectionTitle({ icon, children, sub }) {
     )
 }
 
+/* ── DiagnosticPlansSection ─────────────────────────────────────────────── */
+const WEEK_COLORS = [
+    { bg: 'rgba(99,102,241,0.12)',  border: 'rgba(99,102,241,0.35)', color: '#a5b4fc' },
+    { bg: 'rgba(245,158,11,0.12)',  border: 'rgba(245,158,11,0.35)', color: '#fbbf24' },
+    { bg: 'rgba(16,185,129,0.12)',  border: 'rgba(16,185,129,0.35)', color: '#34d399' },
+    { bg: 'rgba(239,68,68,0.10)',   border: 'rgba(239,68,68,0.30)',  color: '#f87171' },
+]
+const pctColor = (p) => p >= 70 ? '#10b981' : p >= 40 ? '#f59e0b' : '#ef4444'
+
+function PlanProgressBar({ pct, color }) {
+    return (
+        <div style={{ height: 6, borderRadius: 99, background: 'rgba(148,163,184,0.1)', overflow: 'hidden', marginTop: 5 }}>
+            <div style={{ width: `${Math.min(100, pct)}%`, height: '100%', background: color, borderRadius: 99, transition: 'width 0.7s ease' }} />
+        </div>
+    )
+}
+
+function TopicPlanExpanded({ tp }) {
+    const [open, setOpen] = useState(false)
+    const color = pctColor(tp.current_pct || 0)
+
+    const downloadNotes = () => {
+        const content = tp?.notes?.content || ''
+        if (!content) return
+        const blob = new Blob([content], { type: 'text/plain;charset=utf-8' })
+        const url  = URL.createObjectURL(blob)
+        const a    = document.createElement('a')
+        a.href = url; a.download = tp.notes.file_name || 'notes.txt'; a.click()
+        URL.revokeObjectURL(url)
+    }
+
+    return (
+        <div style={{
+            ...card({
+                border: `1px solid ${color}28`,
+                background: `linear-gradient(135deg, rgba(15,23,42,0.97), rgba(${tp.current_pct < 40 ? '239,68,68' : tp.current_pct < 70 ? '245,158,11' : '16,185,129'},0.03))`
+            })
+        }}>
+            {/* ── Topic header ── */}
+            <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12, marginBottom: 12 }}>
+                <div style={{
+                    width: 36, height: 36, borderRadius: 9, flexShrink: 0,
+                    background: `${color}18`, border: `1.5px solid ${color}45`,
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    fontWeight: 800, fontSize: '0.9rem', color
+                }}>{tp.rank}</div>
+                <div style={{ flex: 1 }}>
+                    <div style={{ fontWeight: 700, fontSize: '0.95rem', color: '#e2e8f0' }}>{tp.topic}</div>
+                    <div style={{ fontSize: '0.75rem', color: '#64748b', marginTop: 2 }}>{tp.why_struggle}</div>
+                </div>
+                <div style={{ textAlign: 'right', flexShrink: 0 }}>
+                    <span style={{ fontSize: '0.85rem', fontWeight: 700, color }}>{tp.current_pct}%</span>
+                    <span style={{ fontSize: '0.72rem', color: '#475569' }}> → </span>
+                    <span style={{ fontSize: '0.85rem', fontWeight: 700, color: pctColor(tp.target_pct || 70) }}>{tp.target_pct}%</span>
+                </div>
+            </div>
+            <PlanProgressBar pct={tp.current_pct || 0} color={color} />
+
+            {/* ── Weekly badges ── */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 7, marginTop: 14 }}>
+                {(tp.weekly_focus || []).map((w, wIdx) => {
+                    const wc = WEEK_COLORS[wIdx] || WEEK_COLORS[3]
+                    const colonIdx = w.indexOf(':')
+                    const wLabel = colonIdx > -1 ? w.slice(0, colonIdx).trim() : `Week ${wIdx + 1}`
+                    const wBody  = colonIdx > -1 ? w.slice(colonIdx + 1).trim() : w
+                    return (
+                        <div key={wIdx} style={{
+                            display: 'flex', gap: 9, alignItems: 'flex-start',
+                            background: wc.bg, border: `1px solid ${wc.border}`,
+                            borderRadius: 8, padding: '7px 11px'
+                        }}>
+                            <span style={{
+                                flexShrink: 0, background: wc.border, color: wc.color,
+                                borderRadius: 5, padding: '1px 7px', fontSize: '0.68rem',
+                                fontWeight: 700, minWidth: 50, textAlign: 'center'
+                            }}>{wLabel}</span>
+                            <span style={{ fontSize: '0.82rem', color: '#cbd5e1', lineHeight: 1.5 }}>{wBody}</span>
+                        </div>
+                    )
+                })}
+            </div>
+
+            {/* ── Expand: daily tasks + YouTube + books ── */}
+            <button
+                onClick={() => setOpen(p => !p)}
+                style={{
+                    display: 'flex', alignItems: 'center', gap: 6, marginTop: 12,
+                    background: 'none', border: 'none', cursor: 'pointer',
+                    color: '#64748b', fontSize: '0.78rem', fontWeight: 600, padding: 0
+                }}
+            >
+                {open ? '▲ Hide details' : '▼ Show daily tasks & resources'}
+            </button>
+
+            {open && (
+                <div style={{ marginTop: 10 }}>
+                    {/* Daily tasks */}
+                    {(tp.daily_tasks || []).length > 0 && (
+                        <div style={{ marginBottom: 12 }}>
+                            <div style={{ fontSize: '0.72rem', fontWeight: 700, color: '#94a3b8', marginBottom: 7, textTransform: 'uppercase', letterSpacing: '0.04em' }}>Daily tasks</div>
+                            {tp.daily_tasks.map((d, dIdx) => (
+                                <div key={dIdx} style={{ display: 'flex', gap: 7, marginBottom: 5 }}>
+                                    <span style={{ flexShrink: 0, marginTop: 4, width: 12, height: 12, borderRadius: 3, border: '1.5px solid rgba(148,163,184,0.3)', background: 'rgba(255,255,255,0.04)', display: 'inline-block' }} />
+                                    <span style={{ fontSize: '0.82rem', color: '#94a3b8', lineHeight: 1.5 }}>{d}</span>
+                                </div>
+                            ))}
+                        </div>
+                    )}
+
+                    {/* YouTube */}
+                    {(tp.resources?.youtube || []).length > 0 && (
+                        <div style={{ marginBottom: 12 }}>
+                            <div style={{ fontSize: '0.72rem', fontWeight: 700, color: '#94a3b8', marginBottom: 7, textTransform: 'uppercase', letterSpacing: '0.04em' }}>YouTube resources</div>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                                {tp.resources.youtube.map((y, yIdx) => (
+                                    <a key={yIdx}
+                                        href={y.url} target="_blank" rel="noopener noreferrer"
+                                        style={{
+                                            display: 'flex', alignItems: 'center', gap: 9,
+                                            padding: '8px 12px', borderRadius: 9, textDecoration: 'none',
+                                            background: 'rgba(239,68,68,0.10)', border: '1px solid rgba(239,68,68,0.28)',
+                                            color: '#fca5a5', fontSize: '0.82rem', fontWeight: 500
+                                        }}
+                                    >
+                                        <span style={{
+                                            flexShrink: 0, width: 26, height: 18, borderRadius: 4,
+                                            background: '#ef4444', display: 'inline-flex', alignItems: 'center', justifyContent: 'center'
+                                        }}>
+                                            <svg width="12" height="9" viewBox="0 0 14 10" fill="white">
+                                                <path d="M13.7 1.56A1.76 1.76 0 0 0 12.46.3C11.36 0 7 0 7 0S2.64 0 1.54.3A1.76 1.76 0 0 0 .3 1.56 18.5 18.5 0 0 0 0 5a18.5 18.5 0 0 0 .3 3.44A1.76 1.76 0 0 0 1.54 9.7C2.64 10 7 10 7 10s4.36 0 5.46-.3a1.76 1.76 0 0 0 1.24-1.26A18.5 18.5 0 0 0 14 5a18.5 18.5 0 0 0-.3-3.44z"/>
+                                                <polygon points="5.6,7.1 9.24,5 5.6,2.9" fill="#ef4444"/>
+                                            </svg>
+                                        </span>
+                                        <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{y.title}</span>
+                                        <span style={{ flexShrink: 0, fontSize: '0.7rem', color: '#94a3b8' }}>↗</span>
+                                    </a>
+                                ))}
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Books */}
+                    {(tp.resources?.books || []).length > 0 && (
+                        <div style={{ marginBottom: 10 }}>
+                            <div style={{ fontSize: '0.72rem', fontWeight: 700, color: '#94a3b8', marginBottom: 7, textTransform: 'uppercase', letterSpacing: '0.04em' }}>Book references</div>
+                            {tp.resources.books.map((b, bIdx) => (
+                                <div key={bIdx} style={{ display: 'flex', gap: 7, marginBottom: 5, fontSize: '0.82rem' }}>
+                                    <span>📚</span>
+                                    <div><span style={{ color: '#cbd5e1', fontWeight: 600 }}>{b.title}</span> — <span style={{ color: '#64748b' }}>{b.ref}</span></div>
+                                </div>
+                            ))}
+                        </div>
+                    )}
+
+                    {/* Download notes */}
+                    {tp.notes?.content && (
+                        <button
+                            onClick={downloadNotes}
+                            style={{
+                                display: 'inline-flex', alignItems: 'center', gap: 5,
+                                padding: '6px 13px', borderRadius: 7, cursor: 'pointer', fontSize: '0.78rem',
+                                border: '1.5px solid rgba(99,102,241,0.4)',
+                                background: 'rgba(99,102,241,0.07)', color: '#a5b4fc'
+                            }}
+                        >
+                            <FileDown size={12} /> Download Notes
+                        </button>
+                    )}
+                </div>
+            )}
+        </div>
+    )
+}
+
+function DiagnosticPlansSection({ plans }) {
+    const [expanded, setExpanded] = useState({ [plans[0]?.id]: true })
+    const pScoreColor = (p) => pctColor(p.summary?.percentage || 0)
+
+    return (
+        <div>
+            <SectionTitle
+                icon={<FileText size={17} color="#38bdf8" />}
+                sub="Topic-wise plans from your diagnostic tests. Expand to see week-by-week focus, daily tasks, and YouTube resources."
+            >
+                Personalized Study Plans
+                <span style={{
+                    marginLeft: 8, background: 'rgba(56,189,248,0.12)', border: '1px solid rgba(56,189,248,0.3)',
+                    color: '#7dd3fc', borderRadius: 20, padding: '2px 10px', fontSize: '0.72rem', fontWeight: 700
+                }}>{plans.length} plans</span>
+            </SectionTitle>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                {plans.map(p => {
+                    const isOpen    = !!expanded[p.id]
+                    const pct       = p.summary?.percentage || 0
+                    const sColor    = pScoreColor(p)
+                    const topicPlans = p.plan?.topic_plans || []
+
+                    return (
+                        <div key={p.id} style={card({ border: '1px solid rgba(56,189,248,0.2)', background: 'rgba(56,189,248,0.03)', padding: 0, overflow: 'hidden' })}>
+                            {/* Plan header — click to expand */}
+                            <button
+                                onClick={() => setExpanded(prev => ({ ...prev, [p.id]: !prev[p.id] }))}
+                                style={{
+                                    display: 'flex', alignItems: 'center', gap: 14, width: '100%',
+                                    background: 'none', border: 'none', cursor: 'pointer',
+                                    padding: '16px 20px', textAlign: 'left'
+                                }}
+                            >
+                                {/* Score ring */}
+                                <div style={{
+                                    width: 52, height: 52, borderRadius: 12, flexShrink: 0,
+                                    background: `${sColor}18`, border: `1.5px solid ${sColor}45`,
+                                    display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center'
+                                }}>
+                                    <span style={{ fontSize: '1rem', fontWeight: 800, color: sColor, lineHeight: 1 }}>{pct}%</span>
+                                    <span style={{ fontSize: '0.6rem', color: '#64748b', marginTop: 2 }}>score</span>
+                                </div>
+                                <div style={{ flex: 1 }}>
+                                    <div style={{ fontWeight: 700, fontSize: '0.95rem', color: '#e2e8f0' }}>
+                                        {p.title || 'Diagnostic Improvement Plan'}
+                                    </div>
+                                    <div style={{ fontSize: '0.75rem', color: '#64748b', marginTop: 3, display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+                                        <span>Stage: <strong style={{ color: sColor }}>{p.summary?.stage || 'N/A'}</strong></span>
+                                        <span>Score: <strong style={{ color: '#94a3b8' }}>{p.summary?.score ?? '-'}/{p.summary?.total_marks ?? '-'}</strong></span>
+                                        <span>Target: <strong style={{ color: '#60a5fa' }}>{p.plan?.target_score ?? 'N/A'}%</strong></span>
+                                        {topicPlans.length > 0 && <span style={{ background: 'rgba(99,102,241,0.15)', border: '1px solid rgba(99,102,241,0.3)', color: '#a5b4fc', borderRadius: 20, padding: '1px 8px', fontSize: '0.68rem', fontWeight: 700 }}>{topicPlans.length} topics</span>}
+                                    </div>
+                                </div>
+                                <span style={{ color: '#64748b', fontSize: '0.8rem', flexShrink: 0 }}>{isOpen ? '▲' : '▼'}</span>
+                            </button>
+
+                            {isOpen && (
+                                <div style={{ borderTop: '1px solid rgba(56,189,248,0.1)', padding: '16px 20px' }}>
+                                    {/* Weekly overview */}
+                                    {p.plan?.weekly_goals?.length > 0 && (
+                                        <div style={{ marginBottom: 20 }}>
+                                            <div style={{ fontSize: '0.72rem', fontWeight: 700, color: '#94a3b8', marginBottom: 10, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                                                {p.plan.horizon_days}-day plan overview
+                                            </div>
+                                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 8 }}>
+                                                {p.plan.weekly_goals.map((g, gIdx) => {
+                                                    const wc = WEEK_COLORS[gIdx] || WEEK_COLORS[3]
+                                                    const colonIdx = g.indexOf(':')
+                                                    const wLabel = colonIdx > -1 ? g.slice(0, colonIdx).trim() : `Week ${gIdx + 1}`
+                                                    const wBody  = colonIdx > -1 ? g.slice(colonIdx + 1).trim() : g
+                                                    return (
+                                                        <div key={gIdx} style={{ background: wc.bg, border: `1px solid ${wc.border}`, borderRadius: 9, padding: '10px 12px' }}>
+                                                            <div style={{ fontWeight: 700, fontSize: '0.72rem', color: wc.color, marginBottom: 4 }}>{wLabel}</div>
+                                                            <div style={{ fontSize: '0.78rem', color: '#94a3b8', lineHeight: 1.5 }}>{wBody}</div>
+                                                        </div>
+                                                    )
+                                                })}
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    {/* Topic plans */}
+                                    {topicPlans.length > 0 && (
+                                        <div>
+                                            <div style={{ fontSize: '0.72rem', fontWeight: 700, color: '#94a3b8', marginBottom: 12, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                                                Topic-wise breakdown
+                                            </div>
+                                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: 12 }}>
+                                                {topicPlans.map((tp, tpIdx) => (
+                                                    <TopicPlanExpanded key={tpIdx} tp={tp} />
+                                                ))}
+                                            </div>
+                                        </div>
+                                    )}
+                                </div>
+                            )}
+                        </div>
+                    )
+                })}
+            </div>
+        </div>
+    )
+}
+
 /* ── main page ───────────────────────────────────────────────────────────── */
 export default function PersonalizedStudy() {
     const [data,    setData]    = useState(null)
@@ -87,15 +367,25 @@ export default function PersonalizedStudy() {
         <div style={card({ textAlign: 'center', padding: '48px 24px' })}>
             <Brain size={40} color="#6366f1" style={{ marginBottom: 16, opacity: 0.7 }} />
             <div style={{ color: '#94a3b8', fontSize: '0.95rem', marginBottom: 20 }}>
-                No learning data yet. Complete a lesson quiz to unlock your personalized study path.
+                No learning data yet. Take a diagnostic test or complete a lesson quiz to unlock your personalized study path.
             </div>
-            <Link to="/student/vp/lessons" style={{
-                display: 'inline-flex', alignItems: 'center', gap: 6,
-                background: '#6366f1', color: '#fff', borderRadius: 10,
-                padding: '10px 22px', fontWeight: 600, textDecoration: 'none', fontSize: '0.875rem'
-            }}>
-                <BookOpen size={14} /> Browse Lessons
-            </Link>
+            <div style={{ display: 'flex', gap: 10, justifyContent: 'center', flexWrap: 'wrap' }}>
+                <Link to="/student/vp/diagnostic" style={{
+                    display: 'inline-flex', alignItems: 'center', gap: 6,
+                    background: '#6366f1', color: '#fff', borderRadius: 10,
+                    padding: '10px 22px', fontWeight: 600, textDecoration: 'none', fontSize: '0.875rem'
+                }}>
+                    <Target size={14} /> Take Diagnostic
+                </Link>
+                <Link to="/student/vp/lessons" style={{
+                    display: 'inline-flex', alignItems: 'center', gap: 6,
+                    background: 'rgba(99,102,241,0.12)', color: '#a5b4fc', borderRadius: 10,
+                    padding: '10px 22px', fontWeight: 600, textDecoration: 'none', fontSize: '0.875rem',
+                    border: '1px solid rgba(99,102,241,0.3)'
+                }}>
+                    <BookOpen size={14} /> Browse Lessons
+                </Link>
+            </div>
         </div>
     )
 
@@ -149,32 +439,7 @@ export default function PersonalizedStudy() {
             </div>
 
             {(diagnostic_plans?.length > 0) && (
-                <div>
-                    <SectionTitle
-                        icon={<FileText size={17} color="#38bdf8" />}
-                        sub="Persisted from your diagnostic attempts"
-                    >
-                        Saved Personalized Plans
-                    </SectionTitle>
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: 12 }}>
-                        {diagnostic_plans.map(p => (
-                            <div key={p.id} style={card({ border: '1px solid rgba(56,189,248,0.2)', background: 'rgba(56,189,248,0.04)' })}>
-                                <div style={{ fontSize: '0.88rem', fontWeight: 700, color: '#e2e8f0' }}>{p.title || 'Diagnostic Improvement Plan'}</div>
-                                <div style={{ marginTop: 6, color: '#64748b', fontSize: '0.76rem' }}>
-                                    Stage: {p.summary?.stage || 'N/A'} · Score: {p.summary?.score ?? '-'} / {p.summary?.total_marks ?? '-'}
-                                </div>
-                                <div style={{ marginTop: 6, color: '#94a3b8', fontSize: '0.78rem' }}>
-                                    Target: {p.plan?.target_score ?? 'N/A'}% · Horizon: {p.plan?.horizon_days ?? 21} days
-                                </div>
-                                <div style={{ marginTop: 10, color: '#cbd5e1', fontSize: '0.78rem' }}>
-                                    {(p.plan?.recommendations || []).slice(0, 2).map((r, idx) => (
-                                        <div key={idx}>• {r}</div>
-                                    ))}
-                                </div>
-                            </div>
-                        ))}
-                    </div>
-                </div>
+                <DiagnosticPlansSection plans={diagnostic_plans} />
             )}
 
             {/* ── Bandit Pick: Best next lesson ── */}
