@@ -1488,19 +1488,50 @@ export default function SmartStudy() {
     return (
         <div>
             {/* Page header */}
-            <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 28, flexWrap: 'wrap', gap: 12 }}>
+            <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 20, flexWrap: 'wrap', gap: 12 }}>
                 <div>
-                    <h2 style={{ margin: 0, fontWeight: 700, fontSize: '1.4rem', color: '#e2e8f0', display: 'flex', alignItems: 'center', gap: 10 }}>
-                        <Sparkles size={22} color="#8b5cf6" /> Smart Study
+                    <h2 style={{ margin: 0, fontWeight: 700, fontSize: '1.2rem', color: '#e2e8f0', display: 'flex', alignItems: 'center', gap: 10 }}>
+                        <Sparkles size={20} color="#8b5cf6" /> Your Syllabi
                     </h2>
-                    <p style={{ margin: '6px 0 0', fontSize: '0.875rem', color: '#64748b' }}>
-                        Upload your syllabus → AI extracts topics → generate notes & tests → find weak areas
+                    <p style={{ margin: '4px 0 0', fontSize: '0.825rem', color: '#64748b' }}>
+                        Upload your syllabus and let AI extract topics, generate study notes at different difficulty levels, create practice tests, and highlight your weak areas.
                     </p>
                 </div>
                 <button onClick={() => setShowUpload(p => !p)} style={btn('#8b5cf6')}>
                     <PlusCircle size={15} /> {showUpload ? 'Cancel' : 'Upload Syllabus'}
                 </button>
             </div>
+
+            {/* How it works — shown only when no syllabi and form is hidden */}
+            {!showUpload && syllabi.length === 0 && !loading && (
+                <div style={{
+                    display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
+                    gap: 12, marginBottom: 24
+                }}>
+                    {[
+                        { step: '1', icon: <Upload size={18} />, title: 'Upload', desc: 'Share your syllabus as a PDF, image, or text file' },
+                        { step: '2', icon: <Sparkles size={18} />, title: 'AI Extracts Topics', desc: 'AI reads and breaks it into structured topics for you' },
+                        { step: '3', icon: <NotebookPen size={18} />, title: 'Get Notes & Tests', desc: 'Generate easy, medium, or hard notes and auto-quizzes per topic' },
+                        { step: '4', icon: <Target size={18} />, title: 'Find Weak Areas', desc: 'See scores and get YouTube recommendations for topics you struggle with' },
+                    ].map(item => (
+                        <div key={item.step} style={{
+                            ...card({ background: 'rgba(139,92,246,0.04)', border: '1px solid rgba(139,92,246,0.15)', padding: '16px' }),
+                            display: 'flex', flexDirection: 'column', gap: 8
+                        }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                                <span style={{
+                                    width: 24, height: 24, borderRadius: '50%', background: 'rgba(139,92,246,0.2)',
+                                    border: '1px solid rgba(139,92,246,0.4)', display: 'flex', alignItems: 'center',
+                                    justifyContent: 'center', fontSize: '0.7rem', fontWeight: 800, color: '#a78bfa', flexShrink: 0
+                                }}>{item.step}</span>
+                                <span style={{ color: '#a78bfa' }}>{item.icon}</span>
+                                <span style={{ fontWeight: 600, fontSize: '0.875rem', color: '#e2e8f0' }}>{item.title}</span>
+                            </div>
+                            <p style={{ margin: 0, fontSize: '0.775rem', color: '#64748b', lineHeight: 1.5 }}>{item.desc}</p>
+                        </div>
+                    ))}
+                </div>
+            )}
 
             {/* Upload form (collapsible) */}
             {showUpload && (
@@ -1511,9 +1542,6 @@ export default function SmartStudy() {
                     <UploadForm onUploaded={handleUploaded} />
                 </div>
             )}
-
-            {/* Teacher's notes (from mentor) */}
-            <TeacherNotesSection />
 
             {/* Syllabus list */}
             {loading ? (

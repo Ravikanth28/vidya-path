@@ -1,12 +1,16 @@
 import { useState } from 'react'
-import { BookOpen, Youtube } from 'lucide-react'
+import { BookOpen, Youtube, Upload, Download } from 'lucide-react'
 import { useAuth } from '../../App'
 import LessonsList from './LessonsList'
 import YouTubeRecommendations from '@/components/YouTubeRecommendations'
+import SmartStudy from './SmartStudy'
+import StudentTeacherNotes from './StudentTeacherNotes'
 
 const TABS = [
-    { key: 'lessons', label: 'Lessons',           icon: <BookOpen size={16} /> },
-    { key: 'youtube', label: 'YouTube Resources',  icon: <Youtube size={16} /> }
+    { key: 'lessons',        label: 'Lessons',           icon: <BookOpen size={16} /> },
+    { key: 'youtube',        label: 'YouTube Resources',  icon: <Youtube size={16} /> },
+    { key: 'upload-syllabus', label: 'Upload Syllabus',  icon: <Upload size={16} /> },
+    { key: 'teacher-notes',  label: "Teacher's Notes",   icon: <Download size={16} /> }
 ]
 
 export default function VPResources() {
@@ -42,8 +46,10 @@ export default function VPResources() {
                 ))}
             </div>
 
-            {tab === 'lessons' && <LessonsList />}
-            {tab === 'youtube' && <YouTubeRecommendations user={user} />}
+            {tab === 'lessons'         && <LessonsList />}
+            {tab === 'youtube'         && <YouTubeRecommendations user={user} />}
+            {tab === 'upload-syllabus' && <SmartStudy />}
+            {tab === 'teacher-notes'   && <StudentTeacherNotes />}
         </div>
     )
 }

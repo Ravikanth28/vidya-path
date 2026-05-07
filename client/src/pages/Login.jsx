@@ -175,7 +175,7 @@ function Login() {
     const [showLoginPanel, setShowLoginPanel] = useState(false)
     const [showLangMenu, setShowLangMenu] = useState(false)
     const { login } = useAuth()
-    const { locale, setLocale } = useI18n()
+    const { locale, setLocale, t } = useI18n()
 
     const handleSubmit = async (e) => {
         e.preventDefault()
@@ -244,7 +244,7 @@ function Login() {
                         )}
                     </div>
                     <button className="nav-login-btn" onClick={() => setShowLoginPanel(true)}>
-                        Login <ArrowRight size={16} />
+                        {t('login')} <ArrowRight size={16} />
                     </button>
                 </div>
             </nav>
@@ -285,13 +285,13 @@ function Login() {
                                 <div className="header-icon">
                                     <Brain size={32} />
                                 </div>
-                                <h2>Welcome Back</h2>
-                                <p>Sign in to continue your AI learning journey</p>
+                                <h2>{t('welcome_back')}</h2>
+                                <p>{t('login_subtitle')}</p>
                             </div>
 
                             <form onSubmit={handleSubmit} className="login-form">
                                 <div className="form-group">
-                                    <label htmlFor="email">Email Address</label>
+                                    <label htmlFor="email">{t('email')}</label>
                                     <div className="input-field">
                                         <Mail className="field-icon" size={18} />
                                         <input
@@ -299,14 +299,14 @@ function Login() {
                                             id="email"
                                             value={email}
                                             onChange={(e) => setEmail(e.target.value)}
-                                            placeholder="Enter your email"
+                                            placeholder={t('email')}
                                             required
                                         />
                                     </div>
                                 </div>
 
                                 <div className="form-group">
-                                    <label htmlFor="password">Password</label>
+                                    <label htmlFor="password">{t('password')}</label>
                                     <div className="input-field">
                                         <Lock className="field-icon" size={18} />
                                         <input
@@ -314,7 +314,7 @@ function Login() {
                                             id="password"
                                             value={password}
                                             onChange={(e) => setPassword(e.target.value)}
-                                            placeholder="Enter your password"
+                                            placeholder={t('password')}
                                             required
                                         />
                                     </div>
@@ -326,11 +326,11 @@ function Login() {
                                     {loading ? (
                                         <>
                                             <div className="btn-spinner"></div>
-                                            Signing in...
+                                            {t('loading')}
                                         </>
                                     ) : (
                                         <>
-                                            Sign In
+                                            {t('sign_in')}
                                             <ArrowRight size={18} />
                                         </>
                                     )}
