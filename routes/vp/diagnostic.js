@@ -10,6 +10,7 @@ const multer = require('multer');
 const { v4: uuidv4 } = require('uuid');
 const ml = require('../../services/vp/ml_client');
 const llmRouter = require('../../services/vp/llm_router');
+const { ttsToBase64 } = require('../../services/vp/sarvam');
 
 const DIAGNOSTIC_UPLOAD_MAX_MB = 25;
 const upload = multer({
@@ -591,6 +592,7 @@ module.exports = function diagnosticRoutes(pool, authenticate) {
     router.post('/diagnostic/attempts/:id/generate-lessons', authenticate, async (req, res) => {
         const sid = String(req.user.id);
         const lang = normalizeLanguageCode(req.body?.language || req.query.language || 'en');
+        const difficulty = ['easy', 'medium', 'hard'].includes(req.body?.difficulty) ? req.body.difficulty : 'medium';
         try {
             const [[row]] = await pool.query(
                 `SELECT id, subject, grade, topic, language, report_json
@@ -613,8 +615,9 @@ module.exports = function diagnosticRoutes(pool, authenticate) {
                     subject: row.subject || 'General',
                     topic: topicName,
                     grade: row.grade,
-                    language: 'en',
-                    weaknessPercentage: Number(weak.percentage || 0)
+                    language: lang,
+                    weaknessPercentage: Number(weak.percentage || 0),
+                    difficulty
                 });
                 if (lesson) createdLessons.push(lesson);
             }
@@ -1982,47 +1985,106 @@ function buildQuickNotes({ subject, topic, grade }) {
     ].join('\n');
 }
 
-async function generateLessonBody({ subject, topic, grade, language = 'en', weaknessPercentage = 0 }) {
+async function generateLessonBody({ subject, topic, grade, language = 'en', weaknessPercentage = 0, difficulty = 'medium' }) {
     const fallbackBody = buildSimpleEnglishLessonTemplate({ subject, topic, grade, weaknessPercentage });
 
+    // Word targets: easy ~350w (1 A4), medium ~1050w (3 A4), hard ~2100w (6 A4)
+    const difficultyConfig = {
+        easy:   { minWords: 300,  maxWords: 450,  maxTokens: 1200, label: 'easy', desc: 'Simple language, core concepts only, 1–2 examples. Beginner friendly.' },
+        medium: { minWords: 900,  maxWords: 1200, maxTokens: 3500, label: 'medium', desc: 'Clear explanations, 2–3 examples, key formulas and common mistakes.' },
+        hard:   { minWords: 1800, maxWords: 2400, maxTokens: 6000, label: 'hard', desc: 'In-depth analysis, 4+ worked examples, edge cases, exam-level depth.' }
+    };
+    const cfg = difficultyConfig[difficulty] || difficultyConfig.medium;
+    const langLabel = languageLabel(language);
+    const gradeLabel = grade ? `Grade/Year ${grade}` : 'secondary level';
+
     try {
-        const gradeLabel = grade ? `Grade/Year ${grade}` : 'secondary level';
         const out = await llmRouter.llmChat({
             messages: [
                 {
                     role: 'system',
                     content:
-                        'You are a highly qualified subject teacher writing professional, exam-ready self-study notes for students. ' +
-                        'Your notes must be factually correct, detailed, and teach ACTUAL content about the topic — not placeholder text. ' +
-                        'Use clear markdown headings (##), bullet points (- ), numbered steps, and bold for key terms. ' +
-                        'Do NOT use placeholder phrases like "write one line here" or "study each part". ' +
-                        'Write real facts, real definitions, real examples specific to this topic. ' +
-                        'Length: 1400 to 2000 words. No tables.'
+                        `You are a highly qualified subject teacher writing professional, exam-ready self-study notes for students. ` +
+                        `Write ENTIRELY in ${langLabel}. ` +
+                        `Your notes must be factually correct, detailed, and teach ACTUAL content — not placeholder text. ` +
+                        `Use clear markdown headings (##), bullet points, numbered steps, and **bold** for key terms. ` +
+                        `Do NOT use placeholder phrases. Write real facts, real definitions, real examples. ` +
+                        `Difficulty: ${cfg.label}. ${cfg.desc} ` +
+                        `Target length: ${cfg.minWords}–${cfg.maxWords} words.`
                 },
                 {
                     role: 'user',
                     content:
-                        `Write professional study notes for topic: "${topic}" in subject: "${subject}" for ${gradeLabel} students.\n` +
-                        `The student scored only ${weaknessPercentage}% so these notes must clearly explain the topic from basics to exam level.\n\n` +
-                        `Use EXACTLY these sections in order:\n` +
-                        `## Overview\n(2-3 sentences explaining what ${topic} is and why it matters in ${subject})\n\n` +
-                        `## Learning Goals\n(4 specific learning outcomes a student will achieve)\n\n` +
-                        `## Key Concepts\n(5-8 core concepts/definitions/rules with REAL content. Be specific and factual.)\n\n` +
-                        `## Worked Example 1\n(A step-by-step solved problem or explanation with real numbers/words for ${topic})\n\n` +
-                        `## Worked Example 2\n(Another solved example showing a different aspect of ${topic})\n\n` +
-                        `## Common Mistakes\n(5 specific mistakes students make in ${topic} and how to avoid each)\n\n` +
-                        `## Revision Checklist\n(5 checkpoints a student can use to self-assess mastery of ${topic})\n\n` +
-                        `## Quick Recap\n(3-4 sentence summary of ${topic} for last-minute revision)`
+                        `Write ${cfg.label}-level study notes for topic: "${topic}" in subject: "${subject}" for ${gradeLabel} students.\n` +
+                        `Language: ${langLabel}.\n` +
+                        `The student scored ${weaknessPercentage}% — explain from basics to exam level.\n\n` +
+                        `Use EXACTLY these sections:\n` +
+                        `## Overview\n(What is ${topic} and why it matters)\n\n` +
+                        `## Learning Goals\n(${difficulty === 'easy' ? '3' : difficulty === 'medium' ? '4' : '5'} specific outcomes)\n\n` +
+                        `## Key Concepts\n(${difficulty === 'easy' ? '3-4' : difficulty === 'medium' ? '5-7' : '8-10'} core concepts with REAL definitions)\n\n` +
+                        (difficulty !== 'easy' ? `## Worked Example 1\n(Step-by-step solved problem for ${topic})\n\n` : '') +
+                        (difficulty !== 'easy' ? `## Worked Example 2\n(Another solved example showing a different aspect)\n\n` : '') +
+                        (difficulty === 'hard' ? `## Worked Example 3\n(Advanced/edge case example)\n\n` : '') +
+                        (difficulty === 'hard' ? `## Worked Example 4\n(Exam-level complex problem)\n\n` : '') +
+                        `## Common Mistakes\n(${difficulty === 'easy' ? '3' : '5'} mistakes and how to avoid each)\n\n` +
+                        `## Revision Checklist\n(${difficulty === 'easy' ? '3' : '5'} self-assessment checkpoints)\n\n` +
+                        `## Quick Recap\n(${difficulty === 'easy' ? '2' : '3-4'} sentence summary for last-minute revision)`
                 }
             ],
             temperature: 0.4,
-            maxTokens: 4500
+            maxTokens: cfg.maxTokens
         });
         if (out?.provider === 'mock') return fallbackBody;
         const text = String(out.text || '').trim();
-        return text.length >= 800 ? text : fallbackBody;
+        return text.length >= 200 ? text : fallbackBody;
     } catch {
         return fallbackBody;
+    }
+}
+
+async function generateAIScript({ subject, topic, grade, language = 'en', body, difficulty = 'medium' }) {
+    const langLabel = languageLabel(language);
+    const gradeLabel = grade ? `Grade/Year ${grade}` : 'secondary level';
+    const scriptLen = difficulty === 'easy' ? '150–200 words' : difficulty === 'medium' ? '400–500 words' : '800–1000 words';
+    try {
+        const out = await llmRouter.llmChat({
+            messages: [
+                {
+                    role: 'system',
+                    content:
+                        `You are an engaging teacher recording a lesson narration for students. ` +
+                        `Write ENTIRELY in ${langLabel}. ` +
+                        `Write as if you are speaking aloud — use natural spoken language, no markdown, no bullet points. ` +
+                        `Be warm, clear, and encouraging. Target: ${scriptLen}.`
+                },
+                {
+                    role: 'user',
+                    content:
+                        `Based on these study notes, write a spoken teaching script for topic "${topic}" in subject "${subject}" for ${gradeLabel} students.\n` +
+                        `Language: ${langLabel}. Difficulty: ${difficulty}.\n\n` +
+                        `Notes:\n${String(body || '').slice(0, 3000)}\n\n` +
+                        `Write the full spoken narration a teacher would say out loud, covering the key points clearly. No bullet points, no headers — just natural speech.`
+                }
+            ],
+            temperature: 0.6,
+            maxTokens: difficulty === 'easy' ? 800 : difficulty === 'medium' ? 1800 : 3500
+        });
+        if (out?.provider === 'mock') return null;
+        const text = String(out.text || '').trim();
+        return text.length >= 50 ? text : null;
+    } catch {
+        return null;
+    }
+}
+
+async function generateTTSAudio({ text, language = 'en' }) {
+    try {
+        // Truncate to ~1400 chars for Sarvam TTS limit
+        const snippet = String(text || '').slice(0, 1400);
+        const result = await ttsToBase64(snippet, language);
+        return result; // { audioBase64, mimeType, provider }
+    } catch {
+        return { audioBase64: '', mimeType: 'audio/wav', provider: 'none' };
     }
 }
 
@@ -2238,7 +2300,7 @@ async function upsertPracticeTestLesson(pool, { subject, topic, grade, testIndex
     return { id: lessonId, title, subject: normalizedSubject };
 }
 
-async function createWeakTopicLesson(pool, { subject, topic, grade, language = 'en', weaknessPercentage = 0 }) {
+async function createWeakTopicLesson(pool, { subject, topic, grade, language = 'en', weaknessPercentage = 0, difficulty = 'medium' }) {
     const normalizedSubject = String(subject || 'General').trim();
     const normalizedTopic = String(topic || 'Core Concepts').trim();
     const lessonTitle = normalizedTopic;
@@ -2258,15 +2320,36 @@ async function createWeakTopicLesson(pool, { subject, topic, grade, language = '
         topic: normalizedTopic,
         grade,
         language,
-        weaknessPercentage
+        weaknessPercentage,
+        difficulty
     });
     const bodyMap = { en: bodyPrimary };
 
     const lang = normalizeLanguageCode(language);
     if (lang !== 'en') {
         const localized = await localizeObjectForLanguage({ body: bodyPrimary }, lang);
-        bodyMap.en = bodyPrimary;
         bodyMap[lang] = localized?.body || bodyPrimary;
+    }
+
+    // Generate AI teaching script in selected language
+    const scriptText = await generateAIScript({
+        subject: normalizedSubject,
+        topic: normalizedTopic,
+        grade,
+        language: lang,
+        body: bodyMap[lang] || bodyPrimary,
+        difficulty
+    });
+    const scriptMap = scriptText ? { [lang]: scriptText } : {};
+
+    // Generate TTS audio from script (or first 1400 chars of notes)
+    const ttsSource = scriptText || bodyPrimary;
+    const ttsLang = lang !== 'en' ? lang : 'en';
+    const ttsResult = await generateTTSAudio({ text: ttsSource, language: ttsLang });
+    const audioMap = {};
+    if (ttsResult?.audioBase64) {
+        // Store as data URI for the lesson player
+        audioMap[ttsLang] = `data:${ttsResult.mimeType || 'audio/wav'};base64,${ttsResult.audioBase64}`;
     }
 
     const [[maxOrderRow]] = await pool.query(
@@ -2275,8 +2358,16 @@ async function createWeakTopicLesson(pool, { subject, topic, grade, language = '
     );
     const lessonId = uuidv4();
     await pool.query(
-        'INSERT INTO vp_lessons (id, concept_id, subject, title, body_i18n, ordering, grade) VALUES (?,?,?,?,?,?,?)',
-        [lessonId, null, normalizedSubject, lessonTitle, JSON.stringify(bodyMap), Number(maxOrderRow?.max_order || 0) + 1, grade ? Number(grade) : 8]
+        'INSERT INTO vp_lessons (id, concept_id, subject, title, body_i18n, script_i18n, audio_url_i18n, difficulty, ordering, grade) VALUES (?,?,?,?,?,?,?,?,?,?)',
+        [
+            lessonId, null, normalizedSubject, lessonTitle,
+            JSON.stringify(bodyMap),
+            JSON.stringify(scriptMap),
+            JSON.stringify(audioMap),
+            difficulty,
+            Number(maxOrderRow?.max_order || 0) + 1,
+            grade ? Number(grade) : 8
+        ]
     );
 
     return { id: lessonId, title: lessonTitle, subject: normalizedSubject, reused: false, body_en: bodyMap.en || '' };

@@ -92,35 +92,13 @@ async function ttsToBase64(text, langCode = 'en', speaker) {
         return { audioBase64: '', mimeType: 'audio/wav', provider: 'none' };
     }
 
-    const truncated  = String(text).slice(0, 1500);
+    const truncated  = String(text).slice(0, 490);
     const langBcp47  = toBcp47(langCode);
     const useSpeaker = speaker || process.env.SARVAM_TTS_SPEAKER || 'shubh';
     const useModel   = process.env.SARVAM_TTS_MODEL || 'bulbul:v3';
     const headers    = { 'api-subscription-key': SARVAM_KEY, 'Content-Type': 'application/json' };
 
-    // ── Try bulbul:v3 format (text field, no inputs array) ─────────────────
-    try {
-        const body = {
-            text: truncated,
-            target_language_code: langBcp47,
-            speaker: useSpeaker,
-            model: useModel,
-            enable_preprocessing: true
-        };
-        const { data } = await axios.post(`${SARVAM_BASE}/text-to-speech`, body, {
-            headers,
-            timeout: 30_000
-        });
-        // v3 response may use audios[], audio, or audio_content
-        const b64 =
-            (Array.isArray(data?.audios)        ? data.audios[0]        : null) ||
-            (typeof data?.audio === 'string'    ? data.audio            : null) ||
-            (typeof data?.audio_content === 'string' ? data.audio_content : null) ||
-            '';
-        if (b64) return { audioBase64: b64, mimeType: 'audio/wav', provider: 'sarvam' };
-    } catch { /* fall through to v2 format */ }
-
-    // ── Fallback: bulbul:v2 format (inputs array) ───────────────────────────
+    // ── Try bulbul:v2 format (inputs array — stable) ───────────────────────
     try {
         const body = {
             inputs: [truncated],
@@ -136,7 +114,36 @@ async function ttsToBase64(text, langCode = 'en', speaker) {
         });
         const b64 = (Array.isArray(data?.audios) ? data.audios[0] : null) || '';
         if (b64) return { audioBase64: b64, mimeType: 'audio/wav', provider: 'sarvam-v2' };
-    } catch { /* fall through */ }
+        console.warn('[sarvam] TTS v2 returned no audio; response keys:', Object.keys(data || {}));
+    } catch (err) {
+        const detail = err.response?.data ? JSON.stringify(err.response.data) : err.message;
+        console.error(`[sarvam] TTS v2 error (${err.response?.status || 'network'}):`, detail);
+    }
+
+    // ── Fallback: bulbul:v3 format (text field) ────────────────────────────
+    try {
+        const body = {
+            text: truncated,
+            target_language_code: langBcp47,
+            speaker: useSpeaker,
+            model: useModel,
+            enable_preprocessing: true
+        };
+        const { data } = await axios.post(`${SARVAM_BASE}/text-to-speech`, body, {
+            headers,
+            timeout: 12_000
+        });
+        const b64 =
+            (Array.isArray(data?.audios)             ? data.audios[0]       : null) ||
+            (typeof data?.audio === 'string'         ? data.audio           : null) ||
+            (typeof data?.audio_content === 'string' ? data.audio_content   : null) ||
+            '';
+        if (b64) return { audioBase64: b64, mimeType: 'audio/wav', provider: 'sarvam-v3' };
+        console.warn('[sarvam] TTS v3 returned no audio; response keys:', Object.keys(data || {}));
+    } catch (err) {
+        const detail = err.response?.data ? JSON.stringify(err.response.data) : err.message;
+        console.error(`[sarvam] TTS v3 error (${err.response?.status || 'network'}):`, detail);
+    }
 
     return { audioBase64: '', mimeType: 'audio/wav', provider: 'none' };
 }

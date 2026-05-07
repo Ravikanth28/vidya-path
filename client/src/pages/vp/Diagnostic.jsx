@@ -881,6 +881,7 @@ function ResultView({ report, plan, attemptId, initialLanguage = 'en', onPlanUpd
     const [generatingLessons, setGeneratingLessons] = useState(false)
     const [lessonMessage, setLessonMessage] = useState('')
     const [uiText, setUiText] = useState({})
+    const [lessonDifficulty, setLessonDifficulty] = useState('medium')
 
     useEffect(() => {
         setViewReport(report)
@@ -938,9 +939,9 @@ function ResultView({ report, plan, attemptId, initialLanguage = 'en', onPlanUpd
         setLessonMessage('')
         setRegenError(null)
         try {
-            await vpApi.diagGenerateLessons(attemptId, resultLanguage)
+            await vpApi.diagGenerateLessons(attemptId, resultLanguage, lessonDifficulty)
             setLessonMessage(uiText.lessonsReady || 'Weak-topic lessons are ready in Smart Study.')
-            navigate('/student/vp/practice')
+            navigate('/student/vp/resources')
         } catch {
             setRegenError(uiText.couldNotGenerateLessons || 'Could not generate lessons. Please try again.')
         } finally {
@@ -1014,7 +1015,18 @@ function ResultView({ report, plan, attemptId, initialLanguage = 'en', onPlanUpd
                             📅 {viewPlan.title || uiText.yourImprovementPlan || 'Your Improvement Plan'}
                         </div>
                         {attemptId && (
-                            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+                                {/* Difficulty picker */}
+                                <div style={{ display: 'flex', gap: 4, background: 'rgba(255,255,255,0.05)', borderRadius: 8, padding: '3px', border: '1px solid rgba(255,255,255,0.1)' }}>
+                                    {[{v:'easy',label:'Easy',color:'#6ee7b7'},{v:'medium',label:'Medium',color:'#fbbf24'},{v:'hard',label:'Hard',color:'#f87171'}].map(d => (
+                                        <button key={d.v} onClick={() => setLessonDifficulty(d.v)} style={{
+                                            padding: '3px 10px', borderRadius: 6, border: 'none', fontSize: '0.72rem', fontWeight: 700,
+                                            cursor: 'pointer', transition: 'all 0.15s',
+                                            background: lessonDifficulty === d.v ? d.color : 'transparent',
+                                            color: lessonDifficulty === d.v ? '#0f172a' : 'var(--text-muted)'
+                                        }}>{d.label}</button>
+                                    ))}
+                                </div>
                                 <button
                                     onClick={generateWeakTopicLessons}
                                     disabled={generatingLessons}

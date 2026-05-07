@@ -27,6 +27,7 @@ const CEREBRAS_KEYS = [
 
 const GROQ_KEY = process.env.GROQ_API_KEY;
 const NVIDIA_KEY = process.env.NVIDIA_API_KEY || process.env.NVIDIA_NIM_API_KEY;
+const NVIDIA_MODEL = process.env.NVIDIA_MODEL || process.env.NVIDIA_NIM_MODEL || 'meta/llama-3.1-70b-instruct';
 
 const PROVIDER_STATE = {
     cerebras: { backoffUntil: 0, keyIndex: 0 },
@@ -42,6 +43,21 @@ function isRateOrServer(err) {
     return s === 429 || (s >= 500 && s < 600);
 }
 
+const LLM_TAG = '[LLM]';
+function log(msg) { console.log(`${LLM_TAG} ${msg}`); }
+function warn(msg) { console.warn(`${LLM_TAG} ⚠  ${msg}`); }
+
+// Log key availability on startup
+(function logStartupConfig() {
+    const cerebrasCount = CEREBRAS_KEYS.length;
+    const groqReady = !!GROQ_KEY;
+    const nvidiaReady = !!NVIDIA_KEY;
+    log(`Cerebras keys: ${cerebrasCount}  |  Groq: ${groqReady ? '✓' : '✗'}  |  NVIDIA: ${nvidiaReady ? '✓ (' + NVIDIA_MODEL + ')' : '✗'}`);
+    if (!cerebrasCount && !groqReady && !nvidiaReady) {
+        warn('No LLM provider keys found — all requests will use mock fallback.');
+    }
+})();
+
 function buildHeaders(provider, key) {
     return {
         Authorization: `Bearer ${key}`,
@@ -52,10 +68,11 @@ function buildHeaders(provider, key) {
 async function callCerebras({ messages, temperature, maxTokens, jsonMode }) {
     if (!CEREBRAS_KEYS.length) throw new Error('cerebras: no keys');
     const state = PROVIDER_STATE.cerebras;
-    if (inBackoff(state)) throw new Error('cerebras: in backoff');
+    if (inBackoff(state)) throw new Error(`cerebras: in backoff (${Math.ceil((state.backoffUntil - nowMs()) / 1000)}s remaining)`);
     const url = 'https://api.cerebras.ai/v1/chat/completions';
+    const model = process.env.CEREBRAS_MODEL || 'llama3.1-8b';
     const body = {
-        model: process.env.CEREBRAS_MODEL || 'llama3.3-70b',
+        model,
         messages,
         temperature: temperature ?? 0.3,
         max_tokens: maxTokens ?? 1024
@@ -66,6 +83,7 @@ async function callCerebras({ messages, temperature, maxTokens, jsonMode }) {
     for (let i = 0; i < CEREBRAS_KEYS.length; i++) {
         const idx = (state.keyIndex + i) % CEREBRAS_KEYS.length;
         const key = CEREBRAS_KEYS[idx];
+        log(`Trying Cerebras key[${idx}] model=${model} maxTokens=${maxTokens ?? 1024}`);
         try {
             const { data } = await axios.post(url, body, {
                 headers: buildHeaders('cerebras', key),
@@ -73,38 +91,50 @@ async function callCerebras({ messages, temperature, maxTokens, jsonMode }) {
             });
             state.keyIndex = (idx + 1) % CEREBRAS_KEYS.length;
             const text = data?.choices?.[0]?.message?.content || '';
+            log(`✓ Cerebras responded (${data?.usage?.total_tokens ?? '?'} tokens)`);
             return { provider: 'cerebras', text };
         } catch (err) {
             lastErr = err;
+            warn(`Cerebras key[${idx}] failed: ${err?.response?.status ?? err.message}`);
             if (!isRateOrServer(err)) break;
         }
     }
     trip(state);
+    warn(`Cerebras exhausted all keys — backing off ${PROVIDER_BACKOFF_MS / 1000}s`);
     throw lastErr || new Error('cerebras: exhausted');
 }
 
 async function callGroq({ messages, temperature, maxTokens, jsonMode }) {
     if (!GROQ_KEY) throw new Error('groq: no key');
     const state = PROVIDER_STATE.groq;
-    if (inBackoff(state)) throw new Error('groq: in backoff');
+    if (inBackoff(state)) throw new Error(`groq: in backoff (${Math.ceil((state.backoffUntil - nowMs()) / 1000)}s remaining)`);
+    const model = process.env.GROQ_MODEL || 'llama-3.3-70b-versatile';
     const url = 'https://api.groq.com/openai/v1/chat/completions';
     const body = {
-        model: process.env.GROQ_MODEL || 'llama-3.3-70b-versatile',
+        model,
         messages,
         temperature: temperature ?? 0.3,
         max_tokens: maxTokens ?? 1024
     };
     if (jsonMode) body.response_format = { type: 'json_object' };
 
+    log(`Trying Groq model=${model} maxTokens=${maxTokens ?? 1024}`);
     try {
         const { data } = await axios.post(url, body, {
             headers: buildHeaders('groq', GROQ_KEY),
             timeout: 30_000
         });
         const text = data?.choices?.[0]?.message?.content || '';
+        log(`✓ Groq responded (${data?.usage?.total_tokens ?? '?'} tokens)`);
         return { provider: 'groq', text };
     } catch (err) {
-        if (isRateOrServer(err)) trip(state);
+        const status = err?.response?.status;
+        const detail = err?.response?.data?.error?.message || err.message;
+        warn(`Groq failed: ${status} — ${String(detail).slice(0, 120)}`);
+        if (isRateOrServer(err)) {
+            trip(state);
+            warn(`Groq backing off ${PROVIDER_BACKOFF_MS / 1000}s`);
+        }
         throw err;
     }
 }
@@ -112,10 +142,10 @@ async function callGroq({ messages, temperature, maxTokens, jsonMode }) {
 async function callNvidia({ messages, temperature, maxTokens, jsonMode }) {
     if (!NVIDIA_KEY) throw new Error('nvidia: no key');
     const state = PROVIDER_STATE.nvidia;
-    if (inBackoff(state)) throw new Error('nvidia: in backoff');
+    if (inBackoff(state)) throw new Error(`nvidia: in backoff (${Math.ceil((state.backoffUntil - nowMs()) / 1000)}s remaining)`);
     const url = process.env.NVIDIA_BASE_URL || 'https://integrate.api.nvidia.com/v1/chat/completions';
     const body = {
-        model: process.env.NVIDIA_MODEL || 'nvidia/nemotron-3-super-120b-a12b',
+        model: NVIDIA_MODEL,
         messages,
         temperature: temperature ?? 0.3,
         max_tokens: maxTokens ?? 1024,
@@ -123,21 +153,30 @@ async function callNvidia({ messages, temperature, maxTokens, jsonMode }) {
     };
     if (jsonMode) body.response_format = { type: 'json_object' };
 
+    log(`Trying NVIDIA NIM model=${NVIDIA_MODEL} maxTokens=${maxTokens ?? 1024}`);
     try {
         const { data } = await axios.post(url, body, {
             headers: buildHeaders('nvidia', NVIDIA_KEY),
             timeout: 45_000
         });
         const text = data?.choices?.[0]?.message?.content || '';
+        log(`✓ NVIDIA NIM responded (${data?.usage?.total_tokens ?? '?'} tokens)`);
         return { provider: 'nvidia', text };
     } catch (err) {
-        if (isRateOrServer(err)) trip(state);
+        const status = err?.response?.status;
+        const detail = err?.response?.data?.detail || err?.response?.data?.error?.message || err.message;
+        warn(`NVIDIA failed: ${status} — ${String(detail).slice(0, 120)}`);
+        if (isRateOrServer(err)) {
+            trip(state);
+            warn(`NVIDIA backing off ${PROVIDER_BACKOFF_MS / 1000}s`);
+        }
         throw err;
     }
 }
 
 function deterministicMock({ messages, jsonMode }) {
     const last = [...messages].reverse().find(m => m.role === 'user')?.content || '';
+    warn('All providers failed — using deterministic mock fallback.');
     if (jsonMode) {
         return { provider: 'mock', text: JSON.stringify({ ok: true, note: 'mock', echo: String(last).slice(0, 120) }) };
     }
@@ -161,20 +200,29 @@ async function llmChat(opts = {}) {
 
     if (cacheKey) {
         const cached = cacheManager.get(`llm:${cacheKey}`);
-        if (cached) return cached;
+        if (cached) {
+            log(`Cache hit for key=${cacheKey} provider=${cached.provider}`);
+            return cached;
+        }
     }
 
-    const order = [callCerebras, callGroq, callNvidia];
+    const order = [
+        { name: 'Cerebras', fn: callCerebras },
+        { name: 'Groq',     fn: callGroq },
+        { name: 'NVIDIA',   fn: callNvidia }
+    ];
     let lastErr;
-    for (const fn of order) {
+    for (const { name, fn } of order) {
         try {
             const out = await fn({ messages, temperature, maxTokens, jsonMode });
             if (cacheKey) cacheManager.set(`llm:${cacheKey}`, out, CACHE_WINDOW_MS);
             return out;
         } catch (err) {
             lastErr = err;
+            log(`→ Falling through from ${name}: ${err.message.slice(0, 80)}`);
         }
     }
+    warn('All providers exhausted — using mock fallback.');
     const out = deterministicMock({ messages, jsonMode });
     if (cacheKey) cacheManager.set(`llm:${cacheKey}`, out, CACHE_WINDOW_MS);
     return out;

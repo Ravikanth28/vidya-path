@@ -573,7 +573,7 @@ Make it rigorous, exhaustive, and suitable for advanced competitive exam prepara
             const sents   = explanationText.split(/(?<=[।.!?])\s+/);
             let   cur     = '';
             for (const s of sents) {
-                if ((cur + ' ' + s).trim().length > 1400) { if (cur.trim()) chunks.push(cur.trim()); cur = s; }
+                if ((cur + ' ' + s).trim().length > 490) { if (cur.trim()) chunks.push(cur.trim()); cur = s.slice(0, 490); }
                 else cur = cur ? cur + ' ' + s : s;
             }
             if (cur.trim()) chunks.push(cur.trim());

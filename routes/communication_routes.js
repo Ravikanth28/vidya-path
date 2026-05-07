@@ -12,7 +12,7 @@ const multer = require('multer');
 
 const MAX_SYNC_TRANSCRIPTION_CONCURRENCY = Math.max(1, Number(process.env.COMM_TEST_SYNC_STT_CONCURRENCY) || 4);
 const MAX_BACKGROUND_TRANSCRIPTION_CONCURRENCY = Math.max(1, Number(process.env.COMM_TEST_BG_STT_CONCURRENCY) || 2);
-const PENDING_TRANSCRIPTION_SCAN_MS = Math.max(5000, Number(process.env.COMM_TEST_PENDING_SCAN_MS) || 15000);
+const PENDING_TRANSCRIPTION_SCAN_MS = Math.max(30000, Number(process.env.COMM_TEST_PENDING_SCAN_MS) || 60000);
 
 // --- WER Scoring ---------------------------------------------------------------
 
@@ -398,6 +398,10 @@ Respond ONLY with valid JSON, no markdown:
         kickPendingSubmissionProcessor();
     }
 
+    let pendingScanFailCount = 0;
+    let pendingScanLastErrCode = null;
+    const PENDING_SCAN_MAX_BACKOFF_CYCLES = 8; // suppress repeated identical errors after 8 consecutive failures
+
     async function scanAndEnqueuePendingSpeechSubmissions() {
         try {
             const [rows] = await pool.query(
@@ -408,9 +412,21 @@ Respond ONLY with valid JSON, no markdown:
                  ORDER BY submitted_at ASC
                  LIMIT 50`
             );
+            // Reset failure tracking on success
+            if (pendingScanFailCount > 0) {
+                console.log('[comm-test] DB connection restored after', pendingScanFailCount, 'failures.');
+                pendingScanFailCount = 0;
+                pendingScanLastErrCode = null;
+            }
             rows.forEach(row => enqueuePendingSpeechSubmission(row.id));
         } catch (error) {
-            console.error('[comm-test] pending scan error:', error.message);
+            pendingScanFailCount++;
+            const errCode = error.code || error.message;
+            // Log first occurrence and every 10th after that to avoid log spam
+            if (pendingScanFailCount === 1 || pendingScanFailCount % 10 === 0) {
+                console.error(`[comm-test] pending scan error (attempt ${pendingScanFailCount}):`, error.message);
+            }
+            pendingScanLastErrCode = errCode;
         }
     }
 

@@ -85,7 +85,9 @@ module.exports = function lessonsRoutes(pool, authenticate) {
                 concept_id: r.concept_id,
                 body: pickLang(r.body_i18n, lang),
                 bodies: typeof r.body_i18n === 'string' ? JSON.parse(r.body_i18n) : r.body_i18n,
+                script: pickLang(r.script_i18n, lang),
                 audio_url: pickLang(r.audio_url_i18n, lang),
+                difficulty: r.difficulty || 'medium',
                 status: r.status || 'not_started',
                 mastery_pct: Number(r.mastery_pct || 0),
                 last_position: Number(r.last_position || 0)

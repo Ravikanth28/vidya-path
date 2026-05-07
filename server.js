@@ -689,12 +689,8 @@ global.aiCodeReviewService = aiCodeReviewService;
 
 // Middleware - CORS configuration
 const allowedOrigins = [
-    'http://localhost:5173', // Vite Frontend
-    'http://127.0.0.1:5173', // Vite Frontend (loopback IP)
-    'http://localhost:5174', // Fallback Vite port
-    'http://127.0.0.1:5174', // Fallback Vite port (loopback IP)
-    'http://localhost:3000', // Local Backend
-    'http://127.0.0.1:3000', // Local Backend (loopback IP)
+    // Allow any localhost / 127.0.0.1 port (covers Vite on 5173, 5174, 5175, etc.)
+    /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/,
     'https://mentor-hub-frontend-zttb.onrender.com', // Hosted Frontend
     // Additional origins from env (comma-separated)
     ...(process.env.CORS_ORIGINS ? process.env.CORS_ORIGINS.split(',').map(o => o.trim()) : []),

@@ -23,7 +23,7 @@ export const vpApi = {
     diagRegeneratePlan: (attempt_id) => axios.post(`${BASE}/diagnostic/plan/regenerate`, { attempt_id }).then(r => r.data),
     diagLocalizedResult: (attemptId, language) => axios.get(`${BASE}/diagnostic/attempts/${attemptId}/localized`, { params: { language } }).then(r => r.data),
     diagUiText: (language) => axios.get(`${BASE}/diagnostic/ui-text`, { params: { language } }).then(r => r.data),
-    diagGenerateLessons: (attemptId, language) => axios.post(`${BASE}/diagnostic/attempts/${attemptId}/generate-lessons`, { language }).then(r => r.data),
+    diagGenerateLessons: (attemptId, language, difficulty = 'medium') => axios.post(`${BASE}/diagnostic/attempts/${attemptId}/generate-lessons`, { language, difficulty }).then(r => r.data),
     adminDiagnosticTests: () => axios.get(`${BASE}/diagnostic/admin/tests`).then(r => r.data),
     adminDiagnosticPlans: (params = {}) => axios.get(`${BASE}/diagnostic/admin/plans`, { params }).then(r => r.data),
     adminDiagnosticManualTest: (body) => axios.post(`${BASE}/diagnostic/admin/tests/manual`, body).then(r => r.data),
