@@ -18,25 +18,39 @@ export default function LessonsList() {
     const [q, setQ] = useState('')
     const [loading, setLoading] = useState(true)
     const [offlineMode, setOfflineMode] = useState(false)
+    const [fetchError, setFetchError] = useState(null)
 
     useEffect(() => {
         let mounted = true
         const load = async () => {
             setLoading(true)
+            setFetchError(null)
             try {
                 const r = await vpApi.lessons({ lang: locale })
                 if (mounted) {
                     setItems(r.items || [])
                     setOfflineMode(false)
                 }
-            } catch {
-                const cached = await listCachedLessons()
-                if (mounted) {
-                    setItems(cached.map(c => ({
-                        id: c.id, subject: c.subject, title: c.title,
-                        status: 'not_started', mastery_pct: 0, preview: (c.body || '').slice(0, 160)
-                    })))
-                    setOfflineMode(true)
+            } catch (err) {
+                const status = err.response?.status
+                const serverMsg = err.response?.data?.error || err.response?.data?.message || err.message
+                // Only fall back to offline cache when truly offline (no network)
+                if (!navigator.onLine || status === undefined) {
+                    const cached = await listCachedLessons()
+                    if (mounted) {
+                        setItems(cached.map(c => ({
+                            id: c.id, subject: c.subject, title: c.title,
+                            status: 'not_started', mastery_pct: 0, preview: (c.body || '').slice(0, 160)
+                        })))
+                        setOfflineMode(true)
+                    }
+                } else {
+                    // Server returned an error (401, 500, etc.) — show it
+                    if (mounted) {
+                        setFetchError({ status, message: serverMsg, raw: JSON.stringify(err.response?.data || {}, null, 2) })
+                        setItems([])
+                        setOfflineMode(false)
+                    }
                 }
             } finally {
                 if (mounted) setLoading(false)
@@ -65,6 +79,29 @@ export default function LessonsList() {
     return (
         <div>
             <h1 className="vp-h1">{t('vp_lessons') || 'Lessons'}{offlineMode && ' (offline cache)'}</h1>
+
+            {fetchError && (
+                <div style={{ margin: '12px 0', borderRadius: 10, background: 'rgba(248,113,113,0.08)', border: '1px solid rgba(248,113,113,0.4)', color: '#f87171', fontSize: '0.85rem', overflow: 'hidden' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', background: 'rgba(248,113,113,0.15)', borderBottom: '1px solid rgba(248,113,113,0.25)' }}>
+                        <span style={{ fontWeight: 700 }}>⚠ Failed to load lessons</span>
+                        {fetchError.status && <span style={{ marginLeft: 'auto', background: 'rgba(248,113,113,0.25)', padding: '2px 8px', borderRadius: 4, fontSize: '0.78rem', fontFamily: 'monospace' }}>HTTP {fetchError.status}</span>}
+                        <button onClick={() => setFetchError(null)} style={{ background: 'none', border: 'none', color: '#f87171', cursor: 'pointer', fontSize: '1.1rem', lineHeight: 1, marginLeft: fetchError.status ? 4 : 'auto' }}>✕</button>
+                    </div>
+                    <div style={{ padding: '12px 14px', display: 'flex', flexDirection: 'column', gap: 8 }}>
+                        <div><strong>{fetchError.message}</strong></div>
+                        {fetchError.raw && fetchError.raw !== '{}' && (
+                            <div>
+                                <span style={{ opacity: 0.6, fontSize: '0.78rem' }}>Server Response</span>
+                                <pre style={{ margin: '4px 0 0', padding: '8px 10px', background: 'rgba(0,0,0,0.35)', borderRadius: 6, fontFamily: 'monospace', fontSize: '0.78rem', whiteSpace: 'pre-wrap', wordBreak: 'break-all', maxHeight: 200, overflowY: 'auto', color: '#fca5a5' }}>{fetchError.raw}</pre>
+                            </div>
+                        )}
+                        {fetchError.status === 401 && (
+                            <div style={{ opacity: 0.8, fontSize: '0.8rem' }}>Your session may have expired. <a href="/login" style={{ color: '#60a5fa' }}>Log in again →</a></div>
+                        )}
+                    </div>
+                </div>
+            )}
+
             <input className="vp-search vp-mt-12" placeholder={t('search') || 'Search lessons…'} value={q} onChange={e => setQ(e.target.value)} />
             <div className="vp-tabs vp-mt-12">
                 {TABS.map(s => (

@@ -50,6 +50,27 @@ export default function Diagnostic({ onDone }) {
     const [selectedTeacherTestId, setSelectedTeacherTestId] = useState('')
     const [syllabusFile, setSyllabusFile] = useState(null)
     const [syllabusUnits, setSyllabusUnits] = useState([])
+    const [error, setError] = useState(null)
+
+    const captureError = (err, label = '') => {
+        const status = err.response?.status
+        const serverData = err.response?.data
+        const info = {
+            label,
+            message: err.message,
+            status,
+            statusText: err.response?.statusText,
+            url: err.config?.url,
+            method: err.config?.method?.toUpperCase(),
+            serverError: serverData?.error || serverData?.message || null,
+            serverDetail: serverData?.detail || serverData?.stack || null,
+            serverRaw: serverData ? JSON.stringify(serverData, null, 2) : null,
+            clientStack: err.stack,
+            timestamp: new Date().toISOString()
+        }
+        setError(info)
+        console.error('[Diagnostic error]', info)
+    }
 
     useEffect(() => {
         setMeta(m => ({ ...m, language: locale }))
@@ -75,7 +96,8 @@ export default function Diagnostic({ onDone }) {
     }
 
     const uploadSyllabus = async () => {
-        if (!syllabusFile) return alert('Please upload syllabus file first.')
+        if (!syllabusFile) return setError({ label: 'Validation', message: 'Please upload a syllabus file first.', timestamp: new Date().toISOString() })
+        setError(null)
         setUploadingSyllabus(true)
         try {
             const fd = new FormData()
@@ -87,20 +109,21 @@ export default function Diagnostic({ onDone }) {
                 setMeta(m => ({ ...m, unit_name: res.units[0] || '' }))
             }
         } catch (err) {
-            alert(err.response?.data?.error || err.message)
+            captureError(err, 'Syllabus Upload')
         } finally {
             setUploadingSyllabus(false)
         }
     }
 
     const startStudentChoice = async () => {
+        setError(null)
         try {
             if (!String(meta.topic || '').trim()) {
                 if (meta.syllabus_scope === 'unit_wise' && !String(meta.unit_name || '').trim()) {
-                    return alert('Please choose a unit for unit-wise diagnostic, or enter a topic.')
+                    return setError({ label: 'Validation', message: 'Please choose a unit for unit-wise diagnostic, or enter a topic.', timestamp: new Date().toISOString() })
                 }
                 if (!String(meta.syllabus_text || '').trim() && meta.education_level === 'college') {
-                    return alert('For college flow, upload syllabus or enter a topic.')
+                    return setError({ label: 'Validation', message: 'For college flow, upload syllabus or enter a topic.', timestamp: new Date().toISOString() })
                 }
             }
             const r = await vpApi.diagStudentStart(meta)
@@ -111,12 +134,13 @@ export default function Diagnostic({ onDone }) {
             setIdx(0)
             setDone(false)
         } catch (err) {
-            alert(err.response?.data?.error || err.message)
+            captureError(err, 'Generate Test')
         }
     }
 
     const startTeacherTest = async () => {
-        if (!selectedTeacherTestId) return alert('Select a teacher test first')
+        setError(null)
+        if (!selectedTeacherTestId) return setError({ label: 'Validation', message: 'Select a teacher test first.', timestamp: new Date().toISOString() })
         try {
             const r = await vpApi.diagTeacherStart(selectedTeacherTestId)
             setMode('teacher_upload')
@@ -126,7 +150,7 @@ export default function Diagnostic({ onDone }) {
             setIdx(0)
             setDone(false)
         } catch (err) {
-            alert(err.response?.data?.error || err.message)
+            captureError(err, 'Start Teacher Test')
         }
     }
 
@@ -145,7 +169,7 @@ export default function Diagnostic({ onDone }) {
             setDone(true)
             onDone?.()
         } catch (err) {
-            alert(err.response?.data?.error || err.message)
+            captureError(err, 'Submit Test')
         } finally {
             setSubmitting(false)
         }
@@ -164,6 +188,53 @@ export default function Diagnostic({ onDone }) {
             <div className="vp-diag-shell">
                 <h1 className="vp-diag-section-title">{t('vp_diagnostic') || 'Diagnostic'}</h1>
                 <p className="vp-text-sm">Take a new diagnostic or review your previous results.</p>
+
+                {error && (
+                    <div style={{ margin: '12px 0', borderRadius: 10, background: 'rgba(248,113,113,0.08)', border: '1px solid rgba(248,113,113,0.4)', color: '#f87171', fontSize: '0.85rem', overflow: 'hidden' }}>
+                        {/* Header */}
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', background: 'rgba(248,113,113,0.15)', borderBottom: '1px solid rgba(248,113,113,0.25)' }}>
+                            <span style={{ fontWeight: 700, fontSize: '0.9rem' }}>⚠ Error{error.label ? ` — ${error.label}` : ''}</span>
+                            {error.status && <span style={{ marginLeft: 'auto', background: 'rgba(248,113,113,0.25)', padding: '2px 8px', borderRadius: 4, fontSize: '0.78rem', fontFamily: 'monospace' }}>HTTP {error.status} {error.statusText || ''}</span>}
+                            <button onClick={() => setError(null)} style={{ background: 'none', border: 'none', color: '#f87171', cursor: 'pointer', fontSize: '1.1rem', lineHeight: 1, marginLeft: error.status ? 4 : 'auto' }}>✕</button>
+                        </div>
+                        {/* Body */}
+                        <div style={{ padding: '12px 14px', display: 'flex', flexDirection: 'column', gap: 8 }}>
+                            {/* Main message */}
+                            <div><span style={{ opacity: 0.6, fontSize: '0.78rem' }}>Message</span><br /><strong>{error.message}</strong></div>
+                            {/* Server error */}
+                            {error.serverError && error.serverError !== error.message && (
+                                <div><span style={{ opacity: 0.6, fontSize: '0.78rem' }}>Server Error</span><br />{error.serverError}</div>
+                            )}
+                            {/* Request info */}
+                            {(error.url || error.method) && (
+                                <div><span style={{ opacity: 0.6, fontSize: '0.78rem' }}>Request</span><br /><code style={{ fontFamily: 'monospace', fontSize: '0.82rem' }}>{error.method} {error.url}</code></div>
+                            )}
+                            {/* Full server response */}
+                            {error.serverRaw && (
+                                <div>
+                                    <span style={{ opacity: 0.6, fontSize: '0.78rem' }}>Full Server Response</span>
+                                    <pre style={{ margin: '4px 0 0', padding: '8px 10px', background: 'rgba(0,0,0,0.35)', borderRadius: 6, fontFamily: 'monospace', fontSize: '0.78rem', whiteSpace: 'pre-wrap', wordBreak: 'break-all', maxHeight: 200, overflowY: 'auto', color: '#fca5a5' }}>{error.serverRaw}</pre>
+                                </div>
+                            )}
+                            {/* Server detail / stack */}
+                            {error.serverDetail && (
+                                <div>
+                                    <span style={{ opacity: 0.6, fontSize: '0.78rem' }}>Server Detail / Stack</span>
+                                    <pre style={{ margin: '4px 0 0', padding: '8px 10px', background: 'rgba(0,0,0,0.35)', borderRadius: 6, fontFamily: 'monospace', fontSize: '0.75rem', whiteSpace: 'pre-wrap', wordBreak: 'break-all', maxHeight: 200, overflowY: 'auto', color: '#fca5a5' }}>{error.serverDetail}</pre>
+                                </div>
+                            )}
+                            {/* Client stack */}
+                            {error.clientStack && (
+                                <div>
+                                    <span style={{ opacity: 0.6, fontSize: '0.78rem' }}>Client Stack Trace</span>
+                                    <pre style={{ margin: '4px 0 0', padding: '8px 10px', background: 'rgba(0,0,0,0.35)', borderRadius: 6, fontFamily: 'monospace', fontSize: '0.75rem', whiteSpace: 'pre-wrap', wordBreak: 'break-all', maxHeight: 200, overflowY: 'auto', color: '#fca5a5' }}>{error.clientStack}</pre>
+                                </div>
+                            )}
+                            {/* Timestamp */}
+                            {error.timestamp && <div style={{ opacity: 0.5, fontSize: '0.75rem', marginTop: 4 }}>at {error.timestamp}</div>}
+                        </div>
+                    </div>
+                )}
 
                 <div className="vp-segment vp-mt-12">
                     <button className={'vp-btn ' + (viewTab === 'take' ? 'vp-btn-primary' : '')} onClick={() => setViewTab('take')}><ClipboardList size={16} /> Take Test</button>

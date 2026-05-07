@@ -4,8 +4,8 @@ import axios from 'axios'
 import Login from './pages/Login'
 import ErrorBoundary from './components/shared/ErrorBoundary'
 
-// ── Global axios interceptor ──────────────────────────────────────────────────
-// Automatically attach the JWT token to every outgoing axios request.
+// ── Global axios interceptors ────────────────────────────────────────────────
+// Attach JWT token to every outgoing request.
 axios.interceptors.request.use((config) => {
     const token = localStorage.getItem('authToken')
     if (token) {
@@ -14,6 +14,21 @@ axios.interceptors.request.use((config) => {
     }
     return config
 })
+
+// On 401: if the user has a stored token that the server rejected (expired /
+// wrong secret), clear local auth state and redirect to login immediately
+// instead of showing a raw alert dialog.
+axios.interceptors.response.use(
+    (response) => response,
+    (error) => {
+        if (error.response?.status === 401 && localStorage.getItem('authToken')) {
+            localStorage.removeItem('currentUser')
+            localStorage.removeItem('authToken')
+            window.location.href = '/login'
+        }
+        return Promise.reject(error)
+    }
+)
 // ─────────────────────────────────────────────────────────────────────────────
 
 // Lazy load heavy portal pages for code splitting
