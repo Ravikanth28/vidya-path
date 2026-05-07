@@ -14606,6 +14606,13 @@ async function ensureFrontendEvalTables() {
         console.error('⚠️  VidyaPath mount failed:', err.message);
     }
 
+    // Serve React SPA (client/dist) — must come after all /api routes
+    const clientDist = path.join(__dirname, 'client', 'dist');
+    app.use(express.static(clientDist));
+    app.get('*', (req, res) => {
+        res.sendFile(path.join(clientDist, 'index.html'));
+    });
+
     httpServer.on('error', (err) => {
         if (err.code === 'EADDRINUSE') {
             console.error(`\n❌  Port ${PORT} is already in use.`);

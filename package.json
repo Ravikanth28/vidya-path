@@ -6,6 +6,7 @@
   "scripts": {
     "start": "node server.js",
     "start:prod": "node --max-old-space-size=450 server.js",
+    "build": "cd client && npm install && npm run build",
     "install:prod": "npm install --omit=dev --omit=optional",
     "dev": "node server.js --env development",
     "test": "jest --detectOpenHandles --maxWorkers=1",
