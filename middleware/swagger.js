@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Swagger/OpenAPI Configuration
  * Auto-generates API documentation at /api-docs
  */
@@ -19,10 +19,10 @@ function setupSwagger(app) {
         definition: {
             openapi: '3.0.0',
             info: {
-                title: 'Mentor Hub API',
+                title: 'VidyaPath AI API',
                 version: '2.0.0',
                 description: `
-# Mentor Hub API Documentation
+# VidyaPath AI API Documentation
 
 A comprehensive mentor-student education platform API with:
 - **Authentication**: JWT-based auth with role-based access control
@@ -35,7 +35,7 @@ A comprehensive mentor-student education platform API with:
 - **Admin**: Bulk operations, backups, exports, and audit logs
                 `,
                 contact: {
-                    name: 'Mentor Hub Team'
+                    name: 'VidyaPath AI Team'
                 }
             },
             servers: [
@@ -255,7 +255,7 @@ A comprehensive mentor-student education platform API with:
 
     const swaggerSpec = swaggerJsDoc(swaggerOptions);
     app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec, {
-        customSiteTitle: 'Mentor Hub API Docs',
+        customSiteTitle: 'VidyaPath AI API Docs',
         customCss: '.swagger-ui .topbar { background-color: #1a1a2e; }',
         swaggerOptions: {
             persistAuthorization: true

@@ -1,4 +1,4 @@
-// Service Worker for VidyaPath AI PWA
+﻿// Service Worker for VidyaPath AI PWA
 // Features: App shell caching, offline fallback, network-first for API
 
 const CACHE_NAME = 'vidyapath-v2'
@@ -228,7 +228,7 @@ function getAllFromStore(store) {
 
 // Push notifications (for future use)
 self.addEventListener('push', (event) => {
-    const data = event.data?.json() || { title: 'Mentor Hub', body: 'New notification' }
+    const data = event.data?.json() || { title: 'VidyaPath AI', body: 'New notification' }
     event.waitUntil(
         self.registration.showNotification(data.title, {
             body: data.body,

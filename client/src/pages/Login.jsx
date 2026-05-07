@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+﻿import { useState, useEffect, useRef } from 'react'
 import { useAuth } from '../App'
 import { useI18n, LANGUAGES } from '../services/i18n.jsx'
 import {
@@ -274,7 +274,7 @@ function Login() {
             <nav className="login-nav">
                 <div className="nav-logo">
                     <Brain className="logo-icon-svg" size={28} />
-                    <span className="logo-text">Mentor Hub</span>
+                    <span className="logo-text">VidyaPath AI</span>
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
                     {/* Language Switcher */}

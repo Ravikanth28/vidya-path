@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback, useContext } from 'react'
+﻿import { useState, useEffect, useRef, useCallback, useContext } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
     UserPlus, Users, MessageSquare, ThumbsUp, Briefcase, MapPin, GraduationCap,
@@ -730,7 +730,7 @@ export default function ConnectAlumni(){
         {/* ═══ TOP NAV ═══ */}
         <div className="a-card" style={{borderRadius:0,position:'sticky',top:0,zIndex:1000}}>
                 <div style={{maxWidth:1280,margin:'0 auto',display:'flex',alignItems:'center',padding:'0 16px',gap:6}}>
-                <button onClick={goBack} title="Back to Mentor Hub"
+                <button onClick={goBack} title="Back to VidyaPath AI"
                     style={{width:34,height:34,borderRadius:17,border:'none',background:'none',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',color:'var(--c-txt2)',transition:'all 0.15s',flexShrink:0}}
                     onMouseEnter={e=>{e.currentTarget.style.background='var(--c-card-h)';e.currentTarget.style.color='var(--c-txt)'}}
                     onMouseLeave={e=>{e.currentTarget.style.background='none';e.currentTarget.style.color='var(--c-txt2)'}}>
@@ -796,7 +796,7 @@ export default function ConnectAlumni(){
                         <div style={{marginTop:-24,padding:'0 14px 14px'}}>
                             <Av name={user?.name||'You'} size={48} ring style={{margin:'0 auto'}}/>
                             <div style={{fontWeight:700,fontSize:14,color:'var(--c-txt)',marginTop:6}}>{user?.name||'Student'}</div>
-                            <div style={{fontSize:12,color:'var(--c-txt2)',marginTop:2}}>{({alumni:'Alumni',mentor:'Mentor',admin:'Admin',student:'Student'})[user?.role]||'Member'} at Mentor Hub</div>
+                            <div style={{fontSize:12,color:'var(--c-txt2)',marginTop:2}}>{({alumni:'Alumni',mentor:'Mentor',admin:'Admin',student:'Student'})[user?.role]||'Member'} at VidyaPath AI</div>
                             <div style={{borderTop:'1px solid var(--c-bdr)',marginTop:10,paddingTop:10}}>
                                 {[['Connections',network.length],['Alumni',alumni.length],['Messages',conversations.length]].map(([l,v])=>(
                                     <div key={l} style={{display:'flex',justifyContent:'space-between',fontSize:12,color:'var(--c-txt2)',marginBottom:4}}>

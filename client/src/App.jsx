@@ -1,4 +1,4 @@
-import { useState, useEffect, createContext, useContext, lazy, Suspense } from 'react'
+﻿import { useState, useEffect, createContext, useContext, lazy, Suspense } from 'react'
 import { Routes, Route, Navigate, useNavigate } from 'react-router-dom'
 import axios from 'axios'
 import Login from './pages/Login'
@@ -235,7 +235,7 @@ function App() {
     return (
         <AuthContext.Provider value={{ user, login, logout }}>
             <ThemeContext.Provider value={{ theme, toggleTheme, ideTheme, updateIDETheme }}>
-                <ErrorBoundary fullPage title="Mentor Hub encountered an error" message="Something went wrong. Please try refreshing the page or contact support if the issue persists.">
+                <ErrorBoundary fullPage title="VidyaPath AI encountered an error" message="Something went wrong. Please try refreshing the page or contact support if the issue persists.">
                     <Suspense fallback={<PortalLoading />}>
                         <Routes>
                             <Route path="/login" element={

@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+﻿import React, { useState } from 'react'
 import {
     Search, Brain, Sparkles, FileText, Github, AlertTriangle, Users, Clock,
     Award, Download, MessageSquare, Trophy, Target, Settings, Code, Play,
@@ -171,7 +171,7 @@ export default function FeaturesShowcase() {
     return (
         <div style={styles.container}>
             <div style={styles.header}>
-                <h1 style={styles.title}>🚀 Mentor Hub - 16+ Features</h1>
+                <h1 style={styles.title}>🚀 VidyaPath AI - 16+ Features</h1>
                 <p style={styles.subtitle}>Discover all available features on your personalized dashboard</p>
             </div>
 

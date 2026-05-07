@@ -1,4 +1,4 @@
-// Feature 79: Multiple Languages - i18n support
+﻿// Feature 79: Multiple Languages - i18n support
 // Lightweight internationalization with React context
 
 import { createContext, useContext, useState, useCallback } from 'react'
@@ -7,7 +7,7 @@ import { createContext, useContext, useState, useCallback } from 'react'
 const translations = {
     en: {
         // Common
-        app_name: 'AI Mentor Hub',
+        app_name: 'VidyaPath AI',
         loading: 'Loading...',
         save: 'Save',
         cancel: 'Cancel',
@@ -871,7 +871,7 @@ const translations = {
     // Added Indian locales. Keys will gracefully fall back to English until
     // dedicated translations are filled for each language.
     bn: {
-        app_name: 'AI Mentor Hub',
+        app_name: 'VidyaPath AI',
         dashboard: 'ড্যাশবোর্ড',
         my_profile: 'আমার প্রোফাইল',
         language: 'ভাষা',
@@ -888,7 +888,7 @@ const translations = {
         vp_edit_profile: 'প্রোফাইল সম্পাদনা করুন'
     },
     gu: {
-        app_name: 'AI Mentor Hub',
+        app_name: 'VidyaPath AI',
         dashboard: 'ડેશબોર્ડ',
         my_profile: 'મારો પ્રોફાઇલ',
         language: 'ભાષા',
@@ -905,7 +905,7 @@ const translations = {
         vp_edit_profile: 'પ્રોફાઇલ સંપાદિત કરો'
     },
     kn: {
-        app_name: 'AI Mentor Hub',
+        app_name: 'VidyaPath AI',
         dashboard: 'ಡ್ಯಾಶ್ಬೋರ್ಡ್',
         my_profile: 'ನನ್ನ ಪ್ರೊಫೈಲ್',
         language: 'ಭಾಷೆ',
@@ -922,7 +922,7 @@ const translations = {
         vp_edit_profile: 'ಪ್ರೊಫೈಲ್ ಸಂಪಾದಿಸಿ'
     },
     ml: {
-        app_name: 'AI Mentor Hub',
+        app_name: 'VidyaPath AI',
         dashboard: 'ഡാഷ്ബോർഡ്',
         my_profile: 'എന്റെ പ്രൊഫൈൽ',
         language: 'ഭാഷ',
@@ -939,7 +939,7 @@ const translations = {
         vp_edit_profile: 'പ്രൊഫൈൽ തിരുത്തുക'
     },
     mr: {
-        app_name: 'AI Mentor Hub',
+        app_name: 'VidyaPath AI',
         dashboard: 'डॅशबोर्ड',
         my_profile: 'माझे प्रोफाइल',
         language: 'भाषा',
@@ -956,7 +956,7 @@ const translations = {
         vp_edit_profile: 'प्रोफाइल संपादित करा'
     },
     or: {
-        app_name: 'AI Mentor Hub',
+        app_name: 'VidyaPath AI',
         dashboard: 'ଡ୍ୟାଶବୋର୍ଡ',
         my_profile: 'ମୋ ପ୍ରୋଫାଇଲ୍',
         language: 'ଭାଷା',
@@ -973,7 +973,7 @@ const translations = {
         vp_edit_profile: 'ପ୍ରୋଫାଇଲ୍ ସମ୍ପାଦନା କରନ୍ତୁ'
     },
     pa: {
-        app_name: 'AI Mentor Hub',
+        app_name: 'VidyaPath AI',
         dashboard: 'ਡੈਸ਼ਬੋਰਡ',
         my_profile: 'ਮੇਰਾ ਪ੍ਰੋਫ਼ਾਈਲ',
         language: 'ਭਾਸ਼ਾ',
@@ -990,7 +990,7 @@ const translations = {
         vp_edit_profile: 'ਪ੍ਰੋਫ਼ਾਈਲ ਸੋਧੋ'
     },
     te: {
-        app_name: 'AI Mentor Hub',
+        app_name: 'VidyaPath AI',
         dashboard: 'డ్యాష్‌బోర్డ్',
         my_profile: 'నా ప్రొఫైల్',
         language: 'భాష',
@@ -1007,7 +1007,7 @@ const translations = {
         vp_edit_profile: 'ప్రొఫైల్ సవరించండి'
     },
     ur: {
-        app_name: 'AI Mentor Hub',
+        app_name: 'VidyaPath AI',
         dashboard: 'ڈیش بورڈ',
         my_profile: 'میرا پروفائل',
         language: 'زبان',

@@ -1,6 +1,6 @@
-/**
+﻿/**
  * AIAnimations.jsx — Reusable AI & Data Science themed animation components v2
- * Department of Artificial Intelligence & Data Science | Mentor Hub
+ * Department of Artificial Intelligence & Data Science | VidyaPath AI
  */
 import { useState, useEffect, useRef, useMemo } from 'react'
 import { Sparkles, Activity, Brain, Database, BarChart3, Network, Cpu, Zap, TrendingUp, Trophy, CheckCircle } from 'lucide-react'

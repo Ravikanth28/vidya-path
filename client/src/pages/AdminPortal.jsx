@@ -1989,7 +1989,7 @@ function AllSubmissions() {
                         }).join('\n')
                     }
 
-                    return `🎓 *AI Mentor Hub – Test Report*\n\n👤 *Student:* ${name}\n📋 *Test:* ${title}${date ? `\n📅 *Date:* ${date}` : ''}\n\n📊 *Overall Score:* ${score}%\n🏆 *Status:* ${status}\n🎯 *Rank:* ${rank}${totalQ ? `\n\n📝 *Question Breakdown:*\n✅ Correct: ${correctQ}${wrongQ !== '' ? `\n❌ Wrong: ${wrongQ}` : ''}${missed !== '' ? `\n⏭️ Missed: ${missed}` : ''}\n📋 Total: ${totalQ}` : ''}${secLines}\n\n🔗 Login to AI Mentor Hub to view your full detailed report.`
+                    return `🎓 *VidyaPath AI – Test Report*\n\n👤 *Student:* ${name}\n📋 *Test:* ${title}${date ? `\n📅 *Date:* ${date}` : ''}\n\n📊 *Overall Score:* ${score}%\n🏆 *Status:* ${status}\n🎯 *Rank:* ${rank}${totalQ ? `\n\n📝 *Question Breakdown:*\n✅ Correct: ${correctQ}${wrongQ !== '' ? `\n❌ Wrong: ${wrongQ}` : ''}${missed !== '' ? `\n⏭️ Missed: ${missed}` : ''}\n📋 Total: ${totalQ}` : ''}${secLines}\n\n🔗 Login to VidyaPath AI to view your full detailed report.`
                 }
 
                 // Find submission by email and title
@@ -2008,7 +2008,7 @@ function AllSubmissions() {
                     const sub = findSub(waIndivEmail, waTestTitle)
                     const phone = waIndivPhone.replace(/\D/g, '')
                     if (!phone) { alert('Please enter a valid phone number.'); return }
-                    const msg = sub ? buildMessage(sub) : `🎓 *AI Mentor Hub – Test Report*\n\n👤 *Student:* ${waIndivName || waIndivEmail}\n📋 *Test:* ${waTestTitle}\n\n⚠️ Detailed report data not available. Please log into the portal to view your results.`
+                    const msg = sub ? buildMessage(sub) : `🎓 *VidyaPath AI – Test Report*\n\n👤 *Student:* ${waIndivName || waIndivEmail}\n📋 *Test:* ${waTestTitle}\n\n⚠️ Detailed report data not available. Please log into the portal to view your results.`
                     setWASending(true)
                     setWAResults([{ name: waIndivName || waIndivEmail, phone, status: 'Sending…' }])
                     try {
@@ -2056,7 +2056,7 @@ function AllSubmissions() {
                         const phone = String(rawPhone).replace(/\D/g, '')
                         const sub = findSub(email, waTestTitle)
                         const msgObj = sub ? { ...sub, studentName: name || sub.studentName } : null
-                        const msg = msgObj ? buildMessage(msgObj) : `🎓 *AI Mentor Hub – Test Report*\n\n👤 *Student:* ${name || email}\n📋 *Test:* ${waTestTitle}\n\n⚠️ Report data not available. Please log into the portal.`
+                        const msg = msgObj ? buildMessage(msgObj) : `🎓 *VidyaPath AI – Test Report*\n\n👤 *Student:* ${name || email}\n📋 *Test:* ${waTestTitle}\n\n⚠️ Report data not available. Please log into the portal.`
                         const attemptId = sub ? (sub.attemptId || sub.id) : null
                         results.push({ name: name || email || `#${i + 1}`, email, phone, msg, attemptId, status: 'Ready' })
                     })

@@ -1,4 +1,4 @@
-const express = require('express');
+﻿const express = require('express');
 require('dotenv').config();
 const cors = require('cors');
 const bodyParser = require('body-parser');
@@ -9736,7 +9736,7 @@ function generateCRTReportPDF(reportData) {
 
         // ── HEADER ──────────────────────────────────────────────────────────
         doc.rect(0, 0, W, 70).fill(DARK);
-        doc.fillColor('white').font('Helvetica-Bold').fontSize(16).text('AI MENTOR HUB', M, 14);
+        doc.fillColor('white').font('Helvetica-Bold').fontSize(16).text('VIDYAPATH AI', M, 14);
         doc.fillColor('#a78bfa').font('Helvetica').fontSize(8).text('COMPANY ROUND TEST  ·  PERFORMANCE REPORT', M, 34);
         doc.fillColor('#c4b5fd').font('Helvetica').fontSize(9)
             .text(`Student: ${attempt.student_name || '—'}   |   ID: ${attempt.student_id || '—'}`, M, 50);
@@ -9994,7 +9994,7 @@ function generateCRTReportPDF(reportData) {
         const footerY = 820;
         doc.rect(0, footerY, W, 22).fill(DARK);
         doc.fillColor('#a78bfa').font('Helvetica').fontSize(8)
-            .text('🔗  Login to AI Mentor Hub to view full interactive report with time analysis and answer details.', M, footerY + 7, { align: 'center', width: CW });
+            .text('🔗  Login to VidyaPath AI to view full interactive report with time analysis and answer details.', M, footerY + 7, { align: 'center', width: CW });
 
         doc.end();
     });
@@ -10070,7 +10070,7 @@ app.post('/api/admin/send-whatsapp-pdf', async (req, res) => {
         params.append('to', '+' + cleanPhone);
         params.append('document', docData);
         params.append('filename', `Report_${(attempt.student_name || 'Student').replace(/\s+/g, '_')}.pdf`);
-        params.append('caption', `🎓 AI Mentor Hub — ${attempt.title || 'Round Test'} Report for ${attempt.student_name || ''}`);
+        params.append('caption', `🎓 VidyaPath AI — ${attempt.title || 'Round Test'} Report for ${attempt.student_name || ''}`);
 
         const { data } = await axios.post(
             `https://api.ultramsg.com/${instanceId}/messages/document`,
@@ -12264,7 +12264,7 @@ app.post('/api/reports/export', authenticate, async (req, res) => {
         // ── CSV ─────────────────────────────────────────────────────────────
         if (format === 'csv') {
             const rows = [
-                ['AI Mentor Hub – ' + reportTitle],
+                ['VidyaPath AI – ' + reportTitle],
                 ['Student', userInfo?.name || '', 'Email', userInfo?.email || ''],
                 ['Date Range', dateRangeLabel, 'Generated', generatedAt],
                 [],
@@ -12312,7 +12312,7 @@ app.post('/api/reports/export', authenticate, async (req, res) => {
 <head><meta charset="UTF-8"><!--[if gte mso 9]><xml><x:ExcelWorkbook><x:ExcelWorksheets><x:ExcelWorksheet><x:Name>Report</x:Name><x:WorksheetOptions><x:DisplayGridlines/></x:WorksheetOptions></x:ExcelWorksheet></x:ExcelWorksheets></x:ExcelWorkbook></xml><![endif]--></head>
 <body>
 <table border="1">
-  <tr><th colspan="8" style="font-size:14pt;font-weight:bold;">AI Mentor Hub – ${reportTitle}</th></tr>
+  <tr><th colspan="8" style="font-size:14pt;font-weight:bold;">VidyaPath AI – ${reportTitle}</th></tr>
   <tr><td><b>Student</b></td><td>${userInfo?.name || ''}</td><td><b>Email</b></td><td>${userInfo?.email || ''}</td><td><b>Date Range</b></td><td>${dateRangeLabel}</td><td><b>Generated</b></td><td>${generatedAt}</td></tr>
   <tr><td colspan="8"></td></tr>
   <tr><th colspan="8" style="font-size:12pt;font-weight:bold;">Summary</th></tr>
@@ -12374,7 +12374,7 @@ app.post('/api/reports/export', authenticate, async (req, res) => {
 </head><body>
 <div class="header">
   <div>
-    <div class="brand">AI Mentor Hub</div>
+    <div class="brand">VidyaPath AI</div>
     <div class="report-title">${reportTitle}</div>
   </div>
   <div class="meta">
@@ -12395,7 +12395,7 @@ app.post('/api/reports/export', authenticate, async (req, res) => {
   <thead><tr><th>#</th><th>Problem</th><th>Difficulty</th><th>Type</th><th>Language</th><th>Score</th><th>Status</th><th>Date</th></tr></thead>
   <tbody>${rows || '<tr><td colspan="8" class="no-data">No submissions found for this period.</td></tr>'}</tbody>
 </table>
-<div class="footer"><span>AI Mentor Hub – Student Report</span><span>Generated on ${generatedAt}</span></div>
+<div class="footer"><span>VidyaPath AI – Student Report</span><span>Generated on ${generatedAt}</span></div>
 <script>window.onload = function(){ window.print(); }</script>
 </body></html>`;
             res.setHeader('Content-Type', 'text/html; charset=utf-8');
