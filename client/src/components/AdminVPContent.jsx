@@ -20,6 +20,19 @@ const TABS = [
 const SUBJECTS = ['Mathematics', 'Science', 'English', 'Aptitude', 'Programming', 'General']
 const KINDS    = ['mcq', 'short', 'tf']
 
+const GRADE_OPTIONS = [
+    { value: 1,  label: 'Grade 1'  }, { value: 2,  label: 'Grade 2'  },
+    { value: 3,  label: 'Grade 3'  }, { value: 4,  label: 'Grade 4'  },
+    { value: 5,  label: 'Grade 5'  }, { value: 6,  label: 'Grade 6'  },
+    { value: 7,  label: 'Grade 7'  }, { value: 8,  label: 'Grade 8'  },
+    { value: 9,  label: 'Grade 9'  }, { value: 10, label: 'Grade 10' },
+    { value: 11, label: 'Grade 11' }, { value: 12, label: 'Grade 12' },
+    { value: 13, label: 'College – 1st Year' },
+    { value: 14, label: 'College – 2nd Year' },
+    { value: 15, label: 'College – 3rd Year' },
+    { value: 16, label: 'College – 4th Year' },
+]
+
 function tabStyle(active) {
     return {
         display: 'flex', alignItems: 'center', gap: 6, padding: '8px 16px',
@@ -140,7 +153,7 @@ function LessonsManager({ concepts }) {
                     <option value=''>All subjects</option>
                     {SUBJECTS.map(s => <option key={s}>{s}</option>)}
                 </select>
-                <button onClick={() => setForm({ subject: '', title: '', body_en: '', concept_id: '', ordering: 0, grade: 8 })}
+                <button onClick={() => setForm({ subject: '', title: '', body_en: '', concept_id: '', _conceptName: '', ordering: 0, grade: 8 })}
                     style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 14px', background: 'rgba(96,165,250,0.15)', border: '1px solid rgba(96,165,250,0.4)', borderRadius: 8, color: '#60a5fa', cursor: 'pointer', fontSize: '0.85rem', fontWeight: 600 }}>
                     <Plus size={14} /> New Lesson
                 </button>
@@ -149,6 +162,12 @@ function LessonsManager({ concepts }) {
             {form && (
                 <div style={{ ...cardStyle(), border: '1px solid rgba(96,165,250,0.3)' }}>
                     <div style={{ fontWeight: 600, marginBottom: 12, color: '#e2e8f0' }}>{form.id ? 'Edit Lesson' : 'New Lesson'}</div>
+                    <datalist id='lesson-subjects'>
+                        {SUBJECTS.map(s => <option key={s} value={s} />)}
+                    </datalist>
+                    <datalist id='lesson-concepts'>
+                        {concepts.map(c => <option key={c.id} value={c.title} />)}
+                    </datalist>
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 10 }}>
                         <div>
                             <label style={labelSt}>Title *</label>
@@ -156,27 +175,27 @@ function LessonsManager({ concepts }) {
                         </div>
                         <div>
                             <label style={labelSt}>Subject *</label>
-                            <select value={form.subject || ''} onChange={e => setForm(f => ({ ...f, subject: e.target.value }))} style={inputSt}>
-                                <option value=''>Select…</option>
-                                {SUBJECTS.map(s => <option key={s}>{s}</option>)}
-                            </select>
+                            <input
+                                list='lesson-subjects'
+                                value={form.subject || ''}
+                                onChange={e => setForm(f => ({ ...f, subject: e.target.value }))}
+                                style={inputSt}
+                                placeholder='Type or select subject…'
+                            />
                         </div>
                         <div>
                             <label style={labelSt}>Concept</label>
-                            <select value={form.concept_id || ''} onChange={e => setForm(f => ({ ...f, concept_id: e.target.value }))} style={inputSt}>
-                                <option value=''>None</option>
-                                {concepts.map(c => <option key={c.id} value={c.id}>{c.subject} — {c.title}</option>)}
-                            </select>
-                        </div>
-                        <div style={{ display: 'flex', gap: 8 }}>
-                            <div style={{ flex: 1 }}>
-                                <label style={labelSt}>Order</label>
-                                <input type='number' value={form.ordering ?? 0} onChange={e => setForm(f => ({ ...f, ordering: Number(e.target.value) }))} style={inputSt} />
-                            </div>
-                            <div style={{ flex: 1 }}>
-                                <label style={labelSt}>Grade</label>
-                                <input type='number' value={form.grade ?? 8} onChange={e => setForm(f => ({ ...f, grade: Number(e.target.value) }))} style={inputSt} />
-                            </div>
+                            <input
+                                list='lesson-concepts'
+                                value={form._conceptName ?? (concepts.find(c => c.id == form.concept_id)?.title || '')}
+                                onChange={e => {
+                                    const typed = e.target.value
+                                    const match = concepts.find(c => c.title === typed)
+                                    setForm(f => ({ ...f, _conceptName: typed, concept_id: match ? match.id : '' }))
+                                }}
+                                style={inputSt}
+                                placeholder='Type or select concept…'
+                            />
                         </div>
                     </div>
                     <label style={labelSt}>Content (English)</label>
@@ -198,7 +217,7 @@ function LessonsManager({ concepts }) {
                             </div>
                         </div>
                         <div style={{ display: 'flex', gap: 6 }}>
-                            <button onClick={() => setForm({ ...l, body_en: '' })} style={iconBtn} title='Edit'><Edit2 size={14} /></button>
+                            <button onClick={() => setForm({ ...l, body_en: '', _conceptName: l.concept_title || concepts.find(c => c.id == l.concept_id)?.title || '' })} style={iconBtn} title='Edit'><Edit2 size={14} /></button>
                             <button onClick={() => del(l.id)} style={{ ...iconBtn, color: '#f87171' }} title='Delete'><Trash2 size={14} /></button>
                         </div>
                     </div>
@@ -251,7 +270,7 @@ function QuizManager({ concepts, lessons }) {
                     <option value=''>All lessons</option>
                     {lessons.map(l => <option key={l.id} value={l.id}>{l.subject} — {l.title}</option>)}
                 </select>
-                <button onClick={() => setForm({ subject: '', lesson_id: filterLesson || '', concept_id: '', kind: 'mcq', prompt_en: '', options: ['', '', '', ''], answer_key: '', is_diagnostic: false })}
+                <button onClick={() => setForm({ subject: '', lesson_id: filterLesson || '', concept_id: '', _conceptName: '', kind: 'mcq', prompt_en: '', options: ['', '', '', ''], answer_key: '', is_diagnostic: false })}
                     style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 14px', background: 'rgba(96,165,250,0.15)', border: '1px solid rgba(96,165,250,0.4)', borderRadius: 8, color: '#60a5fa', cursor: 'pointer', fontSize: '0.85rem', fontWeight: 600 }}>
                     <Plus size={14} /> New Quiz Item
                 </button>
@@ -260,13 +279,22 @@ function QuizManager({ concepts, lessons }) {
             {form && (
                 <div style={{ ...cardStyle(), border: '1px solid rgba(96,165,250,0.3)' }}>
                     <div style={{ fontWeight: 600, marginBottom: 12, color: '#e2e8f0' }}>{form.id ? 'Edit Quiz Item' : 'New Quiz Item'}</div>
+                    <datalist id='quiz-subjects'>
+                        {SUBJECTS.map(s => <option key={s} value={s} />)}
+                    </datalist>
+                    <datalist id='quiz-concepts'>
+                        {concepts.map(c => <option key={c.id} value={c.title} />)}
+                    </datalist>
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 10 }}>
                         <div>
                             <label style={labelSt}>Subject *</label>
-                            <select value={form.subject || ''} onChange={e => setForm(f => ({ ...f, subject: e.target.value }))} style={inputSt}>
-                                <option value=''>Select…</option>
-                                {SUBJECTS.map(s => <option key={s}>{s}</option>)}
-                            </select>
+                            <input
+                                list='quiz-subjects'
+                                value={form.subject || ''}
+                                onChange={e => setForm(f => ({ ...f, subject: e.target.value }))}
+                                style={inputSt}
+                                placeholder='Type or select subject…'
+                            />
                         </div>
                         <div>
                             <label style={labelSt}>Type</label>
@@ -283,10 +311,17 @@ function QuizManager({ concepts, lessons }) {
                         </div>
                         <div>
                             <label style={labelSt}>Concept</label>
-                            <select value={form.concept_id || ''} onChange={e => setForm(f => ({ ...f, concept_id: e.target.value }))} style={inputSt}>
-                                <option value=''>None</option>
-                                {concepts.map(c => <option key={c.id} value={c.id}>{c.subject} — {c.title}</option>)}
-                            </select>
+                            <input
+                                list='quiz-concepts'
+                                value={form._conceptName ?? (concepts.find(c => c.id == form.concept_id)?.title || '')}
+                                onChange={e => {
+                                    const typed = e.target.value
+                                    const match = concepts.find(c => c.title === typed)
+                                    setForm(f => ({ ...f, _conceptName: typed, concept_id: match ? match.id : '' }))
+                                }}
+                                style={inputSt}
+                                placeholder='Type or select concept…'
+                            />
                         </div>
                     </div>
 
@@ -378,6 +413,9 @@ function ConceptsManager({ concepts, reload }) {
             {form && (
                 <div style={{ ...cardStyle(), border: '1px solid rgba(96,165,250,0.3)', marginBottom: 16 }}>
                     <div style={{ fontWeight: 600, marginBottom: 12, color: '#e2e8f0' }}>{form.id ? 'Edit Concept' : 'New Concept'}</div>
+                    <datalist id='concept-subjects'>
+                        {SUBJECTS.map(s => <option key={s} value={s} />)}
+                    </datalist>
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
                         <div>
                             <label style={labelSt}>Title *</label>
@@ -385,18 +423,25 @@ function ConceptsManager({ concepts, reload }) {
                         </div>
                         <div>
                             <label style={labelSt}>Subject *</label>
-                            <select value={form.subject || ''} onChange={e => setForm(f => ({ ...f, subject: e.target.value }))} style={inputSt}>
-                                <option value=''>Select…</option>
-                                {SUBJECTS.map(s => <option key={s}>{s}</option>)}
-                            </select>
+                            <input
+                                list='concept-subjects'
+                                value={form.subject || ''}
+                                onChange={e => setForm(f => ({ ...f, subject: e.target.value }))}
+                                style={inputSt}
+                                placeholder='Type or select subject…'
+                            />
                         </div>
                         <div>
                             <label style={labelSt}>Grade Min</label>
-                            <input type='number' value={form.grade_min ?? 8} onChange={e => setForm(f => ({ ...f, grade_min: Number(e.target.value) }))} style={inputSt} />
+                            <select value={form.grade_min ?? 8} onChange={e => setForm(f => ({ ...f, grade_min: Number(e.target.value) }))} style={inputSt}>
+                                {GRADE_OPTIONS.map(g => <option key={g.value} value={g.value}>{g.label}</option>)}
+                            </select>
                         </div>
                         <div>
                             <label style={labelSt}>Grade Max</label>
-                            <input type='number' value={form.grade_max ?? 14} onChange={e => setForm(f => ({ ...f, grade_max: Number(e.target.value) }))} style={inputSt} />
+                            <select value={form.grade_max ?? 14} onChange={e => setForm(f => ({ ...f, grade_max: Number(e.target.value) }))} style={inputSt}>
+                                {GRADE_OPTIONS.map(g => <option key={g.value} value={g.value}>{g.label}</option>)}
+                            </select>
                         </div>
                     </div>
                     <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
@@ -426,7 +471,7 @@ function ConceptsManager({ concepts, reload }) {
 }
 
 // ── Student Progress view ─────────────────────────────────────────────────────
-function StudentProgress({ lessons }) {
+function StudentProgress() {
     const [rows, setRows]       = useState([])
     const [loading, setLoading] = useState(false)
     const [subject, setSubject] = useState('')
