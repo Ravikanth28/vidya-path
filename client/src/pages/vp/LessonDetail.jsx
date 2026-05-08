@@ -43,6 +43,10 @@ export default function LessonDetail() {
                 setLesson(l)
                 setCompleted(l.status === 'completed')
                 cacheLesson(l)
+                // Auto-mark as in_progress as soon as the student opens the lesson
+                if (l.status === 'not_started' && navigator.onLine) {
+                    vpApi.lessonProgress(id, { status: 'in_progress' }).catch(() => {})
+                }
             } catch {
                 const cached = await getCachedLesson(id)
                 if (!mounted) return

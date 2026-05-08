@@ -110,10 +110,21 @@ function Overview() {
     )
 }
 
+// ── Helpers ────────────────────────────────────────────────────────────────────
+const parseUnits = (body_en) => {
+    try {
+        const parsed = JSON.parse(body_en)
+        if (Array.isArray(parsed) && parsed.length) return parsed
+    } catch {}
+    return [{ title: '', content: body_en || '' }]
+}
+
+const serializeUnits = (units) => JSON.stringify(units)
+
 // ── Lessons ───────────────────────────────────────────────────────────────────
 function LessonsManager({ concepts }) {
     const [lessons, setLessons] = useState([])
-    const [form, setForm] = useState(null)       // null = hidden, {} = new, {id,...} = edit
+    const [form, setForm] = useState(null)
     const [saving, setSaving] = useState(false)
     const [filterSubj, setFilterSubj] = useState('')
 
@@ -125,10 +136,12 @@ function LessonsManager({ concepts }) {
     const save = async () => {
         setSaving(true)
         try {
+            const { _conceptName, units, ...rest } = form
+            const payload = { ...rest, body_en: serializeUnits(units || []) }
             if (form.id) {
-                await axios.put(`${API}/lessons/${form.id}`, form, { headers: authH() })
+                await axios.put(`${API}/lessons/${form.id}`, payload, { headers: authH() })
             } else {
-                await axios.post(`${API}/lessons`, form, { headers: authH() })
+                await axios.post(`${API}/lessons`, payload, { headers: authH() })
             }
             setForm(null)
             load()
@@ -143,6 +156,13 @@ function LessonsManager({ concepts }) {
         load()
     }
 
+    const addUnit = () => setForm(f => ({ ...f, units: [...(f.units || []), { title: '', content: '' }] }))
+    const removeUnit = (i) => setForm(f => ({ ...f, units: f.units.filter((_, idx) => idx !== i) }))
+    const updateUnit = (i, field, val) => setForm(f => ({
+        ...f,
+        units: f.units.map((u, idx) => idx === i ? { ...u, [field]: val } : u)
+    }))
+
     const shown = filterSubj ? lessons.filter(l => l.subject === filterSubj) : lessons
 
     return (
@@ -153,7 +173,7 @@ function LessonsManager({ concepts }) {
                     <option value=''>All subjects</option>
                     {SUBJECTS.map(s => <option key={s}>{s}</option>)}
                 </select>
-                <button onClick={() => setForm({ subject: '', title: '', body_en: '', concept_id: '', _conceptName: '', ordering: 0, grade: 8 })}
+                <button onClick={() => setForm({ subject: '', title: '', concept_id: '', _conceptName: '', units: [{ title: '', content: '' }] })}
                     style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 14px', background: 'rgba(96,165,250,0.15)', border: '1px solid rgba(96,165,250,0.4)', borderRadius: 8, color: '#60a5fa', cursor: 'pointer', fontSize: '0.85rem', fontWeight: 600 }}>
                     <Plus size={14} /> New Lesson
                 </button>
@@ -168,7 +188,9 @@ function LessonsManager({ concepts }) {
                     <datalist id='lesson-concepts'>
                         {concepts.map(c => <option key={c.id} value={c.title} />)}
                     </datalist>
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 10 }}>
+
+                    {/* Lesson meta */}
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 16 }}>
                         <div>
                             <label style={labelSt}>Title *</label>
                             <input value={form.title || ''} onChange={e => setForm(f => ({ ...f, title: e.target.value }))} style={inputSt} placeholder='Lesson title' />
@@ -183,7 +205,7 @@ function LessonsManager({ concepts }) {
                                 placeholder='Type or select subject…'
                             />
                         </div>
-                        <div>
+                        <div style={{ gridColumn: '1 / -1' }}>
                             <label style={labelSt}>Concept</label>
                             <input
                                 list='lesson-concepts'
@@ -198,31 +220,77 @@ function LessonsManager({ concepts }) {
                             />
                         </div>
                     </div>
-                    <label style={labelSt}>Content (English)</label>
-                    <textarea rows={5} value={form.body_en || ''} onChange={e => setForm(f => ({ ...f, body_en: e.target.value }))} style={{ ...inputSt, width: '100%', resize: 'vertical', fontFamily: 'inherit' }} placeholder='Lesson content…' />
-                    <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
+
+                    {/* Unit-wise content */}
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+                        <label style={{ ...labelSt, marginBottom: 0, fontSize: '0.82rem', letterSpacing: '0.04em', textTransform: 'uppercase' }}>
+                            Units ({(form.units || []).length})
+                        </label>
+                        <button onClick={addUnit} style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '5px 12px', background: 'rgba(52,211,153,0.1)', border: '1px solid rgba(52,211,153,0.35)', borderRadius: 7, color: '#34d399', cursor: 'pointer', fontSize: '0.8rem', fontWeight: 600 }}>
+                            <Plus size={13} /> Add Unit
+                        </button>
+                    </div>
+
+                    {(form.units || []).map((unit, i) => (
+                        <div key={i} style={{ background: 'rgba(15,23,42,0.6)', border: '1px solid rgba(148,163,184,0.15)', borderRadius: 8, padding: '14px 16px', marginBottom: 10 }}>
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+                                <span style={{ fontSize: '0.78rem', fontWeight: 700, color: '#60a5fa', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                                    Unit {i + 1}
+                                </span>
+                                {(form.units || []).length > 1 && (
+                                    <button onClick={() => removeUnit(i)} style={{ display: 'flex', alignItems: 'center', padding: '3px 8px', background: 'rgba(248,113,113,0.1)', border: '1px solid rgba(248,113,113,0.3)', borderRadius: 6, color: '#f87171', cursor: 'pointer', fontSize: '0.78rem', gap: 4 }}>
+                                        <X size={12} /> Remove
+                                    </button>
+                                )}
+                            </div>
+                            <div style={{ marginBottom: 8 }}>
+                                <label style={labelSt}>Unit Title</label>
+                                <input
+                                    value={unit.title || ''}
+                                    onChange={e => updateUnit(i, 'title', e.target.value)}
+                                    style={inputSt}
+                                    placeholder={`e.g. Introduction, Chapter ${i + 1}…`}
+                                />
+                            </div>
+                            <div>
+                                <label style={labelSt}>Content</label>
+                                <textarea
+                                    rows={4}
+                                    value={unit.content || ''}
+                                    onChange={e => updateUnit(i, 'content', e.target.value)}
+                                    style={{ ...inputSt, resize: 'vertical', fontFamily: 'inherit' }}
+                                    placeholder='Write the unit content here…'
+                                />
+                            </div>
+                        </div>
+                    ))}
+
+                    <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
                         <button onClick={save} disabled={saving} style={btnPrimary}><Save size={14} /> {saving ? 'Saving…' : 'Save'}</button>
                         <button onClick={() => setForm(null)} style={btnSecondary}><X size={14} /> Cancel</button>
                     </div>
                 </div>
             )}
 
-            {shown.map(l => (
+            {shown.map(l => {
+                const units = parseUnits(l.body_en)
+                return (
                 <div key={l.id} style={cardStyle()}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                         <div>
                             <div style={{ fontWeight: 600, color: '#e2e8f0' }}>{l.title}</div>
                             <div style={{ fontSize: '0.78rem', color: '#94a3b8', marginTop: 2 }}>
-                                {l.subject} {l.concept_title ? `· ${l.concept_title}` : ''} · Grade {l.grade} · Order {l.ordering}
+                                {l.subject} {l.concept_title ? `· ${l.concept_title}` : ''} · {units.length} unit{units.length !== 1 ? 's' : ''}
                             </div>
                         </div>
                         <div style={{ display: 'flex', gap: 6 }}>
-                            <button onClick={() => setForm({ ...l, body_en: '', _conceptName: l.concept_title || concepts.find(c => c.id == l.concept_id)?.title || '' })} style={iconBtn} title='Edit'><Edit2 size={14} /></button>
+                            <button onClick={() => setForm({ ...l, units: parseUnits(l.body_en), _conceptName: l.concept_title || concepts.find(c => c.id == l.concept_id)?.title || '' })} style={iconBtn} title='Edit'><Edit2 size={14} /></button>
                             <button onClick={() => del(l.id)} style={{ ...iconBtn, color: '#f87171' }} title='Delete'><Trash2 size={14} /></button>
                         </div>
                     </div>
                 </div>
-            ))}
+                )
+            })}
             {!shown.length && <div style={{ color: '#64748b', padding: '20px 0' }}>No lessons found.</div>}
         </div>
     )

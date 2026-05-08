@@ -32,7 +32,8 @@ module.exports = function lessonsRoutes(pool, authenticate) {
             let sql = `SELECT l.id, l.subject, l.title, l.body_i18n, l.ordering, l.grade,
                               l.concept_id,
                               COALESCE(p.status, 'not_started') AS status,
-                              COALESCE(p.mastery_pct, 0) AS mastery_pct
+                              COALESCE(p.mastery_pct, 0)        AS mastery_pct,
+                              COALESCE(p.last_position, 0)      AS last_position
                        FROM vp_lessons l
                        LEFT JOIN vp_lesson_progress p
                          ON p.lesson_id = l.id AND p.student_id = ?
@@ -48,6 +49,7 @@ module.exports = function lessonsRoutes(pool, authenticate) {
                 concept_id: r.concept_id,
                 status: r.status,
                 mastery_pct: Number(r.mastery_pct),
+                last_position: Number(r.last_position),
                 preview: (pickLang(r.body_i18n, lang) || '').slice(0, 160)
             }));
             if (status) items = items.filter(i => i.status === status);

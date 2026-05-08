@@ -120,15 +120,31 @@ export default function LessonsList() {
                     <section key={subject}>
                         <h2 className="vp-h2">{subject}</h2>
                         <div className="vp-grid" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))' }}>
-                            {list.map(l => (
+                            {list.map(l => {
+                                // Progress bar: completed=100%, in_progress uses last_position or mastery, not_started=0%
+                                const barPct = l.status === 'completed'
+                                    ? 100
+                                    : l.status === 'in_progress'
+                                        ? Math.max(l.mastery_pct || 0, l.last_position || 0, 15)
+                                        : 0
+
+                                // Bottom label: only show mastery% when there's a real score
+                                const progressLabel = l.status === 'completed'
+                                    ? l.mastery_pct > 0 ? `Mastery ${Math.round(l.mastery_pct)}%` : 'Lesson completed'
+                                    : l.status === 'in_progress'
+                                        ? l.mastery_pct > 0 ? `Mastery ${Math.round(l.mastery_pct)}%` : 'In progress'
+                                        : 'Not started'
+
+                                return (
                                 <Link key={l.id} to={`/student/vp/lessons/${l.id}`} className="vp-card" style={{ textDecoration: 'none' }}>
                                     <span className={`vp-badge ${l.status}`}>{l.status.replace('_', ' ')}</span>
                                     <h3 style={{ marginTop: 6 }}>{l.title}</h3>
                                     <p className="vp-text-sm">{l.preview}</p>
-                                    <div className="vp-progress"><div style={{ width: `${Math.round(l.mastery_pct || 0)}%` }} /></div>
-                                    <p className="vp-text-sm">Mastery {Math.round(l.mastery_pct || 0)}%</p>
+                                    <div className="vp-progress"><div style={{ width: `${barPct}%` }} /></div>
+                                    <p className="vp-text-sm">{progressLabel}</p>
                                 </Link>
-                            ))}
+                                )
+                            })}
                         </div>
                     </section>
                 ))
