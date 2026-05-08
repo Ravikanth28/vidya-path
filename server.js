@@ -14609,7 +14609,7 @@ async function ensureFrontendEvalTables() {
     // Serve React SPA (client/dist) — must come after all /api routes
     const clientDist = path.join(__dirname, 'client', 'dist');
     app.use(express.static(clientDist));
-    app.get('*', (req, res) => {
+    app.get('/{*path}', (req, res) => {
         res.sendFile(path.join(clientDist, 'index.html'));
     });
 
